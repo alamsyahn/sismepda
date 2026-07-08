@@ -1,0 +1,364 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model AppSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("app_settings")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum StudentStatus {
+  ACTIVE
+  GRADUATED
+  TRANSFERRED_OUT
+  DROPPED_OUT
+  INACTIVE
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  MOVED
+  TRANSFERRED_OUT
+  GRADUATED
+  INACTIVE
+}
+
+enum AttendanceSessionStatus {
+  DRAFT
+  SUBMITTED
+  LOCKED
+}
+
+model User {
+  id           String     @id @default(cuid())
+  username     String     @unique
+  name         String
+  passwordHash String
+  status       UserStatus @default(ACTIVE)
+
+  teacherId String?  @unique
+  teacher   Teacher? @relation(fields: [teacherId], references: [id])
+
+  userRoles UserRole[]
+
+  submittedAttendanceSessions AttendanceSession[] @relation("AttendanceSessionSubmittedBy")
+  createdAttendanceRecords    AttendanceRecord[]  @relation("AttendanceRecordCreatedBy")
+  updatedAttendanceRecords    AttendanceRecord[]  @relation("AttendanceRecordUpdatedBy")
+  auditLogs                   AuditLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Role {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  name        String
+  description String?
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  name        String
+  description String?
+
+  rolePermissions RolePermission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId String
+  roleId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now())
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now())
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model Teacher {
+  id     String     @id @default(cuid())
+  nip    String?    @unique
+  name   String
+  status UserStatus @default(ACTIVE)
+
+  user User?
+
+  homeroomClasses    SchoolClass[]
+  teacherAssignments TeacherAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("teachers")
+}
+
+model Student {
+  id     String        @id @default(cuid())
+  nis    String?       @unique
+  nisn   String?       @unique
+  name   String
+  gender Gender?
+  status StudentStatus @default(ACTIVE)
+
+  classEnrollments  ClassEnrollment[]
+  attendanceRecords AttendanceRecord[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@map("students")
+}
+
+model AcademicYear {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+  isActive  Boolean  @default(false)
+
+  semesters          Semester[]
+  classes            SchoolClass[]
+  classEnrollments   ClassEnrollment[]
+  teacherAssignments TeacherAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("academic_years")
+}
+
+model Semester {
+  id             String   @id @default(cuid())
+  academicYearId String
+  name           String
+  startDate      DateTime @db.Date
+  endDate        DateTime @db.Date
+  isActive       Boolean  @default(false)
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academicYearId, name])
+  @@map("semesters")
+}
+
+model SchoolClass {
+  id                String  @id @default(cuid())
+  name              String
+  gradeLevel        Int
+  academicYearId    String
+  homeroomTeacherId String?
+
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  homeroomTeacher Teacher?     @relation(fields: [homeroomTeacherId], references: [id])
+
+  classEnrollments   ClassEnrollment[]
+  attendanceSessions AttendanceSession[]
+  teacherAssignments TeacherAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, academicYearId])
+  @@map("classes")
+}
+
+model ClassEnrollment {
+  id             String           @id @default(cuid())
+  studentId      String
+  schoolClassId  String
+  academicYearId String
+  startDate      DateTime         @db.Date
+  endDate        DateTime?        @db.Date
+  status         EnrollmentStatus @default(ACTIVE)
+  note           String?
+
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  schoolClass  SchoolClass  @relation(fields: [schoolClassId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([schoolClassId])
+  @@index([academicYearId])
+  @@map("class_enrollments")
+}
+
+model TeacherAssignment {
+  id             String    @id @default(cuid())
+  teacherId      String
+  schoolClassId  String
+  academicYearId String
+  subjectName    String?
+  role           String?
+  startDate      DateTime  @db.Date
+  endDate        DateTime? @db.Date
+
+  teacher      Teacher      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  schoolClass  SchoolClass  @relation(fields: [schoolClassId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("teacher_assignments")
+}
+
+model AttendanceStatus {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  name        String
+  description String?
+  isPresent   Boolean @default(false)
+  isAbsent    Boolean @default(false)
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+
+  attendanceRecords AttendanceRecord[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("attendance_statuses")
+}
+
+model AttendanceSession {
+  id             String                  @id @default(cuid())
+  schoolClassId  String
+  attendanceDate DateTime                @db.Date
+  status         AttendanceSessionStatus @default(SUBMITTED)
+
+  submittedById String?
+  submittedAt   DateTime?
+
+  schoolClass SchoolClass @relation(fields: [schoolClassId], references: [id], onDelete: Cascade)
+  submittedBy User?       @relation("AttendanceSessionSubmittedBy", fields: [submittedById], references: [id])
+
+  attendanceRecords AttendanceRecord[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolClassId, attendanceDate])
+  @@index([attendanceDate])
+  @@map("attendance_sessions")
+}
+
+model AttendanceRecord {
+  id                  String  @id @default(cuid())
+  attendanceSessionId String
+  studentId           String
+  statusId            String
+  note                String?
+
+  createdById String?
+  updatedById String?
+
+  attendanceSession AttendanceSession @relation(fields: [attendanceSessionId], references: [id], onDelete: Cascade)
+  student           Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status            AttendanceStatus  @relation(fields: [statusId], references: [id])
+
+  createdBy User? @relation("AttendanceRecordCreatedBy", fields: [createdById], references: [id])
+  updatedBy User? @relation("AttendanceRecordUpdatedBy", fields: [updatedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([attendanceSessionId, studentId])
+  @@index([studentId])
+  @@index([statusId])
+  @@map("attendance_records")
+}
+
+model AuditLog {
+  id        String  @id @default(cuid())
+  userId    String?
+  action    String
+  tableName String?
+  recordId  String?
+  oldValue  Json?
+  newValue  Json?
+  ipAddress String?
+  userAgent String?
+
+  user User? @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model ImportLog {
+  id          String  @id @default(cuid())
+  fileName    String?
+  importType  String
+  totalRows   Int     @default(0)
+  successRows Int     @default(0)
+  failedRows  Int     @default(0)
+  note        String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@map("import_logs")
+}
