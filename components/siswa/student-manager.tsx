@@ -1,7 +1,8 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
-import { ArrowDown, ArrowUp, ChevronsUpDown, Loader2, Pencil, Search, Trash2, UserCheck, UserX } from "lucide-react"
+import { ArrowDown, ArrowUp, ChevronsUpDown, Eye, Loader2, Pencil, Search, Trash2, UserCheck, UserX } from "lucide-react"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -165,7 +166,7 @@ export function StudentManager() {
             <TableRow key={student.id} className={!student.active ? "opacity-65" : undefined}>
               <TableCell className="font-medium">{student.name}</TableCell><TableCell className="font-mono text-sm">{student.nis ?? "-"}</TableCell><TableCell className="font-mono text-sm">{student.nisn ?? "-"}</TableCell><TableCell>{student.className}</TableCell>
               <TableCell><Badge variant={student.active ? "default" : "secondary"}>{student.active ? "Aktif" : "Nonaktif"}</Badge></TableCell>
-              <TableCell><div className="flex justify-end gap-2"><Button variant="outline" size="sm" onClick={() => openEdit(student)}><Pencil className="size-4" /> Edit</Button><Button variant="outline" size="sm" onClick={() => setStatusTarget(student)}>{student.active ? <UserX className="size-4" /> : <UserCheck className="size-4" />}{student.active ? "Nonaktifkan" : "Aktifkan"}</Button><Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => { setDeleteTarget(student); setDeleteConfirmation("") }}><Trash2 className="size-4" /> Hapus</Button></div></TableCell>
+              <TableCell><div className="flex justify-end gap-2"><Button render={<Link href={`/siswa/${student.id}`} />} nativeButton={false} variant="outline" size="sm"><Eye className="size-4" /> Profil</Button><Button variant="outline" size="sm" onClick={() => openEdit(student)}><Pencil className="size-4" /> Edit</Button><Button variant="outline" size="sm" onClick={() => setStatusTarget(student)}>{student.active ? <UserX className="size-4" /> : <UserCheck className="size-4" />}{student.active ? "Nonaktifkan" : "Aktifkan"}</Button><Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => { setDeleteTarget(student); setDeleteConfirmation("") }}><Trash2 className="size-4" /> Hapus</Button></div></TableCell>
             </TableRow>
           ))}
         </TableBody>

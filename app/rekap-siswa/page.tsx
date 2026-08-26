@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useMemo, useState } from "react"
 import { Search } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
@@ -116,7 +117,7 @@ export default function RekapSiswaPage() {
               <TableBody>
                 {shown.map((s) => (
                   <TableRow key={s.id}>
-                    <TableCell className="font-medium text-foreground">{s.name}</TableCell>
+                    <TableCell className="font-medium"><Link href={`/siswa/${s.id}`} className="text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline">{s.name}</Link></TableCell>
                     <TableCell className="font-mono text-sm text-muted-foreground">{s.nis ?? "-"}</TableCell>
                     <TableCell className="font-mono text-sm text-muted-foreground">{s.nisn ?? "-"}</TableCell>
                     <TableCell className="text-muted-foreground">{s.className}</TableCell>

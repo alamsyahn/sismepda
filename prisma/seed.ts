@@ -2,6 +2,7 @@ import "dotenv/config"
 import { hash } from "bcryptjs"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { PrismaClient, Role } from "../app/generated/prisma/client"
+import { databaseSchema } from "../lib/database-config"
 
 function requiredEnv(name: "DATABASE_URL" | "SEED_ADMIN_EMAIL" | "SEED_ADMIN_PASSWORD") {
   const value = process.env[name]
@@ -12,7 +13,9 @@ function requiredEnv(name: "DATABASE_URL" | "SEED_ADMIN_EMAIL" | "SEED_ADMIN_PAS
 const databaseUrl = requiredEnv("DATABASE_URL").trim()
 const adminEmail = requiredEnv("SEED_ADMIN_EMAIL").trim()
 const adminPassword = requiredEnv("SEED_ADMIN_PASSWORD")
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl }) })
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: databaseUrl }, { schema: databaseSchema(databaseUrl) }),
+})
 const classNames = ["VII", "VIII", "IX"].flatMap((grade) =>
   ["A", "B", "C", "D", "E", "F", "G", "H", "I"].map((section) => `${grade} ${section}`),
 )
