@@ -17,7 +17,7 @@ export async function classRecapWorkbook(data: Success, mode: Mode) {
   const workbook = new ExcelJS.Workbook()
   workbook.creator = "SISMEPDA"
   workbook.created = new Date()
-  const sheet = workbook.addWorksheet(mode === "matrix" ? "Matriks Tanggal" : "Rekap Kumulatif", { views: [{ state: "frozen", xSplit: mode === "matrix" ? 3 : 2, ySplit: 4 }] })
+  const sheet = workbook.addWorksheet(mode === "matrix" ? "Kalender Kehadiran" : "Rekap Kumulatif", { views: [{ state: "frozen", xSplit: mode === "matrix" ? 3 : 2, ySplit: 4 }] })
   const totalColumns = mode === "matrix" ? 4 + data.dates.length : 10
   sheet.mergeCells(1, 1, 1, totalColumns)
   sheet.getCell("A1").value = `REKAP KEHADIRAN KELAS ${data.schoolClass.name}`

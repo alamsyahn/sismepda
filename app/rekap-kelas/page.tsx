@@ -13,7 +13,7 @@ import { StatusPill } from "@/components/dashboard/status-pill"
 import { grades_list, type ClassRecord } from "@/lib/dashboard-data"
 import { ExportButton } from "@/components/export/export-button"
 import { ClassPeriodRecap } from "@/components/rekap/class-period-recap"
-import { selectCumulativeClass } from "@/lib/rekap-kelas-navigation"
+import { selectCumulativeClass, selectMatrixClass } from "@/lib/rekap-kelas-navigation"
 import { ProfileNameLink } from "@/components/profile/profile-name-link"
 
 const gradeOptions = [{ value: "all", label: "Semua Tingkat" }, ...grades_list.map((g) => ({ value: g, label: `Tingkat ${g}` }))]
@@ -35,6 +35,11 @@ export default function RekapKelasPage() {
     setMode(selection.mode)
     setSelectedClassId(selection.classId)
   }
+  const openAttendanceCalendar = (classId: string) => {
+    const selection = selectMatrixClass(classId)
+    setMode(selection.mode)
+    setSelectedClassId(selection.classId)
+  }
 
   return <PageContainer>
     <PageHeading title="Rekap Kelas" description={mode === "daily" ? `Rincian kehadiran dan status input pada ${formatLongDate(date)}.` : "Rekap ketidakhadiran siswa berdasarkan kelas dan rentang tanggal."}
@@ -42,12 +47,12 @@ export default function RekapKelasPage() {
     <div className="mb-5 flex w-fit flex-wrap rounded-xl bg-muted p-1">
       <ModeButton active={mode === "daily"} onClick={() => setMode("daily")} icon={<CalendarDays/>}>Ringkasan Harian</ModeButton>
       <ModeButton active={mode === "cumulative"} onClick={() => setMode("cumulative")} icon={<ListChecks/>}>Kumulatif</ModeButton>
-      <ModeButton active={mode === "matrix"} onClick={() => setMode("matrix")} icon={<Grid3X3/>}>Matriks Tanggal</ModeButton>
+      <ModeButton active={mode === "matrix"} onClick={() => setMode("matrix")} icon={<Grid3X3/>}>Kalender Kehadiran</ModeButton>
     </div>
 
     {mode !== "daily" ? <ClassPeriodRecap mode={mode} classes={classOptions} initialClassId={selectedClassId}/> : holiday ? (
       <Card className="border-primary/30 bg-primary/5"><CardContent className="py-12 text-center"><p className="text-lg font-semibold">Hari Libur</p><p className="text-sm text-muted-foreground">{holiday.name}. Tidak ada kewajiban input absensi pada tanggal ini.</p></CardContent></Card>
-    ) : <DailyRecap classes={filtered} grade={grade} setGrade={setGrade} query={query} setQuery={setQuery} onSelectClass={openCumulativeRecap}/>}
+    ) : <DailyRecap classes={filtered} grade={grade} setGrade={setGrade} query={query} setQuery={setQuery} onSelectCumulativeClass={openCumulativeRecap} onSelectAttendanceCalendar={openAttendanceCalendar}/>}
   </PageContainer>
 }
 
@@ -55,7 +60,7 @@ function ModeButton({active,onClick,icon,children}:{active:boolean;onClick:()=>v
   return <Button variant={active ? "secondary" : "ghost"} size="sm" onClick={onClick} aria-pressed={active} className={active ? "bg-card shadow-sm" : "text-muted-foreground"}><span className="[&_svg]:size-4">{icon}</span>{children}</Button>
 }
 
-function DailyRecap({classes,grade,setGrade,query,setQuery,onSelectClass}:{classes:ClassRecord[];grade:string;setGrade:(v:string)=>void;query:string;setQuery:(v:string)=>void;onSelectClass:(classId:string)=>void}) {
+function DailyRecap({classes,grade,setGrade,query,setQuery,onSelectCumulativeClass,onSelectAttendanceCalendar}:{classes:ClassRecord[];grade:string;setGrade:(v:string)=>void;query:string;setQuery:(v:string)=>void;onSelectCumulativeClass:(classId:string)=>void;onSelectAttendanceCalendar:(classId:string)=>void}) {
   return <div className="space-y-5">
     <Card className="border-border/70"><CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
       <div className="relative flex-1"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"/><Input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Cari kelas atau wali kelas..." className="bg-card pl-9"/></div>
@@ -64,7 +69,10 @@ function DailyRecap({classes,grade,setGrade,query,setQuery,onSelectClass}:{class
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{classes.map((c)=><Card key={c.id} className="border-border/70"><CardContent className="space-y-4 p-5">
       <div className="flex items-start justify-between gap-3"><div><p className="text-lg font-bold">{c.name}</p><p className="text-sm text-muted-foreground">{c.homeroomId ? <ProfileNameLink type="teacher" id={c.homeroomId} name={c.homeroom} /> : c.homeroom}</p></div>{c.submitted?<span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--chart-1)]/12 px-2.5 py-1 text-xs font-medium text-[var(--chart-1)]"><CheckCircle2 className="size-3.5"/>{c.submittedAt}</span>:<span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--chart-5)]/12 px-2.5 py-1 text-xs font-medium text-[var(--chart-5)]"><Clock className="size-3.5"/>Belum input</span>}</div>
       {c.submitted?<><div className="flex items-baseline justify-between"><span className="text-sm text-muted-foreground">Kehadiran</span><span className="text-sm font-semibold">{c.hadir}/{c.totalStudents} siswa</span></div><div className="flex flex-wrap gap-1.5"><StatusPill status="hadir" count={c.hadir}/><StatusPill status="sakit" count={c.sakit}/><StatusPill status="izin" count={c.izin}/><StatusPill status="dispensasi" count={c.dispensasi}/><StatusPill status="alfa" count={c.alfa}/></div></>:<p className="rounded-lg bg-secondary/60 px-3 py-6 text-center text-sm text-muted-foreground">{c.totalStudents} siswa · absensi belum diinput pada tanggal ini</p>}
-      <Button type="button" variant="outline" className="w-full" onClick={()=>onSelectClass(c.id)}>Buka rekap kumulatif<ChevronRight className="size-4" /></Button>
+      <div className="grid gap-2">
+        <Button type="button" variant="outline" className="w-full" onClick={()=>onSelectCumulativeClass(c.id)}>Buka rekap kumulatif<ChevronRight className="size-4" /></Button>
+        <Button type="button" className="w-full" onClick={()=>onSelectAttendanceCalendar(c.id)}><CalendarDays className="size-4" />Buka kalender kehadiran<ChevronRight className="size-4" /></Button>
+      </div>
     </CardContent></Card>)}</div>
     {classes.length===0?<p className="py-12 text-center text-sm text-muted-foreground">Tidak ada kelas yang cocok dengan pencarian.</p>:null}
   </div>
