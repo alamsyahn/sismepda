@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { PenLine, Upload } from "lucide-react"
 
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
@@ -13,7 +14,7 @@ export default function SiswaInputPage() {
       <div className="space-y-1">
         <nav aria-label="Breadcrumb" className="text-xs text-muted-foreground">
           <ol className="flex items-center gap-1.5">
-            <li>Data Siswa</li>
+            <li><Link href="/siswa" className="transition-colors hover:text-foreground">Data Siswa</Link></li>
             <li aria-hidden>/</li>
             <li className="font-medium text-foreground">Input Siswa</li>
           </ol>

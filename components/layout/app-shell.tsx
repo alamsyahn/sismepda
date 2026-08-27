@@ -27,7 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Mobile drawer */}
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="left" className="w-64 border-sidebar-border bg-sidebar p-0">
+        <SheetContent side="left" className="w-64 gap-0 overflow-hidden border-sidebar-border bg-sidebar p-0">
           <SheetTitle className="sr-only">Menu navigasi</SheetTitle>
           <SidebarNav onNavigate={() => setOpen(false)} />
         </SheetContent>

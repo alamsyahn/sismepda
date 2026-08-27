@@ -1,6 +1,6 @@
-import { PageContainer, PageHeading } from "@/components/layout/page-container"
-import { TeacherManager } from "@/components/guru/teacher-manager"
+import { redirect } from "next/navigation"
 
+/** Rute lama sebelum Input & Kelola Guru digabung menjadi halaman /guru. */
 export default function KelolaGuruPage() {
-  return <PageContainer><PageHeading title="Kelola Data Guru" description="Ubah profil dan kredensial guru, atur status aktif, atau hapus akun secara permanen." /><TeacherManager /></PageContainer>
+  redirect("/guru")
 }

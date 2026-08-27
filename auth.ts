@@ -104,7 +104,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (path === "/login") return loggedIn ? Response.redirect(new URL("/", request.nextUrl)) : true
       if (!loggedIn) return false
       const adminOnly = ["/siswa/input", "/siswa/kelola", "/guru/input", "/guru/kelola", "/wali-kelas/input", "/pengaturan", "/supervisi-buku-kerja/kelola"]
-      if (adminOnly.some((route) => path.startsWith(route)) && auth?.user.role !== "ADMIN") {
+      // Halaman pengelolaan gabungan: cocokkan persis agar profil siswa/guru
+      // (/siswa/<id>, /guru/<id>, /guru/direktori) tetap terbuka untuk GURU.
+      const adminOnlyExact = ["/siswa", "/guru"]
+      const isAdminRoute =
+        adminOnly.some((route) => path === route || path.startsWith(`${route}/`)) ||
+        adminOnlyExact.includes(path)
+      if (isAdminRoute && auth?.user.role !== "ADMIN") {
         return Response.redirect(new URL("/", request.nextUrl))
       }
       return true
