@@ -13,6 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { isValidEmail, isValidPhone, normalizePhone } from "@/lib/guru-input"
 import { ExportButton } from "@/components/export/export-button"
+import { tableRowNumber } from "@/lib/table-row-number"
+import { ProfileNameLink } from "@/components/profile/profile-name-link"
 
 type Teacher = {
   id: string
@@ -175,15 +177,17 @@ export function TeacherManager() {
 
     <Card><CardContent className="p-0"><div className="overflow-x-auto"><Table>
       <TableHeader><TableRow>
+        <TableHead className="w-12 text-center">No</TableHead>
         <TableHead>Nama Guru</TableHead><TableHead>NIP</TableHead><TableHead>Email</TableHead>
         <TableHead>Telepon</TableHead><TableHead>Wali Kelas</TableHead><TableHead>Status</TableHead>
         <TableHead className="text-right">Aksi</TableHead>
       </TableRow></TableHeader>
       <TableBody>
-        {loading ? <TableRow><TableCell colSpan={7} className="py-12 text-center"><Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" /></TableCell></TableRow>
-          : filtered.length === 0 ? <TableRow><TableCell colSpan={7} className="py-12 text-center text-muted-foreground">Tidak ada guru yang sesuai.</TableCell></TableRow>
-          : filtered.map((teacher) => <TableRow key={teacher.id} className={!teacher.active ? "opacity-65" : undefined}>
-            <TableCell className="font-medium">{teacher.name}</TableCell>
+        {loading ? <TableRow><TableCell colSpan={8} className="py-12 text-center"><Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" /></TableCell></TableRow>
+          : filtered.length === 0 ? <TableRow><TableCell colSpan={8} className="py-12 text-center text-muted-foreground">Tidak ada guru yang sesuai.</TableCell></TableRow>
+          : filtered.map((teacher, index) => <TableRow key={teacher.id} className={!teacher.active ? "opacity-65" : undefined}>
+            <TableCell className="text-center text-muted-foreground tabular-nums">{tableRowNumber(index)}</TableCell>
+            <TableCell className="font-medium"><ProfileNameLink type="teacher" id={teacher.id} name={teacher.name} /></TableCell>
             <TableCell className="font-mono text-sm">{teacher.nip ?? "-"}</TableCell>
             <TableCell>{teacher.email ?? "-"}</TableCell>
             <TableCell>{teacher.phone ?? "-"}</TableCell>

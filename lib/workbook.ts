@@ -23,7 +23,7 @@ export const statusLabels: Record<WorkbookItemStatus, string> = {
 
 export const completionLabels: Record<CompletionState, string> = {
   COMPLETE: "Lengkap",
-  IN_PROGRESS: "Proses",
+  IN_PROGRESS: "Dalam proses",
   UNREVIEWED: "Belum diperiksa",
 }
 
@@ -109,6 +109,16 @@ export function aggregateWorkbookPercent(input: {
 export function formatPercent(value: number): string {
   const rounded = roundPercent(value, 1)
   return Number.isInteger(rounded) ? `${rounded}%` : `${rounded.toFixed(1)}%`
+}
+
+/**
+ * Continuous progress tone: red at 0%, orange at 25%, yellow at 50%,
+ * yellow-green at 75%, and green at 100%.
+ */
+export function progressColor(value: number): string {
+  const clamped = Math.min(Math.max(Number.isFinite(value) ? value : 0, 0), 100)
+  const hue = roundPercent((clamped / 100) * 120, 2)
+  return `hsl(${hue} 78% 45%)`
 }
 
 /** Cycle order for the 3-state control: UNREVIEWED -> PRESENT -> MISSING -> UNREVIEWED. */

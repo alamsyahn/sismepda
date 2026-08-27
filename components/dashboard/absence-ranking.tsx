@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 import { compareClassNames } from "@/lib/class-order"
+import { ProfileNameLink } from "@/components/profile/profile-name-link"
 
 export type AbsenceRankingRow = {
   id: string
@@ -324,7 +325,7 @@ export function AbsenceRanking({ students }: { students: AbsenceRankingRow[] }) 
                         </span>
                       </TableCell>
                       <TableCell className="font-semibold text-foreground">
-                        {row.student.name}
+                        <ProfileNameLink type="student" id={row.student.id} name={row.student.name} />
                       </TableCell>
                       <TableCell className="font-mono text-sm text-muted-foreground">
                         {row.student.nis ?? "-"}

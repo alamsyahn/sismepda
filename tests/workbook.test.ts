@@ -9,6 +9,7 @@ import {
   formatPercent,
   nextItemStatus,
   normalizeWorkbookUrl,
+  progressColor,
   roundPercent,
   summarizeWorkbookProgress,
   weightedOverallPercent,
@@ -134,6 +135,16 @@ test("formats percentages for display", () => {
   assert.equal(formatPercent(0), "0%")
   assert.equal(formatPercent(66.666), "66.7%")
   assert.equal(formatPercent(57.5), "57.5%")
+})
+
+test("interpolates workbook progress smoothly from red through orange and yellow to green", () => {
+  assert.equal(progressColor(0), "hsl(0 78% 45%)")
+  assert.equal(progressColor(25), "hsl(30 78% 45%)")
+  assert.equal(progressColor(50), "hsl(60 78% 45%)")
+  assert.equal(progressColor(75), "hsl(90 78% 45%)")
+  assert.equal(progressColor(100), "hsl(120 78% 45%)")
+  assert.equal(progressColor(-10), progressColor(0))
+  assert.equal(progressColor(120), progressColor(100))
 })
 
 test("only supervisors or admins may change checklist status", () => {

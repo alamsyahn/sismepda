@@ -18,7 +18,7 @@ export async function getClassRecords(date: Date): Promise<ClassRecord[]> {
     const count = (status: string) => day?.attendances.filter((a) => a.status === status).length ?? 0
     return {
       id: c.id, name: c.name, grade: c.grade as ClassRecord["grade"],
-      homeroom: c.homeroomUser?.name ?? "Belum ditentukan", totalStudents: c.students.length,
+      homeroom: c.homeroomUser?.name ?? "Belum ditentukan", homeroomId: c.homeroomUser?.id ?? null, totalStudents: c.students.length,
       submitted: Boolean(day), submittedAt: day ? new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit" }).format(day.submittedAt).replace(".", ":") : null,
       onTime: null, previousHadir: 0, previousTotal: 0,
       hadir: count("HADIR"), sakit: count("SAKIT"), izin: count("IZIN"), alfa: count("ALFA"), dispensasi: count("DISPENSASI"),

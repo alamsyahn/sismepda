@@ -5,6 +5,7 @@ export type ClassRecord = {
   name: string
   grade: "VII" | "VIII" | "IX"
   homeroom: string
+  homeroomId: string | null
   totalStudents: number
   hadir: number
   sakit: number
@@ -38,6 +39,7 @@ export type AbsentStudent = {
 
 export type ActivityItem = {
   id: string
+  teacherId: string
   teacher: string
   className: string
   action: string

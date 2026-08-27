@@ -2,6 +2,7 @@ import { PencilLine, PlusCircle, Bell, History } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import type { ActivityItem } from "@/lib/dashboard-data"
+import { ProfileNameLink } from "@/components/profile/profile-name-link"
 
 const typeMeta = {
   input: { icon: PlusCircle, className: "bg-[var(--chart-1)]/12 text-[var(--chart-1)]" },
@@ -39,7 +40,7 @@ export function RecentActivity({ items }: { items: ActivityItem[] }) {
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-foreground text-pretty">
-                    <span className="font-semibold">{item.teacher}</span> {item.action}{" "}
+                    <ProfileNameLink type="teacher" id={item.teacherId} name={item.teacher} className="font-semibold" /> {item.action}{" "}
                     <span className="font-medium text-primary">{item.className}</span>
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">

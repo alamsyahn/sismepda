@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { tableRowNumber } from "@/lib/table-row-number"
 
 export type DirectoryEntry = {
   id: string
@@ -97,14 +98,16 @@ export function TeacherDirectory({ teachers }: { teachers: DirectoryEntry[] }) {
           <div className="overflow-x-auto">
             <Table>
               <TableHeader><TableRow>
+                <TableHead className="w-12 text-center">No</TableHead>
                 <TableHead className="min-w-48">Nama</TableHead><TableHead>NIP</TableHead><TableHead>Status</TableHead>
                 <TableHead>Jabatan</TableHead><TableHead>Mata Pelajaran</TableHead><TableHead className="text-center">Jadwal</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">Tidak ada guru yang cocok dengan pencarian.</TableCell></TableRow>
-                ) : filtered.map((teacher) => (
+                  <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">Tidak ada guru yang cocok dengan pencarian.</TableCell></TableRow>
+                ) : filtered.map((teacher, index) => (
                   <TableRow key={teacher.id} className={teacher.active ? undefined : "opacity-65"}>
+                    <TableCell className="text-center text-muted-foreground tabular-nums">{tableRowNumber(index)}</TableCell>
                     <TableCell className="font-medium">
                       <Link href={`/guru/${teacher.id}`} className="underline-offset-4 transition-colors hover:text-primary hover:underline">{teacher.name}</Link>
                       {teacher.homeroom ? <span className="ml-2 text-xs text-muted-foreground">Wali {teacher.homeroom}</span> : null}

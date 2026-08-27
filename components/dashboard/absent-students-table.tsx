@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { statusMeta, type AbsentStudent } from "@/lib/dashboard-data"
 import { compareClassNames } from "@/lib/class-order"
+import { ProfileNameLink } from "@/components/profile/profile-name-link"
 
 function initials(name: string) {
   return name
@@ -228,9 +229,7 @@ export function AbsentStudentsTable({ students }: { students: AbsentStudent[] })
                                 {initials(s.name)}
                               </AvatarFallback>
                             </Avatar>
-                            <span className="truncate font-medium text-foreground">
-                              {s.name}
-                            </span>
+                            <ProfileNameLink type="student" id={s.id} name={s.name} className="truncate font-medium text-foreground" />
                           </div>
                         </TableCell>
                         <TableCell className="font-mono text-sm text-muted-foreground">

@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     const date = parseDateValue(new URL(request.url).searchParams.get("date"))
     const classes = await prisma.schoolClass.findMany({
       where: access.where,
-      include: { students: { where: { active: true }, orderBy: { name: "asc" } }, homeroomUser: { select: { name: true } }, attendanceDays: { where: { date }, include: { attendances: true, submittedBy: { select: { name: true } } } } },
+      include: { students: { where: { active: true }, orderBy: { name: "asc" } }, homeroomUser: { select: { id: true, name: true } }, attendanceDays: { where: { date }, include: { attendances: true, submittedBy: { select: { id: true, name: true } } } } },
       orderBy: { name: "asc" },
     })
     const holiday = await prisma.schoolHoliday.findUnique({ where: { date }, select: { id: true, name: true } })
@@ -50,6 +50,6 @@ export async function POST(request: Request) {
       const day = await tx.attendanceDay.upsert({ where: { classId_date: { classId: body.classId, date } }, update: { submittedById: user.id }, create: { classId: body.classId, date, submittedById: user.id } })
       for (const r of body.records) await tx.attendance.upsert({ where: { attendanceDayId_studentId: { attendanceDayId: day.id, studentId: r.studentId } }, update: { status: r.status, note: r.note }, create: { attendanceDayId: day.id, studentId: r.studentId, status: r.status, note: r.note } })
     })
-    return NextResponse.json({ ok: true, submittedAt: new Date().toISOString(), submittedBy: user.name ?? "Guru" })
+    return NextResponse.json({ ok: true, submittedAt: new Date().toISOString(), submittedBy: { id: user.id, name: user.name ?? "Guru" } })
   } catch { return NextResponse.json({ error: "Gagal menyimpan absensi" }, { status: 400 }) }
 }

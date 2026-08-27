@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { StatusToggle } from "@/components/absensi/status-toggle"
+import { ProfileNameLink } from "@/components/profile/profile-name-link"
 import type { InputStatus, RosterStudent } from "@/lib/attendance-input"
 
 type EditorProps = {
@@ -56,7 +57,7 @@ function DesktopTable({ roster, statuses, notes, onStatus, onNote }: EditorProps
                 {String(s.no).padStart(2, "0")}
               </TableCell>
               <TableCell className="py-3 font-mono text-sm text-muted-foreground">{s.nis ?? "-"}</TableCell>
-              <TableCell className="py-3 font-medium text-foreground">{s.name}</TableCell>
+              <TableCell className="py-3 font-medium text-foreground"><ProfileNameLink type="student" id={s.id} name={s.name} /></TableCell>
               <TableCell className="py-3">
                 <StatusToggle
                   value={statuses[s.id] ?? "belum"}
@@ -92,7 +93,7 @@ function MobileCards({ roster, statuses, notes, onStatus, onNote }: EditorProps)
             <span className="text-sm font-semibold tabular-nums text-muted-foreground">
               {String(s.no).padStart(2, "0")}.
             </span>
-            <span className="font-semibold text-foreground text-pretty">{s.name}</span>
+            <span className="font-semibold text-foreground text-pretty"><ProfileNameLink type="student" id={s.id} name={s.name} /></span>
           </div>
           <p className="text-xs text-muted-foreground">NIS: <span className="font-mono">{s.nis ?? "-"}</span></p>
           <StatusToggle

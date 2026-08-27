@@ -2,6 +2,10 @@ import Link from "next/link"
 import { ArrowRight, CheckCircle2, ClipboardPenLine, UserRoundX } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { AbsentStudent, ClassRecord } from "@/lib/dashboard-data"
+import {
+  dashboardAttendanceAction,
+  dashboardWhatsappReportAction,
+} from "@/lib/dashboard-navigation"
 
 export function OperationalBrief({
   records,
@@ -15,6 +19,8 @@ export function OperationalBrief({
   const pending = records.filter((record) => !record.submitted)
   const urgentAbsences = absentStudents.filter((student) => student.status === "alfa")
   const nextClass = pending[0]
+  const attendanceAction = dashboardAttendanceAction(date)
+  const reportAction = dashboardWhatsappReportAction(date)
 
   return (
     <section aria-labelledby="operational-brief-title" className="overflow-hidden rounded-2xl bg-foreground text-background">
@@ -35,35 +41,23 @@ export function OperationalBrief({
               : `Prioritaskan ${nextClass?.name ?? "kelas yang belum input"} agar ringkasan sekolah segera lengkap.`}
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
-            {nextClass ? (
-              <Button
-                size="lg"
-                nativeButton={false}
-                className="min-h-11 bg-background px-4 text-foreground hover:bg-background/90"
-                render={<Link href={`/absensi/input?date=${encodeURIComponent(date)}&classId=${encodeURIComponent(nextClass.id)}`} />}
-              >
-                Input {nextClass.name}
-                <ArrowRight className="size-4" />
-              </Button>
-            ) : (
-              <Button
-                size="lg"
-                nativeButton={false}
-                className="min-h-11 bg-background px-4 text-foreground hover:bg-background/90"
-                render={<Link href={`/rekap-siswa?date=${encodeURIComponent(date)}`} />}
-              >
-                Tinjau rekap siswa
-                <ArrowRight className="size-4" />
-              </Button>
-            )}
+            <Button
+              size="lg"
+              nativeButton={false}
+              className="min-h-11 bg-background px-4 text-foreground hover:bg-background/90"
+              render={<Link href={attendanceAction.href} />}
+            >
+              {attendanceAction.label}
+              <ArrowRight className="size-4" />
+            </Button>
             <Button
               size="lg"
               variant="ghost"
               nativeButton={false}
               className="min-h-11 px-4 text-background hover:bg-background/10 hover:text-background"
-              render={<Link href={`/laporan-whatsapp?date=${encodeURIComponent(date)}`} />}
+              render={<Link href={reportAction.href} />}
             >
-              Siapkan laporan
+              {reportAction.label}
             </Button>
           </div>
         </div>

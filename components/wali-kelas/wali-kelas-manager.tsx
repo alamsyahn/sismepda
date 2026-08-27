@@ -27,6 +27,7 @@ import { TeacherCombobox } from "@/components/wali-kelas/teacher-combobox"
 import type { Teacher, WaliKelasClass } from "@/lib/wali-kelas"
 import { toast } from "sonner"
 import { ExportButton } from "@/components/export/export-button"
+import { tableRowNumber } from "@/lib/table-row-number"
 
 type Assignments = Record<string, string> // classId -> teacherId
 
@@ -170,16 +171,18 @@ export function WaliKelasManager() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12 text-center">No</TableHead>
                 <TableHead className="w-28">Kelas</TableHead>
                 <TableHead>Wali Kelas</TableHead>
                 <TableHead className="w-40">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {waliKelasClasses.map((cls) => {
+              {waliKelasClasses.map((cls, index) => {
                 const teacherId = assignments[cls.id] ?? null
                 return (
                   <TableRow key={cls.id}>
+                    <TableCell className="text-center align-top text-muted-foreground tabular-nums">{tableRowNumber(index)}</TableCell>
                     <TableCell className="align-top">
                       <span className="inline-flex items-center font-semibold text-foreground">
                         {cls.name}

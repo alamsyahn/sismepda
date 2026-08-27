@@ -14,6 +14,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { compareClassNames } from "@/lib/class-order"
 import { ExportButton } from "@/components/export/export-button"
+import { tableRowNumber } from "@/lib/table-row-number"
+import { ProfileNameLink } from "@/components/profile/profile-name-link"
 
 type Student = { id: string; nis: string | null; nisn: string | null; name: string; className: string; active: boolean }
 type EditValues = { nis: string; nisn: string; name: string; className: string }
@@ -160,11 +162,12 @@ export function StudentManager() {
       </Card>
 
       <Card><CardContent className="p-0"><div className="overflow-x-auto"><Table>
-        <TableHeader><TableRow><SortableHead label="Nama Siswa" sortKey="name" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} /><SortableHead label="NIS" sortKey="nis" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} /><SortableHead label="NISN" sortKey="nisn" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} /><SortableHead label="Kelas" sortKey="className" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} /><SortableHead label="Status" sortKey="active" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} /><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
+        <TableHeader><TableRow><TableHead className="w-12 text-center">No</TableHead><SortableHead label="Nama Siswa" sortKey="name" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} /><SortableHead label="NIS" sortKey="nis" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} /><SortableHead label="NISN" sortKey="nisn" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} /><SortableHead label="Kelas" sortKey="className" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} /><SortableHead label="Status" sortKey="active" activeKey={sortKey} direction={sortDirection} onSort={toggleSort} /><TableHead className="text-right">Aksi</TableHead></TableRow></TableHeader>
         <TableBody>
-          {loading ? <TableRow><TableCell colSpan={6} className="py-12 text-center"><Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" /></TableCell></TableRow> : filtered.length === 0 ? <TableRow><TableCell colSpan={6} className="py-12 text-center text-muted-foreground">Tidak ada siswa yang sesuai.</TableCell></TableRow> : filtered.map((student) => (
+          {loading ? <TableRow><TableCell colSpan={7} className="py-12 text-center"><Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" /></TableCell></TableRow> : filtered.length === 0 ? <TableRow><TableCell colSpan={7} className="py-12 text-center text-muted-foreground">Tidak ada siswa yang sesuai.</TableCell></TableRow> : filtered.map((student, index) => (
             <TableRow key={student.id} className={!student.active ? "opacity-65" : undefined}>
-              <TableCell className="font-medium">{student.name}</TableCell><TableCell className="font-mono text-sm">{student.nis ?? "-"}</TableCell><TableCell className="font-mono text-sm">{student.nisn ?? "-"}</TableCell><TableCell>{student.className}</TableCell>
+              <TableCell className="text-center text-muted-foreground tabular-nums">{tableRowNumber(index)}</TableCell>
+              <TableCell className="font-medium"><ProfileNameLink type="student" id={student.id} name={student.name} /></TableCell><TableCell className="font-mono text-sm">{student.nis ?? "-"}</TableCell><TableCell className="font-mono text-sm">{student.nisn ?? "-"}</TableCell><TableCell>{student.className}</TableCell>
               <TableCell><Badge variant={student.active ? "default" : "secondary"}>{student.active ? "Aktif" : "Nonaktif"}</Badge></TableCell>
               <TableCell><div className="flex justify-end gap-2"><Button render={<Link href={`/siswa/${student.id}`} />} nativeButton={false} variant="outline" size="sm"><Eye className="size-4" /> Profil</Button><Button variant="outline" size="sm" onClick={() => openEdit(student)}><Pencil className="size-4" /> Edit</Button><Button variant="outline" size="sm" onClick={() => setStatusTarget(student)}>{student.active ? <UserX className="size-4" /> : <UserCheck className="size-4" />}{student.active ? "Nonaktifkan" : "Aktifkan"}</Button><Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => { setDeleteTarget(student); setDeleteConfirmation("") }}><Trash2 className="size-4" /> Hapus</Button></div></TableCell>
             </TableRow>

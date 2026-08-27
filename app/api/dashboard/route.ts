@@ -24,7 +24,21 @@ export async function GET(request: Request) {
     const holiday = await prisma.schoolHoliday.findUnique({ where: { date }, select: { id: true, name: true } })
     const rows = await prisma.schoolClass.findMany({
       where: classWhere,
-      include: { students: { where: { active: true } }, homeroomUser: { select: { name: true } }, attendanceDays: { where: { date }, include: { attendances: { include: { student: { include: { attendances: { select: { status: true } } } } } } } } }, orderBy: { name: "asc" },
+      include: {
+        students: { where: { active: true } },
+        homeroomUser: { select: { id: true, name: true } },
+        attendanceDays: {
+          where: { date },
+          include: {
+            attendances: {
+              include: {
+                student: { include: { attendances: { select: { status: true } } } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { name: "asc" },
     })
     const [setting, priorDays, priorHolidays] = await Promise.all([
       prisma.schoolSetting.findUnique({ where: { id: "default" }, select: { attendanceCloseTime: true } }),
@@ -39,11 +53,11 @@ export async function GET(request: Request) {
     const classes = sortClasses(rows).map((c) => {
       const day = c.attendanceDays[0]; const count = (status: string) => day?.attendances.filter((a) => a.status === status).length ?? 0
       const previous = previousByClass.get(c.id) ?? []
-      return { id: c.id, name: c.name, grade: c.grade, homeroom: c.homeroomUser?.name ?? "Belum ditentukan", totalStudents: c.students.length, submitted: Boolean(day), submittedAt: day ? new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit", hour12: false }).format(day.submittedAt).replace(".", ":") : null, onTime: day ? jakartaMinutes(day.submittedAt) <= closeMinutes : null, hadir: count("HADIR"), sakit: count("SAKIT"), izin: count("IZIN"), alfa: count("ALFA"), dispensasi: count("DISPENSASI"), previousHadir: previous.filter((attendance) => attendance.status === "HADIR").length, previousTotal: previous.length }
+      return { id: c.id, name: c.name, grade: c.grade, homeroom: c.homeroomUser?.name ?? "Belum ditentukan", homeroomId: c.homeroomUser?.id ?? null, totalStudents: c.students.length, submitted: Boolean(day), submittedAt: day ? new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit", hour12: false }).format(day.submittedAt).replace(".", ":") : null, onTime: day ? jakartaMinutes(day.submittedAt) <= closeMinutes : null, hadir: count("HADIR"), sakit: count("SAKIT"), izin: count("IZIN"), alfa: count("ALFA"), dispensasi: count("DISPENSASI"), previousHadir: previous.filter((attendance) => attendance.status === "HADIR").length, previousTotal: previous.length }
     })
-    const absentStudents = rows.flatMap((c) => c.attendanceDays[0]?.attendances.filter((a) => a.status !== "HADIR").map((a) => { const count = (status: string) => a.student.attendances.filter((item) => item.status === status).length; return { id: a.id, name: a.student.name, nis: a.student.nis, nisn: a.student.nisn, className: c.name, status: a.status.toLowerCase(), note: a.note ?? "-", history: { sakit: count("SAKIT"), izin: count("IZIN"), alfa: count("ALFA"), dispensasi: count("DISPENSASI") } } }) ?? [])
+    const absentStudents = rows.flatMap((c) => c.attendanceDays[0]?.attendances.filter((a) => a.status !== "HADIR").map((a) => { const count = (status: string) => a.student.attendances.filter((item) => item.status === status).length; return { id: a.student.id, name: a.student.name, nis: a.student.nis, nisn: a.student.nisn, className: c.name, status: a.status.toLowerCase(), note: a.note ?? "-", history: { sakit: count("SAKIT"), izin: count("IZIN"), alfa: count("ALFA"), dispensasi: count("DISPENSASI") } } }) ?? [])
     const recentDays = await prisma.attendanceDay.findMany({ where: { date, schoolClass: classWhere }, include: { schoolClass: true, submittedBy: true, attendances: { select: { status: true } } }, orderBy: { updatedAt: "desc" }, take: 7 })
-    const recentActivity = recentDays.map((day) => { const edited = day.updatedAt.getTime() - day.submittedAt.getTime() > 1000; return { id: day.id, teacher: day.submittedBy.name, className: day.schoolClass.name, action: edited ? "memperbarui absensi" : "menginput absensi", time: new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit", hour12: false }).format(day.updatedAt).replace(".", ":"), type: edited ? "edit" : "input" } })
+    const recentActivity = recentDays.map((day) => { const edited = day.updatedAt.getTime() - day.submittedAt.getTime() > 1000; return { id: day.id, teacherId: day.submittedBy.id, teacher: day.submittedBy.name, className: day.schoolClass.name, action: edited ? "memperbarui absensi" : "menginput absensi", time: new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit", hour12: false }).format(day.updatedAt).replace(".", ":"), type: edited ? "edit" : "input" } })
     const [trendDays, holidays] = await Promise.all([
       prisma.attendanceDay.findMany({ where: { date: { lte: date }, schoolClass: classWhere }, select: { date: true, attendances: { select: { status: true } } }, orderBy: { date: "desc" } }),
       prisma.schoolHoliday.findMany({ where: { date: { lte: date } }, select: { date: true } }),

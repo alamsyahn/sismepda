@@ -25,7 +25,7 @@ export default async function SupervisiBukuKerjaPage() {
         description="Pantau kelengkapan Buku Kerja seluruh guru dan tandai status setiap komponen."
         action={
           viewer.role === "ADMIN" ? (
-            <Button variant="outline" render={<Link href="/supervisi-buku-kerja/kelola" />}>
+            <Button variant="outline" size="lg" nativeButton={false} className="min-h-11 px-4" render={<Link href="/supervisi-buku-kerja/kelola" />}>
               <Settings2 className="size-4" />
               Kelola Peserta
             </Button>

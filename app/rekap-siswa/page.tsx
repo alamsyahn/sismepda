@@ -26,6 +26,7 @@ import { formatLongDate, localDateValue } from "@/lib/date"
 import { StatusPill } from "@/components/dashboard/status-pill"
 import type { StudentRow } from "@/lib/dashboard-data"
 import { ExportButton } from "@/components/export/export-button"
+import { tableRowNumber } from "@/lib/table-row-number"
 
 const PAGE_SIZE = 15
 
@@ -102,6 +103,7 @@ export default function RekapSiswaPage() {
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-12 text-center">No</TableHead>
                   <TableHead className="min-w-48">Nama Siswa</TableHead>
                   <TableHead>NIS</TableHead>
                   <TableHead>NISN</TableHead>
@@ -115,8 +117,9 @@ export default function RekapSiswaPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {shown.map((s) => (
+                {shown.map((s, index) => (
                   <TableRow key={s.id}>
+                    <TableCell className="text-center text-muted-foreground tabular-nums">{tableRowNumber(index)}</TableCell>
                     <TableCell className="font-medium"><Link href={`/siswa/${s.id}`} className="text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline">{s.name}</Link></TableCell>
                     <TableCell className="font-mono text-sm text-muted-foreground">{s.nis ?? "-"}</TableCell>
                     <TableCell className="font-mono text-sm text-muted-foreground">{s.nisn ?? "-"}</TableCell>

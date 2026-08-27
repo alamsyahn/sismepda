@@ -26,7 +26,7 @@ export async function readStudentProfile(user: UserIdentity, studentId: string, 
       nis: true,
       nisn: true,
       active: true,
-      schoolClass: { select: { name: true, grade: true, homeroomUser: { select: { name: true } } } },
+      schoolClass: { select: { name: true, grade: true, homeroomUser: { select: { id: true, name: true } } } },
     },
   })
   if (!student) return null
@@ -48,7 +48,7 @@ export async function readStudentProfile(user: UserIdentity, studentId: string, 
     prisma.attendance.count({ where: historyWhere }),
     prisma.studentViolationPoint.findMany({
       where: { studentId },
-      select: { id: true, category: true, points: true, note: true, occurredAt: true, createdAt: true, recordedBy: { select: { name: true } } },
+      select: { id: true, category: true, points: true, note: true, occurredAt: true, createdAt: true, recordedBy: { select: { id: true, name: true } } },
       orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
     }),
   ])
@@ -61,7 +61,7 @@ export async function readStudentProfile(user: UserIdentity, studentId: string, 
       status: true,
       note: true,
       attendanceDay: {
-        select: { date: true, updatedAt: true, submittedBy: { select: { name: true } } },
+        select: { date: true, updatedAt: true, submittedBy: { select: { id: true, name: true } } },
       },
     },
     orderBy: { attendanceDay: { date: "desc" } },

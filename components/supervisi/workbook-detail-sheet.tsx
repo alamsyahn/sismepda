@@ -14,8 +14,9 @@ import {
 } from "@/components/ui/sheet"
 import { StatusIcon, StatusLegend } from "@/components/supervisi/status-icon"
 import { cn } from "@/lib/utils"
-import { formatPercent, statusLabels, type WorkbookItemStatus } from "@/lib/workbook"
+import { formatPercent, progressColor, statusLabels, type WorkbookItemStatus } from "@/lib/workbook"
 import type { TeacherSupervisionRow, WorkbookMaster } from "@/lib/server-workbook"
+import { ProfileNameLink } from "@/components/profile/profile-name-link"
 
 const options: WorkbookItemStatus[] = ["UNREVIEWED", "PRESENT", "MISSING"]
 
@@ -70,21 +71,21 @@ export function WorkbookDetailSheet({
           <>
             <SheetHeader className="border-b p-5">
               <SheetTitle className="text-base">{workbook.name}</SheetTitle>
-              <SheetDescription className="text-foreground">{teacher.name}</SheetDescription>
+              <SheetDescription className="text-foreground"><ProfileNameLink type="teacher" id={teacher.id} name={teacher.name} /></SheetDescription>
             </SheetHeader>
 
             <div className="space-y-5 p-5">
               <div className="space-y-2">
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-sm text-muted-foreground">Progress</span>
+                  <span className="text-sm text-muted-foreground">Kelengkapan</span>
                   <span className="text-sm font-semibold text-foreground tabular-nums">
                     {cell.presentCount}/{cell.totalCount} — {formatPercent(cell.percent)}
                   </span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                   <div
-                    className="h-full rounded-full bg-primary motion-safe:transition-all motion-safe:duration-500"
-                    style={{ width: `${cell.percent}%` }}
+                    className="h-full rounded-full motion-safe:transition-[width,background-color] motion-safe:duration-700 motion-safe:ease-out"
+                    style={{ width: `${cell.percent}%`, backgroundColor: progressColor(cell.percent) }}
                   />
                 </div>
               </div>
@@ -92,7 +93,9 @@ export function WorkbookDetailSheet({
               {cell.url ? (
                 <Button
                   variant="outline"
-                  className="w-full"
+                  size="lg"
+                  nativeButton={false}
+                  className="min-h-11 w-full"
                   render={<a href={cell.url} target="_blank" rel="noopener noreferrer" />}
                 >
                   <ExternalLink className="size-4" />
@@ -143,7 +146,7 @@ export function WorkbookDetailSheet({
                               disabled={pending}
                               onClick={() => changeStatus(item.id, option)}
                               className={cn(
-                                "flex min-h-10 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors disabled:opacity-50",
+                                "flex min-h-11 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors disabled:opacity-50",
                                 status === option
                                   ? "border-primary bg-primary/10 text-foreground"
                                   : "border-border text-muted-foreground hover:bg-muted",
