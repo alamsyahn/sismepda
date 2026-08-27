@@ -3,6 +3,7 @@ import { getClassAccess } from "@/lib/class-access"
 import { prisma } from "@/lib/prisma"
 import { summarizeStudentAttendance } from "@/lib/student-profile"
 import { clampProfilePage, parseProfileDateRange } from "@/lib/student-profile-query"
+import { summarizeViolationPoints } from "@/lib/student-violation-points"
 
 type UserIdentity = { id: string; role: "ADMIN" | "GURU" }
 
@@ -38,13 +39,18 @@ export async function readStudentProfile(user: UserIdentity, studentId: string, 
   const baseWhere = { studentId, attendanceDay: dateWhere ? { date: dateWhere } : undefined }
   const historyWhere = { ...baseWhere, status }
 
-  const [allRecords, totalHistory] = await Promise.all([
+  const [allRecords, totalHistory, violationPoints] = await Promise.all([
     prisma.attendance.findMany({
       where: baseWhere,
       select: { status: true, attendanceDay: { select: { date: true } } },
       orderBy: { attendanceDay: { date: "asc" } },
     }),
     prisma.attendance.count({ where: historyWhere }),
+    prisma.studentViolationPoint.findMany({
+      where: { studentId },
+      select: { id: true, category: true, points: true, note: true, occurredAt: true, createdAt: true, recordedBy: { select: { name: true } } },
+      orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
+    }),
   ])
   const totalPages = Math.max(1, Math.ceil(totalHistory / pageSize))
   const page = clampProfilePage(filter.page, totalPages)
@@ -66,11 +72,14 @@ export async function readStudentProfile(user: UserIdentity, studentId: string, 
   const summary = summarizeStudentAttendance(
     allRecords.map((record) => ({ date: record.attendanceDay.date, status: record.status })),
   )
+  const pointSummary = summarizeViolationPoints(violationPoints)
 
   return {
     student,
     summary,
     history,
+    violationPoints,
+    pointSummary,
     pagination: { page, pageSize, total: totalHistory, totalPages },
     filters: { from: from ? filter.from ?? "" : "", to: to ? filter.to ?? "" : "", status: status?.toLowerCase() ?? "all" },
   }

@@ -37,7 +37,7 @@ export function WeeklyTrend({ data }: { data: WeeklyTrendPoint[] }) {
             </CardTitle>
             <CardDescription>Rata-rata persentase kehadiran 6 hari masuk terakhir</CardDescription>
           </div>
-          <span className="rounded-full bg-[var(--chart-1)]/12 px-2.5 py-1 text-sm font-semibold text-[var(--chart-1)] tabular-nums">
+          <span className="rounded-full bg-success/10 px-2.5 py-1 text-sm font-semibold text-success-foreground tabular-nums">
             {avg}%
           </span>
         </div>
@@ -53,6 +53,7 @@ export function WeeklyTrend({ data }: { data: WeeklyTrendPoint[] }) {
           preserveAspectRatio="none"
           role="img"
           aria-label="Grafik tren kehadiran mingguan"
+          aria-describedby="weekly-trend-data"
         >
           <defs>
             <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
@@ -78,6 +79,11 @@ export function WeeklyTrend({ data }: { data: WeeklyTrendPoint[] }) {
             <span key={d.day}>{d.day}</span>
           ))}
         </div>
+        <ul id="weekly-trend-data" className="sr-only">
+          {trend.map((item) => (
+            <li key={item.day}>{item.day}: {item.rate}% hadir</li>
+          ))}
+        </ul>
       </CardContent>
     </Card>
   )

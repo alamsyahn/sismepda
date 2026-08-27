@@ -20,6 +20,12 @@ enum AttendanceStatus {
   DISPENSASI
 }
 
+enum EmploymentStatus {
+  PNS
+  PPPK
+  HONORER
+}
+
 model User {
   id String @id @default(cuid())
   email String? @unique
@@ -36,6 +42,55 @@ model User {
   updatedAt DateTime @updatedAt
   homeroomClass SchoolClass?
   submissions AttendanceDay[]
+  violationPoints StudentViolationPoint[]
+  canManageTeacherProfiles Boolean @default(false)
+  employmentStatus EmploymentStatus?
+  position String?
+  teachingSince DateTime?
+  belajarId String?
+  teacherSubjects TeacherSubject[]
+  teachingAssignments TeachingAssignment[]
+  additionalDuties AdditionalDuty[]
+}
+
+model Subject {
+  id String @id @default(cuid())
+  name String @unique
+  teacherSubjects TeacherSubject[]
+  assignments TeachingAssignment[]
+}
+
+model TeacherSubject {
+  id String @id @default(cuid())
+  userId String
+  subjectId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  @@unique([userId, subjectId])
+}
+
+model TeachingAssignment {
+  id String @id @default(cuid())
+  userId String
+  classId String
+  subjectId String
+  day Int
+  periodStart Int
+  periodEnd Int
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schoolClass SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  @@index([userId, day, periodStart])
+}
+
+model AdditionalDuty {
+  id String @id @default(cuid())
+  userId String
+  title String
+  note String?
+  startDate DateTime?
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
 }
 
 model SchoolClass {
@@ -46,6 +101,7 @@ model SchoolClass {
   homeroomUser User? @relation(fields: [homeroomUserId], references: [id], onDelete: SetNull)
   students Student[]
   attendanceDays AttendanceDay[]
+  teachingAssignments TeachingAssignment[]
 }
 
 model Student {
@@ -57,6 +113,22 @@ model Student {
   classId String
   schoolClass SchoolClass @relation(fields: [classId], references: [id])
   attendances Attendance[]
+  violationPoints StudentViolationPoint[]
+}
+
+model StudentViolationPoint {
+  id String @id @default(cuid())
+  studentId String
+  recordedById String
+  category String
+  points Int
+  note String?
+  occurredAt DateTime
+  createdAt DateTime @default(now())
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  recordedBy User @relation(fields: [recordedById], references: [id])
+
+  @@index([studentId, occurredAt])
 }
 
 model AttendanceDay {

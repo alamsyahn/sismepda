@@ -27,18 +27,18 @@ export function DashboardHeader({ selectedClass, onClassChange, classes, date, o
     ? `/absensi/input?date=${encodeURIComponent(date)}`
     : `/absensi/input?date=${encodeURIComponent(date)}&classId=${encodeURIComponent(selectedClass)}`
   return (
-    <header className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+    <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
       <div className="flex items-start gap-3">
-        <span className="hidden size-11 items-center justify-center rounded-2xl bg-primary/12 text-primary sm:flex">
+        <span className="hidden size-11 items-center justify-center rounded-xl bg-primary/10 text-primary sm:flex">
           <GraduationCap className="size-6" />
         </span>
         <div className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight text-foreground text-balance sm:text-3xl">
-            Dashboard
+            Ringkasan Sekolah
           </h1>
           <p className="text-sm text-muted-foreground text-pretty">
-            Ringkasan absensi dan kelengkapan input pada{" "}
-            <span className="text-base font-bold text-foreground">{formatLongDate(date)}</span>
+            Absensi dan pekerjaan yang perlu ditindaklanjuti pada{" "}
+            <span className="font-semibold text-foreground">{formatLongDate(date)}</span>
           </p>
         </div>
       </div>
@@ -63,7 +63,7 @@ export function DashboardHeader({ selectedClass, onClassChange, classes, date, o
           </SelectContent>
         </Select>
 
-        <Button className="shadow-sm" render={<Link href={attendanceHref} />}>
+        <Button size="lg" nativeButton={false} className="min-h-11 px-4" render={<Link href={attendanceHref} />}>
           <Plus className="size-4" />
           Input Absensi
         </Button>

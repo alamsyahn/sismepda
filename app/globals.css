@@ -72,6 +72,12 @@
   --chart-4: oklch(0.78 0.14 75);
   --chart-5: oklch(0.66 0.18 20);
   --chart-6: oklch(0.55 0.095 262);
+  --success: oklch(0.92 0.035 155);
+  --success-foreground: oklch(0.35 0.1 155);
+  --danger: oklch(0.94 0.035 22);
+  --danger-foreground: oklch(0.42 0.16 22);
+  --info: oklch(0.93 0.035 245);
+  --info-foreground: oklch(0.38 0.12 245);
   --radius: 0.875rem;
   --sidebar: oklch(0.99 0.005 275);
   --sidebar-foreground: oklch(0.28 0.03 275);
@@ -183,5 +189,27 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 24%, transparent);
+    color: var(--foreground);
+  }
+}
+
+@theme inline {
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

@@ -6,6 +6,7 @@ import {
   UserRoundPlus,
   Contact,
   UserRoundCog,
+  IdCard,
   Building2,
   BookOpen,
   Users,
@@ -66,6 +67,13 @@ export const navItems: NavItem[] = [
     icon: Contact,
     description: "Edit akun dan status guru",
     roles: ["ADMIN"],
+  },
+  {
+    title: "Direktori Guru",
+    href: "/guru/direktori",
+    icon: IdCard,
+    description: "Profil lengkap, jadwal, dan data kepegawaian guru",
+    roles: ["ADMIN", "GURU"],
   },
   {
     title: "Wali Kelas",
