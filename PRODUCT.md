@@ -42,11 +42,12 @@ SISMEPDA adalah sistem operasional sekolah all-in-one yang menghubungkan data li
 - Profil siswa beserta riwayat absensi dan poin pelanggaran.
 - Direktori dan profil guru, data kepegawaian, mata pelajaran, tugas tambahan, serta penugasan/jadwal mengajar.
 - Pengaturan sekolah, hari libur, periode input absensi, dan batas akses guru.
+- Supervisi Buku Kerja guru: tautan Buku Kerja 1–4 diisi guru di profilnya, checklist 19 komponen berstatus tiga nilai (belum diperiksa/ada/tidak ada) oleh tim Kurikulum, dashboard kelengkapan berbobot 25% per Buku Kerja, serta pencatatan audit setiap perubahan.
 
 ### Belum diimplementasikan atau belum lengkap
 
 - Inventaris sarana-prasarana, kondisi aset, kebutuhan perbaikan, dan pengadaan.
-- Daftar buku kerja guru dengan pemeriksaan kelengkapan berbasis centang.
+- Daftar buku kerja guru dengan pemeriksaan kelengkapan berbasis centang. *(Selesai — lihat halaman Supervisi Buku Kerja.)*
 - Alokasi dan saldo dana BOS.
 - Pengalaman jadwal operasional yang menjawab: jadwal guru hari ini, pelajaran saat ini, daftar siswa yang diajar hari ini, jadwal guru lain, guru yang seharusnya mengajar suatu kelas saat ini, dan penyesuaian jam pelajaran.
 

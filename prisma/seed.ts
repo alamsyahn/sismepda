@@ -3,6 +3,7 @@ import { hash } from "bcryptjs"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { PrismaClient, Role } from "../app/generated/prisma/client"
 import { databaseSchema } from "../lib/database-config"
+import { workbookMasterData } from "../lib/workbook-master"
 
 function requiredEnv(name: "DATABASE_URL" | "SEED_ADMIN_EMAIL" | "SEED_ADMIN_PASSWORD") {
   const value = process.env[name]
@@ -35,6 +36,36 @@ async function main() {
     await prisma.schoolClass.upsert({ where: { name }, update: {}, create: { name, grade: name.split(" ")[0] } })
   }
   await prisma.schoolSetting.upsert({ where: { id: "default" }, update: {}, create: {} })
+  await seedWorkbooks()
+}
+
+/** Idempotent: re-running keeps a single row per workbook and per item. */
+async function seedWorkbooks() {
+  for (const [index, entry] of workbookMasterData.entries()) {
+    const workbook = await prisma.workbook.upsert({
+      where: { number: entry.number },
+      update: { name: entry.name, weight: entry.weight, sortOrder: index + 1 },
+      create: { number: entry.number, name: entry.name, weight: entry.weight, sortOrder: index + 1 },
+      select: { id: true },
+    })
+
+    for (const [itemIndex, name] of entry.items.entries()) {
+      await prisma.workbookItem.upsert({
+        where: { workbookId_sortOrder: { workbookId: workbook.id, sortOrder: itemIndex + 1 } },
+        update: { name },
+        create: { workbookId: workbook.id, name, sortOrder: itemIndex + 1 },
+      })
+    }
+
+    // Drop items removed from the master list so the checklist never shows stale rows.
+    await prisma.workbookItem.deleteMany({
+      where: { workbookId: workbook.id, sortOrder: { gt: entry.items.length } },
+    })
+  }
+
+  await prisma.workbook.deleteMany({
+    where: { number: { notIn: workbookMasterData.map((entry) => entry.number) } },
+  })
 }
 
 main().finally(() => prisma.$disconnect())

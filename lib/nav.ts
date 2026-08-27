@@ -1,6 +1,7 @@
 import {
   LayoutDashboard,
   ClipboardCheck,
+  ClipboardList,
   UserPlus,
   UserCog,
   UserRoundPlus,
@@ -17,12 +18,37 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+export type NavCapability = "workbookSupervision"
+
 export type NavItem = {
   title: string
   href: string
   icon: LucideIcon
   description: string
   roles: Array<"ADMIN" | "GURU">
+  /** When set, the item also requires this capability (ADMIN always passes). */
+  capability?: NavCapability
+}
+
+export type NavViewer = {
+  role: "ADMIN" | "GURU"
+  canSuperviseWorkbooks?: boolean
+  canViewWorkbookSupervision?: boolean
+}
+
+/** Nav filtering mirrors the server-side guards; it never grants access on its own. */
+export function visibleNavItems(viewer: NavViewer): NavItem[] {
+  return navItems.filter((item) => {
+    if (!item.roles.includes(viewer.role)) return false
+    if (item.capability === "workbookSupervision") {
+      return (
+        viewer.role === "ADMIN" ||
+        viewer.canSuperviseWorkbooks === true ||
+        viewer.canViewWorkbookSupervision === true
+      )
+    }
+    return true
+  })
 }
 
 export const navItems: NavItem[] = [
@@ -74,6 +100,14 @@ export const navItems: NavItem[] = [
     icon: IdCard,
     description: "Profil lengkap, jadwal, dan data kepegawaian guru",
     roles: ["ADMIN", "GURU"],
+  },
+  {
+    title: "Supervisi Buku Kerja",
+    href: "/supervisi-buku-kerja",
+    icon: ClipboardList,
+    description: "Pantau kelengkapan Buku Kerja seluruh guru",
+    roles: ["ADMIN", "GURU"],
+    capability: "workbookSupervision",
   },
   {
     title: "Wali Kelas",

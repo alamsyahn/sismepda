@@ -26,6 +26,12 @@ enum EmploymentStatus {
   HONORER
 }
 
+enum WorkbookItemStatus {
+  UNREVIEWED
+  PRESENT
+  MISSING
+}
+
 model User {
   id String @id @default(cuid())
   email String? @unique
@@ -51,6 +57,13 @@ model User {
   teacherSubjects TeacherSubject[]
   teachingAssignments TeachingAssignment[]
   additionalDuties AdditionalDuty[]
+  canSuperviseWorkbooks Boolean @default(false)
+  canViewWorkbookSupervision Boolean @default(false)
+  workbookSupervised Boolean @default(true)
+  workbookLinks TeacherWorkbook[]
+  workbookItemStatuses TeacherWorkbookItemStatus[] @relation("WorkbookItemStatusTeacher")
+  workbookReviews TeacherWorkbookItemStatus[] @relation("WorkbookItemStatusReviewer")
+  auditLogs AuditLog[]
 }
 
 model Subject {
@@ -176,4 +189,72 @@ model SchoolHoliday {
   date DateTime @unique
   name String
   createdAt DateTime @default(now())
+}
+
+model Workbook {
+  id String @id @default(cuid())
+  number Int @unique
+  name String
+  weight Int @default(25)
+  sortOrder Int
+  items WorkbookItem[]
+  teacherWorkbooks TeacherWorkbook[]
+}
+
+model WorkbookItem {
+  id String @id @default(cuid())
+  workbookId String
+  name String
+  sortOrder Int
+  workbook Workbook @relation(fields: [workbookId], references: [id], onDelete: Cascade)
+  statuses TeacherWorkbookItemStatus[]
+  @@unique([workbookId, sortOrder])
+  @@index([workbookId])
+}
+
+model TeacherWorkbook {
+  id String @id @default(cuid())
+  userId String
+  workbookId String
+  url String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workbook Workbook @relation(fields: [workbookId], references: [id], onDelete: Cascade)
+  @@unique([userId, workbookId])
+  @@index([workbookId])
+}
+
+model TeacherWorkbookItemStatus {
+  id String @id @default(cuid())
+  userId String
+  workbookItemId String
+  status WorkbookItemStatus @default(UNREVIEWED)
+  reviewedById String?
+  reviewedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation("WorkbookItemStatusTeacher", fields: [userId], references: [id], onDelete: Cascade)
+  workbookItem WorkbookItem @relation(fields: [workbookItemId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("WorkbookItemStatusReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  @@unique([userId, workbookItemId])
+  @@index([userId])
+  @@index([workbookItemId])
+}
+
+model AuditLog {
+  id String @id @default(cuid())
+  actorId String?
+  action String
+  entity String
+  entityId String
+  targetUserId String?
+  summary String?
+  before Json?
+  after Json?
+  createdAt DateTime @default(now())
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  @@index([entity, entityId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([createdAt])
 }

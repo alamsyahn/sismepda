@@ -76,7 +76,11 @@ export function TeacherDirectory({ teachers }: { teachers: DirectoryEntry[] }) {
             <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari nama, NIP, jabatan, atau mapel..." className="pl-9" />
           </div>
           <Select value={status} onValueChange={(value) => value && setStatus(value)}>
-            <SelectTrigger aria-label="Filter status kepegawaian"><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label="Filter status kepegawaian">
+              <SelectValue>
+                {(value: string) => (value === "all" ? "Semua status" : employmentLabels[value] ?? "Semua status")}
+              </SelectValue>
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Semua status</SelectItem>
               <SelectItem value="PNS">PNS</SelectItem>

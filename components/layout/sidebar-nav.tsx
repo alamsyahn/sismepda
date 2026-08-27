@@ -6,13 +6,18 @@ import { GraduationCap } from "lucide-react"
 import { LogOut } from "lucide-react"
 import { signOut, useSession } from "next-auth/react"
 import { cn } from "@/lib/utils"
-import { navItems } from "@/lib/nav"
+import { visibleNavItems } from "@/lib/nav"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
   const { data: session } = useSession()
   const role = session?.user.role ?? "GURU"
+  const items = visibleNavItems({
+    role,
+    canSuperviseWorkbooks: session?.user.canSuperviseWorkbooks,
+    canViewWorkbookSupervision: session?.user.canViewWorkbookSupervision,
+  })
 
   return (
     <div className="flex h-full flex-col">
@@ -27,7 +32,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-2" aria-label="Navigasi utama">
-        {navItems.filter((item) => item.roles.includes(role)).map((item) => {
+        {items.map((item) => {
           const Icon = item.icon
           const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)
           return (

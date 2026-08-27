@@ -30,6 +30,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             role: true,
             passwordHash: true,
             photoUpdatedAt: true,
+            canSuperviseWorkbooks: true,
+            canViewWorkbookSupervision: true,
           },
         })
         if (!user || !(await compare(parsed.data.password, user.passwordHash))) return null
@@ -40,6 +42,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           role: user.role,
           nip: user.nip,
+          canSuperviseWorkbooks: user.canSuperviseWorkbooks,
+          canViewWorkbookSupervision: user.canViewWorkbookSupervision,
           image: user.photoUpdatedAt ? `/api/profile/photo?v=${user.photoUpdatedAt.getTime()}` : null,
         }
       },
@@ -51,18 +55,31 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.id = user.id
         token.role = user.role
         token.nip = user.nip
+        token.canSuperviseWorkbooks = user.canSuperviseWorkbooks
+        token.canViewWorkbookSupervision = user.canViewWorkbookSupervision
         token.picture = user.image
       }
       if (trigger === "update" && token.id) {
         const current = await prisma.user.findUnique({
           where: { id: token.id },
-          select: { name: true, email: true, nip: true, role: true, active: true, photoUpdatedAt: true },
+          select: {
+            name: true,
+            email: true,
+            nip: true,
+            role: true,
+            active: true,
+            photoUpdatedAt: true,
+            canSuperviseWorkbooks: true,
+            canViewWorkbookSupervision: true,
+          },
         })
         if (current?.active) {
           token.name = current.name
           token.email = current.email
           token.nip = current.nip
           token.role = current.role
+          token.canSuperviseWorkbooks = current.canSuperviseWorkbooks
+          token.canViewWorkbookSupervision = current.canViewWorkbookSupervision
           token.picture = current.photoUpdatedAt ? `/api/profile/photo?v=${current.photoUpdatedAt.getTime()}` : null
         }
       }
@@ -72,6 +89,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.id = token.id as string
       session.user.role = token.role as "ADMIN" | "GURU"
       session.user.nip = token.nip as string | null
+      session.user.canSuperviseWorkbooks = token.canSuperviseWorkbooks === true
+      session.user.canViewWorkbookSupervision = token.canViewWorkbookSupervision === true
       Object.assign(session.user, {
         name: token.name ?? null,
         email: token.email ?? null,
@@ -84,7 +103,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const loggedIn = Boolean(auth?.user)
       if (path === "/login") return loggedIn ? Response.redirect(new URL("/", request.nextUrl)) : true
       if (!loggedIn) return false
-      const adminOnly = ["/siswa/input", "/siswa/kelola", "/guru/input", "/guru/kelola", "/wali-kelas/input", "/pengaturan"]
+      const adminOnly = ["/siswa/input", "/siswa/kelola", "/guru/input", "/guru/kelola", "/wali-kelas/input", "/pengaturan", "/supervisi-buku-kerja/kelola"]
       if (adminOnly.some((route) => path.startsWith(route)) && auth?.user.role !== "ADMIN") {
         return Response.redirect(new URL("/", request.nextUrl))
       }
