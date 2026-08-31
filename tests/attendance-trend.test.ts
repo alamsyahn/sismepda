@@ -14,6 +14,7 @@ import {
   jakartaDateValue,
   jakartaEndOfDay,
   missingPercentage,
+  niceTrendMaximum,
   previousRange,
   semesterStartValue,
   selectedStatusTotal,
@@ -280,4 +281,10 @@ test("perbandingan jumlah memakai selisih dan perubahan relatif", () => {
 test("perbandingan persentase memakai poin persentase", () => {
   assert.deepEqual(comparisonChange(2.8, 2, "persentase"), { direction: "up", difference: 0.7999999999999998, relativePercent: null })
   assert.equal(comparisonChange(2, 2.8, "persentase")?.direction, "down")
+})
+
+test("skala persentase memakai batas dinamis dan tidak melebihi 100", () => {
+  assert.equal(niceTrendMaximum(3.7, "persentase"), 5)
+  assert.equal(niceTrendMaximum(8.4, "persentase"), 10)
+  assert.equal(niceTrendMaximum(99, "persentase"), 100)
 })

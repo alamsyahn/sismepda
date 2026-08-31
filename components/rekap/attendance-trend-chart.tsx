@@ -13,6 +13,7 @@ import {
   defaultRange,
   formatPercentage,
   missingPercentage,
+  niceTrendMaximum,
   selectedStatusTotal,
   statusPercentage,
   trendValue,
@@ -326,9 +327,9 @@ function StackedBarChart({
     const value = trendValue(bucket, status, measure) ?? 0
     return sum + value
   }, 0))
-  const maxValue = niceMaximum(Math.max(...values, 0), measure)
+  const maxValue = niceTrendMaximum(Math.max(...values, 0), measure)
   const missingValues = buckets.map((bucket) => measure === "jumlah" ? bucket.missingRecords : (missingPercentage(bucket) ?? 0))
-  const missingMax = niceMaximum(Math.max(...missingValues, 0), measure)
+  const missingMax = niceTrendMaximum(Math.max(...missingValues, 0), measure)
   const ticks = Array.from({ length: 5 }, (_, index) => (maxValue / 4) * index)
   const band = plotWidth / Math.max(buckets.length, 1)
   const groupGap = showMissing ? Math.min(5, band * 0.08) : 0
@@ -519,14 +520,6 @@ function tooltipAria(bucket: TrendBucket, statuses: TrendStatus[], measure: Tren
   return `${bucket.tooltipLabel}. ${statuses.map((status) => `${statusLabels[status]} ${measure === "jumlah" ? bucket.counts[status] : formatPercentage(statusPercentage(bucket.counts[status], bucket.validRecords))}`).join(", ")}`
 }
 
-function niceMaximum(max: number, measure: TrendMeasure) {
-  if (max <= 0) return measure === "persentase" ? 1 : 4
-  const padded = max * 1.12
-  const magnitude = 10 ** Math.floor(Math.log10(padded))
-  const normalized = padded / magnitude
-  const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10
-  return measure === "persentase" ? Math.min(100, nice * magnitude) : nice * magnitude
-}
 
 function formatChartValue(value: number, measure: TrendMeasure) {
   return measure === "jumlah" ? value.toLocaleString("id-ID") : formatPercentage(value)

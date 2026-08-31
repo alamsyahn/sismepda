@@ -211,6 +211,15 @@ export function formatPercentage(value: number | null): string {
   return `${rounded.toLocaleString("id-ID", { maximumFractionDigits: 1 })}%`
 }
 
+export function niceTrendMaximum(max: number, measure: TrendMeasure): number {
+  if (max <= 0) return measure === "persentase" ? 1 : 4
+  const padded = max * 1.12
+  const magnitude = 10 ** Math.floor(Math.log10(padded))
+  const normalized = padded / magnitude
+  const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10
+  return measure === "persentase" ? Math.min(100, nice * magnitude) : nice * magnitude
+}
+
 /**
  * Rentang default per granularity, relatif terhadap `today` (YYYY-MM-DD).
  * Dipilih agar grafik tidak terlalu padat: harian = bulan berjalan,
