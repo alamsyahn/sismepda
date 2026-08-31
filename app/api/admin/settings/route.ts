@@ -3,6 +3,20 @@ import { z } from "zod"
 import { requireAdmin } from "@/lib/auth-guards"
 import { prisma } from "@/lib/prisma"
 import { DEFAULT_WEBSITE_TITLE, faviconUrl } from "@/lib/site-branding"
+import {
+  normalizeHexColor,
+  parseStatusColors,
+  serializeStatusColors,
+} from "@/lib/attendance-status-colors"
+
+const hexColor = z.string().transform((value, ctx) => {
+  const normalized = normalizeHexColor(value)
+  if (!normalized) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Warna harus berupa kode HEX" })
+    return z.NEVER
+  }
+  return normalized
+})
 
 const settingInput = z.object({
   websiteTitle: z.string().trim().min(1).max(100),
@@ -14,6 +28,14 @@ const settingInput = z.object({
   attendanceCloseTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   autoLock: z.boolean(),
   allowTeachersAccessAllClasses: z.boolean(),
+  attendanceStatusColors: z
+    .object({
+      sakit: hexColor,
+      izin: hexColor,
+      alfa: hexColor,
+      dispensasi: hexColor,
+    })
+    .optional(),
 })
 
 const settingSelect = {
@@ -26,6 +48,7 @@ const settingSelect = {
   attendanceCloseTime: true,
   autoLock: true,
   allowTeachersAccessAllClasses: true,
+  attendanceStatusColors: true,
   faviconData: true,
   faviconUpdatedAt: true,
 } as const
@@ -40,13 +63,15 @@ function settingResponse(setting: {
   attendanceCloseTime: string
   autoLock: boolean
   allowTeachersAccessAllClasses: boolean
+  attendanceStatusColors: string | null
   faviconData: Uint8Array | null
   faviconUpdatedAt: Date | null
 }) {
-  const { faviconData, faviconUpdatedAt, ...values } = setting
+  const { faviconData, faviconUpdatedAt, attendanceStatusColors, ...values } = setting
   return {
     ...values,
     websiteTitle: values.websiteTitle || DEFAULT_WEBSITE_TITLE,
+    attendanceStatusColors: parseStatusColors(attendanceStatusColors),
     hasFavicon: Boolean(faviconData),
     faviconUrl: faviconUrl(faviconUpdatedAt),
   }
@@ -70,11 +95,15 @@ export async function GET() {
 export async function PUT(request: Request) {
   try {
     await requireAdmin()
-    const body = settingInput.parse(await request.json())
+    const { attendanceStatusColors, ...body } = settingInput.parse(await request.json())
+    // Kolom menyimpan JSON; undefined berarti pemanggil tidak mengubah warna.
+    const data = attendanceStatusColors
+      ? { ...body, attendanceStatusColors: serializeStatusColors(attendanceStatusColors) }
+      : body
     const setting = await prisma.schoolSetting.upsert({
       where: { id: "default" },
-      update: body,
-      create: { ...body, id: "default" },
+      update: data,
+      create: { ...data, id: "default" },
       select: settingSelect,
     })
     return NextResponse.json(settingResponse(setting))

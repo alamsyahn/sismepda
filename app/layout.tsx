@@ -6,6 +6,8 @@ import { Toaster } from "@/components/ui/sonner"
 import { SessionProvider } from "@/components/auth/session-provider"
 import { SiteBranding } from "@/components/site-branding"
 import { defaultSiteBranding, readSiteBranding } from "@/lib/server-site-branding"
+import { readAttendanceStatusColors } from "@/lib/server-attendance-status-colors"
+import { DEFAULT_STATUS_COLORS } from "@/lib/attendance-status-colors"
 import "./globals.css"
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -34,13 +36,22 @@ export const viewport: Viewport = {
   themeColor: "#f4f2fb",
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const statusColors = await readAttendanceStatusColors()
+  // Hanya kirim override yang benar-benar berbeda dari default, sehingga
+  // tampilan bawaan tetap memakai token chart yang sudah ada.
+  const statusColorStyle = Object.fromEntries(
+    Object.entries(statusColors)
+      .filter(([status, color]) => color !== DEFAULT_STATUS_COLORS[status as keyof typeof DEFAULT_STATUS_COLORS])
+      .map(([status, color]) => [`--status-${status}`, color]),
+  ) as React.CSSProperties
+
   return (
-    <html lang="id" className="light">
+    <html lang="id" className="light" style={statusColorStyle}>
       <body className="bg-background font-sans antialiased">
         <SiteBranding />
         <SessionProvider><AppShell>{children}</AppShell></SessionProvider>

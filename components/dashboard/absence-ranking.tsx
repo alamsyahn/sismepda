@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 import { compareClassNames } from "@/lib/class-order"
+import { statusMeta } from "@/lib/dashboard-data"
 import { ProfileNameLink } from "@/components/profile/profile-name-link"
 
 export type AbsenceRankingRow = {
@@ -48,10 +49,10 @@ type SortKey = "rank" | "name" | "nis" | "className" | StatusKey | "total"
 type SortDir = "asc" | "desc" | null
 
 const statusFilters: { key: StatusKey; label: string; badge: string }[] = [
-  { key: "sakit", label: "Sakit", badge: "bg-[var(--chart-4)]/15 text-[var(--chart-4)]" },
-  { key: "izin", label: "Izin", badge: "bg-[var(--chart-2)]/12 text-[var(--chart-2)]" },
-  { key: "alfa", label: "Alfa", badge: "bg-[var(--chart-5)]/12 text-[var(--chart-5)]" },
-  { key: "dispensasi", label: "Dispensasi", badge: "bg-[var(--chart-6)]/15 text-[var(--chart-6)]" },
+  { key: "sakit", label: "Sakit", badge: statusMeta.sakit.badge },
+  { key: "izin", label: "Izin", badge: statusMeta.izin.badge },
+  { key: "alfa", label: "Alfa", badge: statusMeta.alfa.badge },
+  { key: "dispensasi", label: "Dispensasi", badge: statusMeta.dispensasi.badge },
 ]
 
 const perPageOptions = [10, 25, 50, 100]

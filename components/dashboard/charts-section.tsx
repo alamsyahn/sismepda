@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DonutChart } from "@/components/dashboard/donut-chart"
 import { AttendanceBarChart } from "@/components/dashboard/attendance-bar-chart"
 import type { ClassRecord } from "@/lib/dashboard-data"
+import { statusMeta } from "@/lib/dashboard-data"
 
 type ChartsSummary = {
   submittedCount: number
@@ -40,11 +41,11 @@ export function InputCompletionCard({ summary }: { summary: ChartsSummary }) {
 
 export function AttendanceCard({ summary }: { summary: ChartsSummary }) {
   const attendanceSegments = [
-    { label: "Hadir", value: summary.totalHadir, color: "var(--chart-1)" },
-    { label: "Sakit", value: summary.totalSakit, color: "var(--chart-4)" },
-    { label: "Izin", value: summary.totalIzin, color: "var(--chart-2)" },
-    { label: "Dispensasi", value: summary.totalDispensasi, color: "var(--chart-6)" },
-    { label: "Alfa", value: summary.totalAlfa, color: "var(--chart-5)" },
+    { label: "Hadir", value: summary.totalHadir, color: statusMeta.hadir.token },
+    { label: "Sakit", value: summary.totalSakit, color: statusMeta.sakit.token },
+    { label: "Izin", value: summary.totalIzin, color: statusMeta.izin.token },
+    { label: "Dispensasi", value: summary.totalDispensasi, color: statusMeta.dispensasi.token },
+    { label: "Alfa", value: summary.totalAlfa, color: statusMeta.alfa.token },
   ]
 
   return (

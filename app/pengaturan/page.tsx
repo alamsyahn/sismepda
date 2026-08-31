@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Download, ImageIcon, Loader2, Save, Upload } from "lucide-react"
 import Image from "next/image"
 import { toast } from "sonner"
@@ -13,7 +14,9 @@ import { Separator } from "@/components/ui/separator"
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { HolidayManager } from "@/components/settings/holiday-manager"
 import { DatabaseBackupCard } from "@/components/settings/database-backup"
+import { StatusColorSettings } from "@/components/settings/status-color-settings"
 import { FAVICON_ACCEPT, MAX_FAVICON_BYTES } from "@/lib/site-branding"
+import { DEFAULT_STATUS_COLORS, parseStatusColors, type AttendanceStatusColors } from "@/lib/attendance-status-colors"
 
 export default function PengaturanPage() {
   const [websiteTitle, setWebsiteTitle] = useState("SISMEPDA — Dashboard Absensi Sekolah")
@@ -33,18 +36,23 @@ export default function PengaturanPage() {
   const [faviconFile, setFaviconFile] = useState<File | null>(null)
   const [faviconPreview, setFaviconPreview] = useState<string | null>(null)
   const [uploadingFavicon, setUploadingFavicon] = useState(false)
+  const [statusColors, setStatusColors] = useState<AttendanceStatusColors>(DEFAULT_STATUS_COLORS)
   const faviconInputRef = useRef<HTMLInputElement>(null)
+  const router = useRouter()
 
-  useEffect(() => { fetch("/api/admin/settings").then((r) => r.json()).then((s) => { setWebsiteTitle(s.websiteTitle); setSchoolName(s.schoolName); setNpsn(s.npsn ?? ""); setAcademicYear(s.academicYear); setSemester(s.semester); setOpenTime(s.attendanceOpenTime); setCloseTime(s.attendanceCloseTime); setAutoLock(s.autoLock); setAllowTeachersAccessAllClasses(s.allowTeachersAccessAllClasses ?? false); setFaviconUrl(s.faviconUrl ?? "/favicon.ico") }) }, [])
+  useEffect(() => { fetch("/api/admin/settings").then((r) => r.json()).then((s) => { setWebsiteTitle(s.websiteTitle); setSchoolName(s.schoolName); setNpsn(s.npsn ?? ""); setAcademicYear(s.academicYear); setSemester(s.semester); setOpenTime(s.attendanceOpenTime); setCloseTime(s.attendanceCloseTime); setAutoLock(s.autoLock); setAllowTeachersAccessAllClasses(s.allowTeachersAccessAllClasses ?? false); setFaviconUrl(s.faviconUrl ?? "/favicon.ico"); setStatusColors(parseStatusColors(JSON.stringify(s.attendanceStatusColors ?? DEFAULT_STATUS_COLORS))) }) }, [])
   useEffect(() => () => { if (faviconPreview) URL.revokeObjectURL(faviconPreview) }, [faviconPreview])
 
   async function save() {
     if (!websiteTitle.trim()) { toast.error("Title website wajib diisi"); return }
     setSaving(true)
-    const response = await fetch("/api/admin/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ websiteTitle, schoolName, npsn, academicYear, semester, attendanceOpenTime: openTime, attendanceCloseTime: closeTime, autoLock, allowTeachersAccessAllClasses }) })
+    const response = await fetch("/api/admin/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ websiteTitle, schoolName, npsn, academicYear, semester, attendanceOpenTime: openTime, attendanceCloseTime: closeTime, autoLock, allowTeachersAccessAllClasses, attendanceStatusColors: statusColors }) })
     setSaving(false)
     if (response.ok) {
       document.title = websiteTitle.trim()
+      // Warna status disuntikkan dari server; refresh agar seluruh
+      // visualisasi langsung memakai warna terbaru.
+      router.refresh()
       toast.success("Pengaturan disimpan")
     } else {
       toast.error("Pengaturan gagal disimpan")
@@ -133,6 +141,8 @@ export default function PengaturanPage() {
           </div>
         </CardContent>
       </Card>
+
+      <StatusColorSettings colors={statusColors} onChange={setStatusColors} />
 
       <Card>
         <CardHeader>

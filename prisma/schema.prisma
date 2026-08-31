@@ -182,6 +182,7 @@ model SchoolSetting {
   attendanceCloseTime String @default("08:00")
   autoLock Boolean @default(true)
   allowTeachersAccessAllClasses Boolean @default(false)
+  attendanceStatusColors String?
 }
 
 model SchoolHoliday {

@@ -31,6 +31,7 @@ export type AbsentStudent = {
   nis: string | null
   nisn: string | null
   name: string
+  classId: string
   className: string
   status: Exclude<AttendanceStatus, "hadir">
   note: string
@@ -113,8 +114,10 @@ export const statusMeta: Record<
   { label: string; token: string; badge: string }
 > = {
   hadir: { label: "Hadir", token: "var(--chart-1)", badge: "bg-[var(--chart-1)]/12 text-[var(--chart-1)]" },
-  sakit: { label: "Sakit", token: "var(--chart-4)", badge: "bg-[var(--chart-4)]/15 text-[var(--chart-4)]" },
-  izin: { label: "Izin", token: "var(--chart-2)", badge: "bg-[var(--chart-2)]/12 text-[var(--chart-2)]" },
-  dispensasi: { label: "Dispensasi", token: "var(--chart-6)", badge: "bg-[var(--chart-6)]/15 text-[var(--chart-6)]" },
-  alfa: { label: "Alfa", token: "var(--chart-5)", badge: "bg-[var(--chart-5)]/12 text-[var(--chart-5)]" },
+  // Warna empat status ketidakhadiran berasal dari pengaturan global.
+  // Fallback ke token chart menjaga tampilan default tetap sama.
+  sakit: { label: "Sakit", token: "var(--status-sakit, var(--chart-4))", badge: "bg-[var(--status-sakit,var(--chart-4))]/15 text-[var(--status-sakit,var(--chart-4))]" },
+  izin: { label: "Izin", token: "var(--status-izin, var(--chart-2))", badge: "bg-[var(--status-izin,var(--chart-2))]/12 text-[var(--status-izin,var(--chart-2))]" },
+  dispensasi: { label: "Dispensasi", token: "var(--status-dispensasi, var(--chart-6))", badge: "bg-[var(--status-dispensasi,var(--chart-6))]/15 text-[var(--status-dispensasi,var(--chart-6))]" },
+  alfa: { label: "Alfa", token: "var(--status-alfa, var(--chart-5))", badge: "bg-[var(--status-alfa,var(--chart-5))]/12 text-[var(--status-alfa,var(--chart-5))]" },
 }
