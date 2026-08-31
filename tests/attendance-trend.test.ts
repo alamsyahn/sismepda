@@ -4,13 +4,17 @@ import { test } from "node:test"
 import {
   bucketKeys,
   bucketLabels,
+  buildClassifiedBuckets,
   buildBuckets,
+  comparisonChange,
   defaultRange,
   formatPercentage,
   isTrendGranularity,
   jakartaDate,
   jakartaDateValue,
   jakartaEndOfDay,
+  missingPercentage,
+  previousRange,
   semesterStartValue,
   selectedStatusTotal,
   startOfWeekValue,
@@ -182,4 +186,98 @@ test("granularity dari query string divalidasi", () => {
   assert.ok(isTrendGranularity("mingguan"))
   assert.ok(!isTrendGranularity("tahunan"))
   assert.ok(!isTrendGranularity(undefined))
+})
+
+test("hari aktif parsial menghitung Belum diisi dari siswa aktif seluruh kelas terkait", () => {
+  const [bucket] = buildClassifiedBuckets({
+    granularity: "harian", from: "2026-08-31", to: "2026-08-31", today: "2026-08-31",
+    expectedByClass: { "ix-a": 30, "ix-b": 28 },
+    submittedDays: [{ date: "2026-08-31", classId: "ix-a" }],
+    rows: [
+      { date: "2026-08-31", classId: "ix-a", status: "HADIR", total: 27 },
+      { date: "2026-08-31", classId: "ix-a", status: "SAKIT", total: 2 },
+    ], holidays: [],
+  })
+  assert.equal(bucket.state, "active")
+  assert.equal(bucket.validRecords, 29)
+  assert.equal(bucket.expectedAttendance, 58)
+  assert.equal(bucket.missingRecords, 29)
+  assert.equal(formatPercentage(missingPercentage(bucket)), "50%")
+  assert.equal(bucket.isCurrentDay, true)
+})
+
+test("hari lengkap menghasilkan nol Belum diisi yang diketahui", () => {
+  const [bucket] = buildClassifiedBuckets({
+    granularity: "harian", from: "2026-08-30", to: "2026-08-30", today: "2026-08-31",
+    expectedByClass: { "ix-a": 30 }, submittedDays: [{ date: "2026-08-30", classId: "ix-a" }],
+    rows: [{ date: "2026-08-30", classId: "ix-a", status: "HADIR", total: 30 }], holidays: [],
+  })
+  assert.equal(bucket.state, "active")
+  assert.equal(bucket.missingRecords, 0)
+  assert.equal(missingPercentage(bucket), 0)
+})
+
+test("tanggal tanpa pengiriman adalah Tidak ada data, bukan Belum diisi", () => {
+  const [bucket] = buildClassifiedBuckets({
+    granularity: "harian", from: "2026-08-29", to: "2026-08-29", today: "2026-08-31",
+    expectedByClass: { "ix-a": 30 }, submittedDays: [], rows: [], holidays: [],
+  })
+  assert.equal(bucket.state, "no_data")
+  assert.equal(bucket.expectedAttendance, 0)
+  assert.equal(bucket.missingRecords, 0)
+  assert.equal(missingPercentage(bucket), null)
+})
+
+test("SchoolHoliday menang atas record dan tidak masuk metrik", () => {
+  const [bucket] = buildClassifiedBuckets({
+    granularity: "harian", from: "2026-08-17", to: "2026-08-17", today: "2026-08-31",
+    expectedByClass: { "ix-a": 30 }, submittedDays: [{ date: "2026-08-17", classId: "ix-a" }],
+    rows: [{ date: "2026-08-17", classId: "ix-a", status: "ALFA", total: 30 }],
+    holidays: [{ date: "2026-08-17", name: "Hari Kemerdekaan" }],
+  })
+  assert.equal(bucket.state, "holiday")
+  assert.deepEqual(bucket.holidayNames, ["Hari Kemerdekaan"])
+  assert.equal(bucket.validRecords, 0)
+  assert.equal(bucket.counts.alfa, 0)
+})
+
+test("tanggal masa depan tidak diklasifikasikan tanpa libur eksplisit", () => {
+  const [future, holiday] = buildClassifiedBuckets({
+    granularity: "harian", from: "2026-09-01", to: "2026-09-02", today: "2026-08-31",
+    expectedByClass: { "ix-a": 30 }, submittedDays: [], rows: [],
+    holidays: [{ date: "2026-09-02", name: "Libur Sekolah" }],
+  })
+  assert.equal(future.state, "future")
+  assert.equal(holiday.state, "holiday")
+})
+
+test("bucket bulanan menjumlahkan hari aktif dan menyimpan hari tidak pasti/libur", () => {
+  const [bucket] = buildClassifiedBuckets({
+    granularity: "bulanan", from: "2026-08-01", to: "2026-08-03", today: "2026-08-31",
+    expectedByClass: { "ix-a": 10 }, submittedDays: [{ date: "2026-08-01", classId: "ix-a" }],
+    rows: [{ date: "2026-08-01", classId: "ix-a", status: "HADIR", total: 9 }],
+    holidays: [{ date: "2026-08-02", name: "Libur Sekolah" }],
+  })
+  assert.equal(bucket.state, "active")
+  assert.equal(bucket.activeDays, 1)
+  assert.equal(bucket.holidayDays, 1)
+  assert.equal(bucket.noDataDays, 1)
+  assert.equal(bucket.missingRecords, 1)
+})
+
+test("rentang pembanding tepat sebelum rentang kini dengan panjang sama", () => {
+  assert.deepEqual(previousRange("2026-08-01", "2026-08-31"), { from: "2026-07-01", to: "2026-07-31" })
+  assert.deepEqual(previousRange("2026-08-24", "2026-08-30"), { from: "2026-08-17", to: "2026-08-23" })
+})
+
+test("perbandingan jumlah memakai selisih dan perubahan relatif", () => {
+  assert.deepEqual(comparisonChange(256, 238, "jumlah"), { direction: "up", difference: 18, relativePercent: 7.563025210084033 })
+  assert.equal(comparisonChange(214, 238, "jumlah")?.direction, "down")
+  assert.deepEqual(comparisonChange(238, 238, "jumlah"), { direction: "equal", difference: 0, relativePercent: 0 })
+  assert.equal(comparisonChange(10, 0, "jumlah")?.relativePercent, null)
+})
+
+test("perbandingan persentase memakai poin persentase", () => {
+  assert.deepEqual(comparisonChange(2.8, 2, "persentase"), { direction: "up", difference: 0.7999999999999998, relativePercent: null })
+  assert.equal(comparisonChange(2, 2.8, "persentase")?.direction, "down")
 })

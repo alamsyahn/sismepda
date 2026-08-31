@@ -1,16 +1,15 @@
-import { getClassAccess } from "@/lib/class-access"
-import { prisma } from "@/lib/prisma"
 import { Prisma } from "@/app/generated/prisma/client"
 import { databaseSchema } from "@/lib/database-config"
+import { getClassAccess } from "@/lib/class-access"
+import { prisma } from "@/lib/prisma"
 import {
-  bucketGranularity,
-  bucketKeys,
-  buildBuckets,
+  buildClassifiedBuckets,
   defaultRange,
   isTrendGranularity,
   jakartaDate,
   jakartaDateValue,
   jakartaEndOfDay,
+  previousRange,
   semesterStartValue,
   type TrendGranularity,
   type TrendResponse,
@@ -19,16 +18,10 @@ import {
 import type { requireUser } from "@/lib/auth-guards"
 
 type User = Awaited<ReturnType<typeof requireUser>>
-
-/** Batas rentang: menahan permintaan yang tidak masuk akal, bukan membatasi semester. */
 const MAX_RANGE_DAYS = 800
 
-/** Ekspresi date_trunc Postgres per granularity, dievaluasi di waktu Jakarta. */
-const truncUnit = { harian: "day", mingguan: "week", bulanan: "month" } as const
-
 function qualifiedTable(table: string) {
-  const connectionString = process.env.DATABASE_URL ?? ""
-  const schema = databaseSchema(connectionString)
+  const schema = databaseSchema(process.env.DATABASE_URL ?? "")
   const quote = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`
   return Prisma.raw(`${quote(schema)}.${quote(table)}`)
 }
@@ -36,33 +29,20 @@ function qualifiedTable(table: string) {
 export async function readAttendanceTrend(
   user: User,
   params: { granularity?: string | null; from?: string | null; to?: string | null; classId?: string | null },
-): Promise<
-  | { ok: true; data: TrendResponse }
-  | { ok: false; status: number; error: string }
-> {
+): Promise<{ ok: true; data: TrendResponse } | { ok: false; status: number; error: string }> {
   const granularity: TrendGranularity = isTrendGranularity(params.granularity) ? params.granularity : "harian"
-
   const setting = await prisma.schoolSetting.findUnique({
-    where: { id: "default" },
-    select: { academicYear: true, semester: true },
+    where: { id: "default" }, select: { academicYear: true, semester: true },
   })
   const semesterStart = setting ? semesterStartValue(setting) : null
-
   if (granularity === "semester" && !semesterStart) {
-    return {
-      ok: false,
-      status: 409,
-      error: "Tahun ajaran pada Pengaturan belum valid, sehingga awal semester tidak dapat ditentukan",
-    }
+    return { ok: false, status: 409, error: "Tahun ajaran pada Pengaturan belum valid, sehingga awal semester tidak dapat ditentukan" }
   }
 
   const today = jakartaDateValue(new Date())
   const fallback = defaultRange(granularity, today, semesterStart)
-  // Rentang kustom hanya berlaku untuk granularity selain semester; "Sejak Awal
-  // Semester" memang didefinisikan oleh periode akademik aktif.
   const from = granularity === "semester" ? fallback.from : (params.from?.trim() || fallback.from)
   const to = granularity === "semester" ? fallback.to : (params.to?.trim() || fallback.to)
-
   const fromDate = jakartaDate(from)
   const toDate = jakartaEndOfDay(to)
   if (!fromDate || !toDate) return { ok: false, status: 400, error: "Tanggal tidak valid" }
@@ -72,12 +52,9 @@ export async function readAttendanceTrend(
   }
 
   const access = await getClassAccess(user)
-
-  // Kelas yang boleh dilihat pemakai ini. Filter kelas opsional harus berada di
-  // dalam cakupan tersebut agar tidak membocorkan data kelas lain.
   const allowedClasses = await prisma.schoolClass.findMany({
     where: access.where,
-    select: { id: true },
+    select: { id: true, students: { where: { active: true }, select: { id: true } } },
   })
   const allowedIds = allowedClasses.map((item) => item.id)
   const classId = params.classId?.trim() || null
@@ -85,56 +62,65 @@ export async function readAttendanceTrend(
     return { ok: false, status: 404, error: "Kelas tidak ditemukan atau tidak dapat diakses" }
   }
   const classIds = classId ? [classId] : allowedIds
+  const expectedByClass = Object.fromEntries(
+    allowedClasses.filter((item) => classIds.includes(item.id)).map((item) => [item.id, item.students.length]),
+  )
+  const emptyData = (): TrendResponse => ({
+    granularity, from, to, semester: semesterInfo(setting, semesterStart, granularity),
+    buckets: buildClassifiedBuckets({ granularity, from, to, today, expectedByClass, submittedDays: [], rows: [], holidays: [] }),
+    comparison: null,
+  })
+  if (classIds.length === 0) return { ok: true, data: emptyData() }
 
-  if (classIds.length === 0) {
-    return {
-      ok: true,
-      data: {
-        granularity,
-        from,
-        to,
-        semester: semesterInfo(setting, semesterStart, granularity),
-        buckets: bucketKeys(granularity, from, to).map((key) => emptyBucket(granularity, key)),
-      },
-    }
-  }
-
-  // Satu query agregat untuk SELURUH status sekaligus: tidak ada N+1 dan tidak
-  // ada dataset mentah yang dikirim ke browser. Pengelompokan memakai
-  // date_trunc pada tanggal yang sudah dikonversi ke waktu Jakarta, sehingga
-  // batas hari/minggu/bulan mengikuti kalender lokal, bukan UTC.
-  const unit = truncUnit[bucketGranularity(granularity)]
+  const comparisonRange = previousRange(from, to)
+  const queryFrom = comparisonRange ? jakartaDate(comparisonRange.from)! : fromDate
   const attendanceTable = qualifiedTable("Attendance")
   const attendanceDayTable = qualifiedTable("AttendanceDay")
-  const rows = await prisma.$queryRaw<Array<{ bucket: Date; status: ValidAttendanceStatus; total: bigint }>>`
-    SELECT
-      date_trunc(${unit}, d."date" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta') AS bucket,
-      a."status"::text AS status,
-      COUNT(*) AS total
-    FROM ${attendanceTable} a
-    JOIN ${attendanceDayTable} d ON d."id" = a."attendanceDayId"
-    WHERE d."date" >= ${fromDate}
-      AND d."date" <= ${toDate}
-      AND d."classId" = ANY(${classIds})
-    GROUP BY 1, 2
-    ORDER BY 1
-  `
+  const [rows, submittedDays, holidays] = await Promise.all([
+    prisma.$queryRaw<Array<{ date: Date; classId: string; status: ValidAttendanceStatus; total: bigint }>>`
+      SELECT
+        date_trunc('day', d."date" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta') AS date,
+        d."classId" AS "classId",
+        a."status"::text AS status,
+        COUNT(*) AS total
+      FROM ${attendanceTable} a
+      JOIN ${attendanceDayTable} d ON d."id" = a."attendanceDayId"
+      WHERE d."date" >= ${queryFrom}
+        AND d."date" <= ${toDate}
+        AND d."classId" = ANY(${classIds})
+      GROUP BY 1, 2, 3
+      ORDER BY 1
+    `,
+    prisma.attendanceDay.findMany({
+      where: { date: { gte: queryFrom, lte: toDate }, classId: { in: classIds } },
+      select: { date: true, classId: true },
+    }),
+    prisma.schoolHoliday.findMany({
+      where: { date: { gte: queryFrom, lte: toDate } }, select: { date: true, name: true },
+    }),
+  ])
 
-  const buckets = buildBuckets({
-    granularity,
-    bucketKeys: bucketKeys(granularity, from, to),
-    // `bucket` kembali sebagai timestamp tanpa zona yang sudah bernilai waktu
-    // Jakarta, jadi komponen tanggalnya dibaca langsung dalam UTC.
-    rows: rows.map((row) => ({
-      bucket: row.bucket.toISOString().slice(0, 10),
-      status: row.status,
-      total: Number(row.total),
-    })),
+  const normalizedRows = rows.map((row) => ({
+    date: row.date.toISOString().slice(0, 10), classId: row.classId, status: row.status, total: Number(row.total),
+  }))
+  const normalizedDays = submittedDays.map((day) => ({ date: jakartaDateValue(day.date), classId: day.classId }))
+  const normalizedHolidays = holidays.map((holiday) => ({ date: jakartaDateValue(holiday.date), name: holiday.name }))
+  const buildRange = (rangeFrom: string, rangeTo: string) => buildClassifiedBuckets({
+    granularity, from: rangeFrom, to: rangeTo, today, expectedByClass,
+    submittedDays: normalizedDays, rows: normalizedRows, holidays: normalizedHolidays,
   })
+  const buckets = buildRange(from, to)
+  const previousBuckets = comparisonRange ? buildRange(comparisonRange.from, comparisonRange.to) : []
 
   return {
     ok: true,
-    data: { granularity, from, to, semester: semesterInfo(setting, semesterStart, granularity), buckets },
+    data: {
+      granularity, from, to, semester: semesterInfo(setting, semesterStart, granularity), buckets,
+      comparison: comparisonRange ? {
+        ...comparisonRange, buckets: previousBuckets,
+        available: previousBuckets.some((bucket) => bucket.validRecords > 0),
+      } : null,
+    },
   }
 }
 
@@ -145,8 +131,4 @@ function semesterInfo(
 ) {
   if (granularity !== "semester" || !setting || !start) return null
   return { label: setting.semester, academicYear: setting.academicYear, start }
-}
-
-function emptyBucket(granularity: TrendGranularity, key: string) {
-  return buildBuckets({ granularity, bucketKeys: [key], rows: [] })[0]
 }

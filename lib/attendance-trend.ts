@@ -23,6 +23,7 @@ export type TrendGranularity = (typeof TREND_GRANULARITIES)[number]
 
 export const TREND_MEASURES = ["jumlah", "persentase"] as const
 export type TrendMeasure = (typeof TREND_MEASURES)[number]
+export type TrendBucketState = "active" | "holiday" | "no_data" | "future"
 
 export type TrendBucket = {
   /** Kunci stabil, sekaligus tanggal awal bucket (YYYY-MM-DD, waktu Jakarta). */
@@ -34,6 +35,15 @@ export type TrendBucket = {
   counts: Record<TrendStatus, number>
   /** Jumlah seluruh record absensi valid pada bucket (penyebut persentase). */
   validRecords: number
+  expectedAttendance: number
+  missingRecords: number
+  state: TrendBucketState
+  activeDays: number
+  holidayDays: number
+  noDataDays: number
+  futureDays: number
+  holidayNames: string[]
+  isCurrentDay: boolean
 }
 
 export type TrendResponse = {
@@ -43,6 +53,7 @@ export type TrendResponse = {
   /** Diisi hanya ketika granularity = "semester". */
   semester: { label: string; academicYear: string; start: string } | null
   buckets: TrendBucket[]
+  comparison: { from: string; to: string; buckets: TrendBucket[]; available: boolean } | null
 }
 
 const JAKARTA = "Asia/Jakarta"
@@ -166,6 +177,11 @@ export function statusPercentage(count: number, validRecords: number): number | 
   return (count / validRecords) * 100
 }
 
+export function missingPercentage(bucket: Pick<TrendBucket, "missingRecords" | "expectedAttendance">): number | null {
+  if (bucket.expectedAttendance <= 0) return null
+  return (bucket.missingRecords / bucket.expectedAttendance) * 100
+}
+
 /** Nilai satu seri untuk mode grafik yang dipilih. */
 export function trendValue(
   bucket: Pick<TrendBucket, "counts" | "validRecords">,
@@ -273,12 +289,113 @@ export function buildBuckets(input: {
     counts.set(row.bucket, bucketCounts)
   }
 
-  return input.bucketKeys.map((key) => ({
-    key,
-    ...bucketLabels(input.granularity, key),
-    counts: counts.get(key) ?? empty(),
-    validRecords: valid.get(key) ?? 0,
-  }))
+  return input.bucketKeys.map((key) => {
+    const validRecords = valid.get(key) ?? 0
+    return {
+      key,
+      ...bucketLabels(input.granularity, key),
+      counts: counts.get(key) ?? empty(),
+      validRecords,
+      expectedAttendance: 0,
+      missingRecords: 0,
+      state: validRecords > 0 ? "active" as const : "no_data" as const,
+      activeDays: validRecords > 0 ? 1 : 0,
+      holidayDays: 0,
+      noDataDays: validRecords > 0 ? 0 : 1,
+      futureDays: 0,
+      holidayNames: [],
+      isCurrentDay: false,
+    }
+  })
+}
+
+type ClassifiedRow = { date: string; classId: string; status: ValidAttendanceStatus; total: number }
+
+export function buildClassifiedBuckets(input: {
+  granularity: TrendGranularity
+  from: string
+  to: string
+  today: string
+  expectedByClass: Record<string, number>
+  submittedDays: Array<{ date: string; classId: string }>
+  rows: ClassifiedRow[]
+  holidays: Array<{ date: string; name: string }>
+}): TrendBucket[] {
+  const mode = bucketGranularity(input.granularity)
+  const expectedPerDay = Object.values(input.expectedByClass).reduce((sum, count) => sum + count, 0)
+  const submittedDates = new Set(input.submittedDays.map((day) => day.date))
+  const holidays = new Map(input.holidays.map((holiday) => [holiday.date, holiday.name]))
+  const rowsByDate = new Map<string, ClassifiedRow[]>()
+  for (const row of input.rows) rowsByDate.set(row.date, [...(rowsByDate.get(row.date) ?? []), row])
+
+  const daily = bucketKeys("harian", input.from, input.to).map((date) => {
+    const holidayName = holidays.get(date)
+    const state: TrendBucketState = holidayName ? "holiday" : date > input.today ? "future"
+      : submittedDates.has(date) ? "active" : "no_data"
+    const counts: Record<TrendStatus, number> = { sakit: 0, izin: 0, alfa: 0, dispensasi: 0 }
+    let validRecords = 0
+    if (state === "active") for (const row of rowsByDate.get(date) ?? []) {
+      validRecords += row.total
+      const status = row.status.toLowerCase()
+      if (isTrendStatus(status)) counts[status] += row.total
+    }
+    return {
+      date,
+      bucket: mode === "harian" ? date : mode === "mingguan" ? startOfWeekValue(date) : `${date.slice(0, 7)}-01`,
+      counts,
+      validRecords,
+      expectedAttendance: state === "active" ? expectedPerDay : 0,
+      missingRecords: state === "active" ? Math.max(0, expectedPerDay - validRecords) : 0,
+      state,
+      holidayName,
+    }
+  })
+
+  return bucketKeys(input.granularity, input.from, input.to).map((key) => {
+    const days = daily.filter((day) => day.bucket === key)
+    const activeDays = days.filter((day) => day.state === "active").length
+    const holidayDays = days.filter((day) => day.state === "holiday").length
+    const noDataDays = days.filter((day) => day.state === "no_data").length
+    const futureDays = days.filter((day) => day.state === "future").length
+    const state: TrendBucketState = activeDays > 0 ? "active" : holidayDays > 0 && noDataDays === 0
+      ? "holiday" : noDataDays > 0 ? "no_data" : "future"
+    const counts = { sakit: 0, izin: 0, alfa: 0, dispensasi: 0 }
+    for (const day of days) for (const status of TREND_STATUSES) counts[status] += day.counts[status]
+    return {
+      key,
+      ...bucketLabels(input.granularity, key),
+      counts,
+      validRecords: days.reduce((sum, day) => sum + day.validRecords, 0),
+      expectedAttendance: days.reduce((sum, day) => sum + day.expectedAttendance, 0),
+      missingRecords: days.reduce((sum, day) => sum + day.missingRecords, 0),
+      state,
+      activeDays,
+      holidayDays,
+      noDataDays,
+      futureDays,
+      holidayNames: [...new Set(days.flatMap((day) => day.holidayName ? [day.holidayName] : []))],
+      isCurrentDay: days.some((day) => day.date === input.today),
+    }
+  })
+}
+
+export function previousRange(from: string, to: string): { from: string; to: string } | null {
+  const fromDate = jakartaDate(from)
+  const toDate = jakartaDate(to)
+  if (!fromDate || !toDate || fromDate > toDate) return null
+  const days = Math.round((toDate.getTime() - fromDate.getTime()) / DAY_MS) + 1
+  return { from: addDaysValue(from, -days), to: addDaysValue(from, -1) }
+}
+
+export function comparisonChange(current: number, previous: number, measure: TrendMeasure) {
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) return null
+  const difference = current - previous
+  return {
+    direction: difference > 0 ? "up" as const : difference < 0 ? "down" as const : "equal" as const,
+    difference,
+    relativePercent: measure === "jumlah" && previous !== 0 ? (difference / previous) * 100
+      : measure === "jumlah" && difference === 0 ? 0 : null,
+  }
 }
 
 /** Deret kunci bucket berurutan yang menutupi seluruh rentang. */
