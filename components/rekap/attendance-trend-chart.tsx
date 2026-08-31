@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { forwardRef, useEffect, useMemo, useRef, useState } from "react"
 import { ArrowDown, ArrowUp, BarChart3, Info, Loader2, Minus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,7 +15,9 @@ import {
   missingPercentage,
   niceTrendMaximum,
   selectedStatusTotal,
+  stackSegmentOrder,
   statusPercentage,
+  tooltipPlacement,
   trendValue,
   TREND_STATUSES,
   type TrendBucket,
@@ -23,6 +25,7 @@ import {
   type TrendMeasure,
   type TrendResponse,
   type TrendStatus,
+  type TooltipPlacement,
 } from "@/lib/attendance-trend"
 import { statusMeta } from "@/lib/dashboard-data"
 import { indonesiaDateValue } from "@/lib/date"
@@ -317,6 +320,10 @@ function StackedBarChart({
   showValues: boolean
 }) {
   const [activeKey, setActiveKey] = useState<string | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const tooltipRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
+  const [tooltipSize, setTooltipSize] = useState({ width: 240, height: 160 })
   const width = 960
   const height = 310
   const margin = { top: 24, right: showMissing ? 64 : 18, bottom: 54, left: 64 }
@@ -341,9 +348,58 @@ function StackedBarChart({
   const activeIndex = active ? buckets.findIndex((bucket) => bucket.key === active.key) : -1
   const previousActive = activeIndex >= 0 ? previousBuckets[activeIndex] ?? null : null
 
+  // Chart digambar dalam koordinat viewBox, sedangkan tooltip adalah elemen
+  // HTML. Skala ini memetakan koordinat batang ke piksel container.
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(([entry]) => setContainerWidth(entry.contentRect.width))
+    observer.observe(container)
+    setContainerWidth(container.clientWidth)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    const tooltip = tooltipRef.current
+    if (!tooltip) return
+    const { offsetWidth, offsetHeight } = tooltip
+    setTooltipSize((current) => (current.width === offsetWidth && current.height === offsetHeight
+      ? current
+      : { width: offsetWidth, height: offsetHeight }))
+  }, [activeKey, measure, showMissing, statuses])
+
+  // Touch: ketuk di luar chart menutup tooltip tanpa mengganggu hover desktop.
+  useEffect(() => {
+    if (!activeKey) return
+    const dismiss = (event: PointerEvent) => {
+      if (event.pointerType === "mouse") return
+      if (containerRef.current?.contains(event.target as Node)) return
+      setActiveKey(null)
+    }
+    document.addEventListener("pointerdown", dismiss)
+    return () => document.removeEventListener("pointerdown", dismiss)
+  }, [activeKey])
+
+  const scale = containerWidth > 0 ? containerWidth / width : 0
+  const chartHeightPx = height * scale
+  const activeGroupWidth = showMissing ? barWidth * 2 + groupGap : barWidth
+  const activeX = activeIndex >= 0 ? margin.left + activeIndex * band + (band - activeGroupWidth) / 2 : 0
+  const activeTop = activeIndex >= 0
+    ? margin.top + plotHeight - (values[activeIndex] / maxValue) * plotHeight
+    : margin.top
+  const placement = active && scale > 0
+    ? tooltipPlacement({
+      barX: activeX * scale,
+      barWidth: activeGroupWidth * scale,
+      barTop: activeTop * scale,
+      chart: { width: containerWidth, height: chartHeightPx },
+      tooltip: tooltipSize,
+    })
+    : null
+
   return (
-    <div className="relative">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto min-h-60 w-full" role="img" aria-label={`Grafik batang bertumpuk tren ketidakhadiran dalam mode ${measure}`} onMouseLeave={() => setActiveKey(null)}>
+    <div className="relative" ref={containerRef}>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto min-h-60 w-full touch-manipulation" role="img" aria-label={`Grafik batang bertumpuk tren ketidakhadiran dalam mode ${measure}`} onMouseLeave={() => setActiveKey(null)}>
         {ticks.map((tick) => {
           const y = margin.top + plotHeight - (tick / maxValue) * plotHeight
           return (
@@ -365,6 +421,20 @@ function StackedBarChart({
           )
         }) : null}
 
+        {activeIndex >= 0 ? (
+          <line
+            x1={margin.left + activeIndex * band + band / 2}
+            x2={margin.left + activeIndex * band + band / 2}
+            y1={margin.top}
+            y2={margin.top + plotHeight}
+            stroke="var(--muted-foreground)"
+            strokeWidth="1"
+            strokeDasharray="3 3"
+            opacity={0.4}
+            aria-hidden
+          />
+        ) : null}
+
         {buckets.map((bucket, index) => {
           const groupWidth = showMissing ? barWidth * 2 + groupGap : barWidth
           const x = margin.left + index * band + (band - groupWidth) / 2
@@ -373,7 +443,10 @@ function StackedBarChart({
           const total = values[index]
           const missingValue = missingValues[index]
           const visibleStatuses = statuses.filter((status) => (trendValue(bucket, status, measure) ?? 0) > 0)
-          const topStatus = visibleStatuses.at(-1) ?? null
+          // Digambar dari dasar plot ke atas, sehingga status pertama pada
+          // legend (Sakit) menjadi segmen terakhir alias paling atas.
+          const drawOrder = stackSegmentOrder(statuses)
+          const topStatus = stackSegmentOrder(visibleStatuses).at(-1) ?? null
           const showLabel = index % labelEvery === 0 || index === buckets.length - 1
           return (
             <g
@@ -385,12 +458,13 @@ function StackedBarChart({
               onBlur={() => setActiveKey(null)}
               onMouseEnter={() => setActiveKey(bucket.key)}
               onClick={() => setActiveKey(bucket.key)}
-              className="outline-none"
+              className="outline-none transition-opacity"
+              opacity={activeKey && activeKey !== bucket.key ? 0.55 : 1}
             >
               <rect x={margin.left + index * band} y={margin.top} width={band} height={plotHeight} fill="transparent" />
               {bucket.state !== "active" ? (
                 <BucketStateMarker bucket={bucket} x={x + groupWidth / 2} y={margin.top + plotHeight} />
-              ) : statuses.map((status) => {
+              ) : drawOrder.map((status) => {
                 const raw = trendValue(bucket, status, measure) ?? 0
                 const segmentHeight = (raw / maxValue) * plotHeight
                 const y = margin.top + plotHeight - cumulative - segmentHeight
@@ -451,19 +525,30 @@ function StackedBarChart({
         </text>
       </svg>
 
-      {active ? <ChartTooltip bucket={active} previousBucket={previousActive} statuses={statuses} measure={measure} showMissing={showMissing} /> : null}
-      <p className="mt-1 text-center text-xs text-muted-foreground">Arahkan kursor atau fokuskan batang untuk melihat detail.</p>
+      {active ? (
+        <ChartTooltip
+          ref={tooltipRef}
+          bucket={active}
+          previousBucket={previousActive}
+          statuses={statuses}
+          measure={measure}
+          showMissing={showMissing}
+          placement={placement}
+        />
+      ) : null}
+      <p className="mt-1 text-center text-xs text-muted-foreground">Arahkan kursor, ketuk batang, atau fokuskan batang untuk melihat detail.</p>
     </div>
   )
 }
 
-function ChartTooltip({ bucket, previousBucket, statuses, measure, showMissing }: {
+const ChartTooltip = forwardRef<HTMLDivElement, {
   bucket: TrendBucket
   previousBucket: TrendBucket | null
   statuses: TrendStatus[]
   measure: TrendMeasure
   showMissing: boolean
-}) {
+  placement: TooltipPlacement | null
+}>(function ChartTooltip({ bucket, previousBucket, statuses, measure, showMissing, placement }, ref) {
   const selectedTotal = statuses.reduce((sum, status) => sum + bucket.counts[status], 0)
   const comparablePrevious = previousBucket?.state === "active" ? previousBucket : null
   const previousTotal = comparablePrevious ? statuses.reduce((sum, status) => sum + comparablePrevious.counts[status], 0) : null
@@ -473,7 +558,13 @@ function ChartTooltip({ bucket, previousBucket, statuses, measure, showMissing }
     : null
   const change = currentValue !== null && previousValue !== null ? comparisonChange(currentValue, previousValue, measure) : null
   return (
-    <div className="pointer-events-none absolute right-2 top-2 z-10 min-w-56 rounded-lg border border-border bg-popover/95 p-3 text-sm text-popover-foreground shadow-lg backdrop-blur" role="status" aria-live="polite">
+    <div
+      ref={ref}
+      className="pointer-events-none absolute z-10 min-w-56 max-w-72 rounded-lg border border-border bg-popover/95 p-3 text-sm text-popover-foreground shadow-lg backdrop-blur"
+      style={placement ? { left: placement.x, top: placement.y } : { right: 8, top: 8 }}
+      role="status"
+      aria-live="polite"
+    >
       <p className="mb-2 font-semibold">{bucket.tooltipLabel}</p>
       {bucket.state === "holiday" ? (
         <p className="text-muted-foreground">Libur{bucket.holidayNames.length ? ` · ${bucket.holidayNames.join(", ")}` : ""}</p>
@@ -511,7 +602,7 @@ function ChartTooltip({ bucket, previousBucket, statuses, measure, showMissing }
       ) : null}
     </div>
   )
-}
+})
 
 function tooltipAria(bucket: TrendBucket, statuses: TrendStatus[], measure: TrendMeasure) {
   if (bucket.state === "holiday") return `${bucket.tooltipLabel}: Libur`

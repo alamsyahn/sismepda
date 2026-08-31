@@ -18,8 +18,10 @@ import {
   previousRange,
   semesterStartValue,
   selectedStatusTotal,
+  stackSegmentOrder,
   startOfWeekValue,
   statusPercentage,
+  tooltipPlacement,
   trendValue,
   weekRangeLabel,
 } from "../lib/attendance-trend"
@@ -287,4 +289,48 @@ test("skala persentase memakai batas dinamis dan tidak melebihi 100", () => {
   assert.equal(niceTrendMaximum(3.7, "persentase"), 5)
   assert.equal(niceTrendMaximum(8.4, "persentase"), 10)
   assert.equal(niceTrendMaximum(99, "persentase"), 100)
+})
+
+test("urutan segmen stack terbaca sama dengan legend dari atas ke bawah", () => {
+  // Legend/tooltip membaca Sakit lebih dulu, sehingga Sakit harus digambar
+  // paling atas. SVG menumpuk dari dasar, jadi urutan gambar dibalik.
+  assert.deepEqual(stackSegmentOrder(["sakit", "izin", "alfa", "dispensasi"]), ["dispensasi", "alfa", "izin", "sakit"])
+  // Saat sebagian status dimatikan, urutan relatif tetap konsisten.
+  assert.deepEqual(stackSegmentOrder(["sakit", "alfa"]), ["alfa", "sakit"])
+  assert.deepEqual(stackSegmentOrder([]), [])
+})
+
+test("tooltip diposisikan dekat batang tanpa menutupinya", () => {
+  const chart = { width: 800, height: 400 }
+  const size = { width: 240, height: 160 }
+  // Batang di tengah: prioritas pertama adalah kanan-atas dengan jarak dari batang.
+  const middle = tooltipPlacement({ barX: 400, barWidth: 20, barTop: 200, chart, tooltip: size })
+  assert.equal(middle.side, "right")
+  assert.equal(middle.x, 432)
+  assert.ok(middle.y >= 8)
+
+  // Batang paling kanan tidak muat di kanan, harus membalik ke kiri batang.
+  const right = tooltipPlacement({ barX: 780, barWidth: 20, barTop: 200, chart, tooltip: size })
+  assert.equal(right.side, "left")
+  assert.equal(right.x, 528)
+  assert.ok(right.x + size.width <= chart.width)
+
+  // Batang paling kiri tetap di kanan dan tidak keluar container.
+  const left = tooltipPlacement({ barX: 4, barWidth: 20, barTop: 200, chart, tooltip: size })
+  assert.equal(left.side, "right")
+  assert.ok(left.x >= 8)
+})
+
+test("tooltip tetap di dalam container untuk stack tinggi dan chart sempit", () => {
+  const size = { width: 240, height: 160 }
+  // Stack sangat tinggi: tooltip digeser ke bawah, tidak terpotong sisi atas.
+  const tall = tooltipPlacement({ barX: 300, barWidth: 20, barTop: 4, chart: { width: 800, height: 400 }, tooltip: size })
+  assert.ok(tall.y >= 8)
+  assert.ok(tall.y + size.height <= 400)
+
+  // Chart lebih sempit dari tooltip tetap menghasilkan koordinat dalam batas.
+  const narrow = tooltipPlacement({ barX: 100, barWidth: 20, barTop: 100, chart: { width: 200, height: 300 }, tooltip: size })
+  assert.ok(narrow.x >= 0)
+  assert.ok(narrow.y >= 0)
+  assert.ok(narrow.y + size.height <= 300)
 })

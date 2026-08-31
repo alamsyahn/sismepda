@@ -182,6 +182,52 @@ export function missingPercentage(bucket: Pick<TrendBucket, "missingRecords" | "
   return (bucket.missingRecords / bucket.expectedAttendance) * 100
 }
 
+/**
+ * Urutan menggambar segmen stack. Legend, tooltip, dan ringkasan membaca
+ * status dari atas ke bawah (Sakit lebih dulu), sedangkan SVG menumpuk dari
+ * dasar plot ke atas. Membalik urutan gambar membuat status pertama pada
+ * legend berada paling atas pada batang tanpa mengubah nilai apa pun.
+ */
+export function stackSegmentOrder(statuses: readonly TrendStatus[]): TrendStatus[] {
+  return [...statuses].reverse()
+}
+
+export type TooltipPlacement = { x: number; y: number; side: "left" | "right" }
+
+/**
+ * Menempatkan tooltip dekat batang aktif tanpa menutupinya.
+ * Prioritas: kanan-atas, lalu kiri-atas bila tidak muat, dan selalu
+ * di-clamp agar tetap berada di dalam container chart.
+ */
+export function tooltipPlacement(input: {
+  barX: number
+  barWidth: number
+  barTop: number
+  chart: { width: number; height: number }
+  tooltip: { width: number; height: number }
+  gap?: number
+  padding?: number
+}): TooltipPlacement {
+  const gap = input.gap ?? 12
+  const padding = input.padding ?? 8
+  const { chart, tooltip } = input
+  const rightX = input.barX + input.barWidth + gap
+  const fitsRight = rightX + tooltip.width + padding <= chart.width
+  const side: "left" | "right" = fitsRight ? "right" : "left"
+  const rawX = fitsRight ? rightX : input.barX - gap - tooltip.width
+  const maxX = Math.max(padding, chart.width - tooltip.width - padding)
+  const maxY = Math.max(padding, chart.height - tooltip.height - padding)
+  return {
+    x: clamp(rawX, padding, maxX),
+    y: clamp(input.barTop, padding, maxY),
+    side,
+  }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
 /** Nilai satu seri untuk mode grafik yang dipilih. */
 export function trendValue(
   bucket: Pick<TrendBucket, "counts" | "validRecords">,
