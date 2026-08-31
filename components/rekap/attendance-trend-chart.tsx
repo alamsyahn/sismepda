@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { BarChart3, Info, Loader2 } from "lucide-react"
+import { ArrowDown, ArrowUp, BarChart3, Info, Loader2, Minus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -9,8 +9,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
+  comparisonChange,
   defaultRange,
   formatPercentage,
+  missingPercentage,
   selectedStatusTotal,
   statusPercentage,
   trendValue,
@@ -62,6 +64,8 @@ export function AttendanceTrendChart({ classes }: { classes: ClassOption[] }) {
   const [from, setFrom] = useState(initialRange.from)
   const [to, setTo] = useState(initialRange.to)
   const [classId, setClassId] = useState("all")
+  const [showMissing, setShowMissing] = useState(false)
+  const [showValues, setShowValues] = useState(true)
   const [selected, setSelected] = useState<Record<TrendStatus, boolean>>({
     sakit: true,
     izin: true,
@@ -118,6 +122,21 @@ export function AttendanceTrendChart({ classes }: { classes: ClassOption[] }) {
     if (!state.data) return 0
     return selectedStatusTotal(state.data.buckets, enabledStatuses)
   }, [enabledStatuses, state.data])
+
+  const validRecords = state.data?.buckets.reduce((sum, bucket) => sum + bucket.validRecords, 0) ?? 0
+  const selectedRate = statusPercentage(selectedTotal, validRecords)
+  const previousTotal = state.data?.comparison
+    ? selectedStatusTotal(state.data.comparison.buckets, enabledStatuses)
+    : 0
+  const previousValidRecords = state.data?.comparison?.buckets.reduce((sum, bucket) => sum + bucket.validRecords, 0) ?? 0
+  const currentValue = measure === "jumlah" ? selectedTotal : selectedRate
+  const previousValue = measure === "jumlah"
+    ? previousTotal
+    : statusPercentage(previousTotal, previousValidRecords)
+  const comparison = state.data?.comparison?.available && currentValue !== null && previousValue !== null
+    ? comparisonChange(currentValue, previousValue, measure)
+    : null
+  const allAbsenceSelected = enabledStatuses.length === TREND_STATUSES.length
 
   const invalidRange = granularity !== "semester" && (!from || !to || from > to)
 
@@ -208,9 +227,23 @@ export function AttendanceTrendChart({ classes }: { classes: ClassOption[] }) {
               {statusLabels[status]}
             </label>
           ))}
-          <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-            Total terpilih: <strong className="text-foreground">{selectedTotal.toLocaleString("id-ID")}</strong>
-          </span>
+          <label className="flex cursor-pointer items-center gap-2 border-l border-border pl-5 text-sm font-medium">
+            <Checkbox checked={showMissing} onCheckedChange={(checked) => setShowMissing(checked === true)} />
+            <span className="size-2.5 rounded-sm bg-muted-foreground/60" aria-hidden />
+            Belum diisi
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+            <Checkbox checked={showValues} onCheckedChange={(checked) => setShowValues(checked === true)} />
+            Tampilkan nilai
+          </label>
+        </div>
+        <div className="flex flex-col gap-1 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm sm:flex-row sm:items-center sm:gap-3">
+          <strong className="tabular-nums">
+            {measure === "jumlah"
+              ? `${allAbsenceSelected ? "Total ketidakhadiran" : "Total status ditampilkan"}: ${selectedTotal.toLocaleString("id-ID")}`
+              : `Ketidakhadiran: ${formatPercentage(selectedRate)}`}
+          </strong>
+          <ComparisonText comparison={comparison} measure={measure} />
         </div>
       </CardHeader>
 
@@ -222,14 +255,18 @@ export function AttendanceTrendChart({ classes }: { classes: ClassOption[] }) {
             <Loader2 className="mr-2 size-5 animate-spin" />Memuat tren ketidakhadiran...
           </div>
         ) : null}
-        {!invalidRange && !state.loading && !state.error && enabledStatuses.length === 0 ? (
-          <ChartMessage>Pilih setidaknya satu status untuk ditampilkan.</ChartMessage>
+        {!invalidRange && !state.loading && !state.error && enabledStatuses.length === 0 && !showMissing ? (
+          <ChartMessage>Pilih setidaknya satu status atau Belum diisi untuk ditampilkan.</ChartMessage>
         ) : null}
-        {!invalidRange && !state.loading && !state.error && enabledStatuses.length > 0 && state.data && state.data.buckets.every((bucket) => bucket.validRecords === 0) ? (
-          <ChartMessage>Belum ada data absensi yang sudah diinput pada periode ini.</ChartMessage>
-        ) : null}
-        {!invalidRange && !state.loading && !state.error && enabledStatuses.length > 0 && state.data && state.data.buckets.some((bucket) => bucket.validRecords > 0) ? (
-          <StackedBarChart buckets={state.data.buckets} statuses={enabledStatuses} measure={measure} />
+        {!invalidRange && !state.loading && !state.error && (enabledStatuses.length > 0 || showMissing) && state.data ? (
+          <StackedBarChart
+            buckets={state.data.buckets}
+            previousBuckets={state.data.comparison?.buckets ?? []}
+            statuses={enabledStatuses}
+            measure={measure}
+            showMissing={showMissing}
+            showValues={showValues}
+          />
         ) : null}
       </CardContent>
     </Card>
@@ -244,11 +281,44 @@ function ChartMessage({ children, kind = "empty" }: { children: React.ReactNode;
   )
 }
 
-function StackedBarChart({ buckets, statuses, measure }: { buckets: TrendBucket[]; statuses: TrendStatus[]; measure: TrendMeasure }) {
+function ComparisonText({ comparison, measure }: {
+  comparison: ReturnType<typeof comparisonChange>
+  measure: TrendMeasure
+}) {
+  if (!comparison) return <span className="text-xs text-muted-foreground">Belum ada periode pembanding</span>
+  const Icon = comparison.direction === "up" ? ArrowUp : comparison.direction === "down" ? ArrowDown : Minus
+  const direction = comparison.direction === "up" ? "Naik" : comparison.direction === "down" ? "Turun" : "Tetap"
+  const detail = measure === "jumlah"
+    ? `${Math.abs(comparison.difference).toLocaleString("id-ID")}${comparison.relativePercent === null ? "" : ` (${comparison.relativePercent >= 0 ? "+" : "-"}${formatPercentage(Math.abs(comparison.relativePercent))})`}`
+    : `${formatPercentage(Math.abs(comparison.difference))} poin persentase`
+  return <span className="flex items-center gap-1 text-xs text-muted-foreground"><Icon className="size-3.5" aria-hidden />{direction} {detail} dibanding periode sebelumnya</span>
+}
+
+function BucketStateMarker({ bucket, x, y }: { bucket: TrendBucket; x: number; y: number }) {
+  if (bucket.state === "future") return null
+  const holiday = bucket.state === "holiday"
+  return (
+    <g aria-hidden>
+      <line x1={x - 5} x2={x + 5} y1={y - 1} y2={y - 1} stroke="var(--muted-foreground)" strokeWidth="2" strokeDasharray={holiday ? undefined : "2 2"} />
+      <text x={x} y={y - 7} textAnchor="middle" fill="var(--muted-foreground)" fontSize="8">{holiday ? "Libur" : "?"}</text>
+    </g>
+  )
+}
+
+function StackedBarChart({
+  buckets, previousBuckets, statuses, measure, showMissing, showValues,
+}: {
+  buckets: TrendBucket[]
+  previousBuckets: TrendBucket[]
+  statuses: TrendStatus[]
+  measure: TrendMeasure
+  showMissing: boolean
+  showValues: boolean
+}) {
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const width = 960
   const height = 310
-  const margin = { top: 12, right: 18, bottom: 54, left: 64 }
+  const margin = { top: 24, right: showMissing ? 64 : 18, bottom: 54, left: 64 }
   const plotWidth = width - margin.left - margin.right
   const plotHeight = height - margin.top - margin.bottom
 
@@ -257,11 +327,18 @@ function StackedBarChart({ buckets, statuses, measure }: { buckets: TrendBucket[
     return sum + value
   }, 0))
   const maxValue = niceMaximum(Math.max(...values, 0), measure)
+  const missingValues = buckets.map((bucket) => measure === "jumlah" ? bucket.missingRecords : (missingPercentage(bucket) ?? 0))
+  const missingMax = niceMaximum(Math.max(...missingValues, 0), measure)
   const ticks = Array.from({ length: 5 }, (_, index) => (maxValue / 4) * index)
   const band = plotWidth / Math.max(buckets.length, 1)
-  const barWidth = Math.min(38, Math.max(5, band * 0.72))
+  const groupGap = showMissing ? Math.min(5, band * 0.08) : 0
+  const barWidth = showMissing
+    ? Math.min(26, Math.max(4, (band * 0.72 - groupGap) / 2))
+    : Math.min(38, Math.max(5, band * 0.72))
   const labelEvery = Math.max(1, Math.ceil(buckets.length / 10))
   const active = buckets.find((bucket) => bucket.key === activeKey) ?? null
+  const activeIndex = active ? buckets.findIndex((bucket) => bucket.key === active.key) : -1
+  const previousActive = activeIndex >= 0 ? previousBuckets[activeIndex] ?? null : null
 
   return (
     <div className="relative">
@@ -277,10 +354,23 @@ function StackedBarChart({ buckets, statuses, measure }: { buckets: TrendBucket[
             </g>
           )
         })}
+        {showMissing ? ticks.map((_, index) => {
+          const tick = (missingMax / 4) * index
+          const y = margin.top + plotHeight - (tick / missingMax) * plotHeight
+          return (
+            <text key={`missing-${tick}`} x={width - margin.right + 10} y={y + 4} fill="var(--muted-foreground)" fontSize="10">
+              {measure === "persentase" ? `${formatAxis(tick)}%` : formatAxis(tick)}
+            </text>
+          )
+        }) : null}
 
         {buckets.map((bucket, index) => {
-          const x = margin.left + index * band + (band - barWidth) / 2
+          const groupWidth = showMissing ? barWidth * 2 + groupGap : barWidth
+          const x = margin.left + index * band + (band - groupWidth) / 2
+          const missingX = x + barWidth + groupGap
           let cumulative = 0
+          const total = values[index]
+          const missingValue = missingValues[index]
           const visibleStatuses = statuses.filter((status) => (trendValue(bucket, status, measure) ?? 0) > 0)
           const topStatus = visibleStatuses.at(-1) ?? null
           const showLabel = index % labelEvery === 0 || index === buckets.length - 1
@@ -297,8 +387,8 @@ function StackedBarChart({ buckets, statuses, measure }: { buckets: TrendBucket[
               className="outline-none"
             >
               <rect x={margin.left + index * band} y={margin.top} width={band} height={plotHeight} fill="transparent" />
-              {bucket.validRecords === 0 ? (
-                <rect x={x} y={margin.top + plotHeight - 2} width={barWidth} height={2} rx={1} fill="var(--muted)" />
+              {bucket.state !== "active" ? (
+                <BucketStateMarker bucket={bucket} x={x + groupWidth / 2} y={margin.top + plotHeight} />
               ) : statuses.map((status) => {
                 const raw = trendValue(bucket, status, measure) ?? 0
                 const segmentHeight = (raw / maxValue) * plotHeight
@@ -329,8 +419,26 @@ function StackedBarChart({ buckets, statuses, measure }: { buckets: TrendBucket[
                   />
                 )
               })}
+              {bucket.state === "active" && showMissing && missingValue > 0 ? (
+                <path
+                  d={roundedTopSegmentPath(missingX, margin.top + plotHeight - (missingValue / missingMax) * plotHeight, barWidth, (missingValue / missingMax) * plotHeight, 4)}
+                  fill="var(--muted-foreground)"
+                  opacity={activeKey && activeKey !== bucket.key ? 0.28 : 0.58}
+                  className="transition-opacity"
+                />
+              ) : null}
+              {bucket.state === "active" && showValues && (buckets.length <= 16 || index % 2 === 0) ? (
+                <text x={x + barWidth / 2} y={Math.max(11, margin.top + plotHeight - (total / maxValue) * plotHeight - 5)} textAnchor="middle" fill="var(--foreground)" fontSize="10" fontWeight="600">
+                  {formatChartValue(total, measure)}
+                </text>
+              ) : null}
+              {bucket.state === "active" && showValues && showMissing && missingValue > 0 && buckets.length <= 12 ? (
+                <text x={missingX + barWidth / 2} y={Math.max(11, margin.top + plotHeight - (missingValue / missingMax) * plotHeight - 5)} textAnchor="middle" fill="var(--muted-foreground)" fontSize="9" fontWeight="600">
+                  {formatChartValue(missingValue, measure)}
+                </text>
+              ) : null}
               {showLabel ? (
-                <text x={x + barWidth / 2} y={margin.top + plotHeight + 18} textAnchor="end" transform={`rotate(-35 ${x + barWidth / 2} ${margin.top + plotHeight + 18})`} fill="var(--muted-foreground)" fontSize="10">
+                <text x={x + groupWidth / 2} y={margin.top + plotHeight + 18} textAnchor="end" transform={`rotate(-35 ${x + groupWidth / 2} ${margin.top + plotHeight + 18})`} fill="var(--muted-foreground)" fontSize="10">
                   {bucket.label}
                 </text>
               ) : null}
@@ -342,18 +450,37 @@ function StackedBarChart({ buckets, statuses, measure }: { buckets: TrendBucket[
         </text>
       </svg>
 
-      {active ? <ChartTooltip bucket={active} statuses={statuses} measure={measure} /> : null}
+      {active ? <ChartTooltip bucket={active} previousBucket={previousActive} statuses={statuses} measure={measure} showMissing={showMissing} /> : null}
       <p className="mt-1 text-center text-xs text-muted-foreground">Arahkan kursor atau fokuskan batang untuk melihat detail.</p>
     </div>
   )
 }
 
-function ChartTooltip({ bucket, statuses, measure }: { bucket: TrendBucket; statuses: TrendStatus[]; measure: TrendMeasure }) {
+function ChartTooltip({ bucket, previousBucket, statuses, measure, showMissing }: {
+  bucket: TrendBucket
+  previousBucket: TrendBucket | null
+  statuses: TrendStatus[]
+  measure: TrendMeasure
+  showMissing: boolean
+}) {
   const selectedTotal = statuses.reduce((sum, status) => sum + bucket.counts[status], 0)
+  const comparablePrevious = previousBucket?.state === "active" ? previousBucket : null
+  const previousTotal = comparablePrevious ? statuses.reduce((sum, status) => sum + comparablePrevious.counts[status], 0) : null
+  const currentValue = measure === "jumlah" ? selectedTotal : statusPercentage(selectedTotal, bucket.validRecords)
+  const previousValue = comparablePrevious && previousTotal !== null
+    ? measure === "jumlah" ? previousTotal : statusPercentage(previousTotal, comparablePrevious.validRecords)
+    : null
+  const change = currentValue !== null && previousValue !== null ? comparisonChange(currentValue, previousValue, measure) : null
   return (
     <div className="pointer-events-none absolute right-2 top-2 z-10 min-w-56 rounded-lg border border-border bg-popover/95 p-3 text-sm text-popover-foreground shadow-lg backdrop-blur" role="status" aria-live="polite">
       <p className="mb-2 font-semibold">{bucket.tooltipLabel}</p>
-      {bucket.validRecords === 0 ? <p className="text-muted-foreground">Belum ada data absensi valid.</p> : (
+      {bucket.state === "holiday" ? (
+        <p className="text-muted-foreground">Libur{bucket.holidayNames.length ? ` · ${bucket.holidayNames.join(", ")}` : ""}</p>
+      ) : bucket.state === "no_data" ? (
+        <p className="max-w-60 text-muted-foreground">Tidak ada data absensi pada tanggal ini. Status hari tidak dapat dipastikan.</p>
+      ) : bucket.state === "future" ? (
+        <p className="text-muted-foreground">Tanggal mendatang tidak masuk perhitungan.</p>
+      ) : (
         <ul className="space-y-1.5">
           {statuses.map((status) => (
             <li key={status} className="flex items-center gap-2">
@@ -370,14 +497,25 @@ function ChartTooltip({ bucket, statuses, measure }: { bucket: TrendBucket; stat
             <span>Total ketidakhadiran</span>
             <span className="tabular-nums">{measure === "jumlah" ? selectedTotal.toLocaleString("id-ID") : formatPercentage(statusPercentage(selectedTotal, bucket.validRecords))}</span>
           </li>
+          {previousValue !== null ? <li className="flex justify-between text-xs text-muted-foreground"><span>Sebelumnya</span><span>{formatChartValue(previousValue, measure)}</span></li> : null}
+          {change ? <li><ComparisonText comparison={change} measure={measure} /></li> : null}
+          {bucket.isCurrentDay && bucket.missingRecords > 0 ? <li className="text-xs text-muted-foreground">Hari ini · pengisian mungkin masih berlangsung.</li> : null}
         </ul>
       )}
+      {showMissing && bucket.state === "active" ? (
+        <div className="mt-3 border-t border-border pt-2">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Kelengkapan data</p>
+          <p className="flex justify-between gap-4"><span>Belum diisi</span><strong className="tabular-nums">{bucket.missingRecords.toLocaleString("id-ID")} / {bucket.expectedAttendance.toLocaleString("id-ID")} ({formatPercentage(missingPercentage(bucket))})</strong></p>
+        </div>
+      ) : null}
     </div>
   )
 }
 
 function tooltipAria(bucket: TrendBucket, statuses: TrendStatus[], measure: TrendMeasure) {
-  if (bucket.validRecords === 0) return `${bucket.tooltipLabel}: belum ada data absensi valid`
+  if (bucket.state === "holiday") return `${bucket.tooltipLabel}: Libur`
+  if (bucket.state === "no_data") return `${bucket.tooltipLabel}: Tidak ada data, status hari tidak dapat dipastikan`
+  if (bucket.state === "future") return `${bucket.tooltipLabel}: tanggal mendatang`
   return `${bucket.tooltipLabel}. ${statuses.map((status) => `${statusLabels[status]} ${measure === "jumlah" ? bucket.counts[status] : formatPercentage(statusPercentage(bucket.counts[status], bucket.validRecords))}`).join(", ")}`
 }
 
@@ -387,7 +525,11 @@ function niceMaximum(max: number, measure: TrendMeasure) {
   const magnitude = 10 ** Math.floor(Math.log10(padded))
   const normalized = padded / magnitude
   const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10
-  return nice * magnitude
+  return measure === "persentase" ? Math.min(100, nice * magnitude) : nice * magnitude
+}
+
+function formatChartValue(value: number, measure: TrendMeasure) {
+  return measure === "jumlah" ? value.toLocaleString("id-ID") : formatPercentage(value)
 }
 
 function roundedTopSegmentPath(x: number, y: number, width: number, height: number, radius: number) {
