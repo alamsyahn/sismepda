@@ -15,10 +15,15 @@ import {
   Settings,
   FileDown,
   MessageCircleMore,
+  Wallet,
+  Boxes,
   type LucideIcon,
 } from "lucide-react"
 
-export type NavCapability = "workbookSupervision"
+import { canViewBos } from "@/lib/bos"
+import { canViewSarpras } from "@/lib/sarpras"
+
+export type NavCapability = "workbookSupervision" | "bos" | "sarpras"
 
 export type NavItem = {
   type?: "item"
@@ -48,6 +53,13 @@ export type NavViewer = {
   role: "ADMIN" | "GURU"
   canSuperviseWorkbooks?: boolean
   canViewWorkbookSupervision?: boolean
+  canViewBos?: boolean
+  canCreateBos?: boolean
+  canEditBos?: boolean
+  canManageBosCategories?: boolean
+  canManageBosAccess?: boolean
+  canViewSarpras?: boolean
+  canEditSarpras?: boolean
 }
 
 export function isNavGroup(entry: NavEntry): entry is NavGroup {
@@ -64,6 +76,8 @@ export function canSeeNavItem(item: NavItem, viewer: NavViewer): boolean {
       viewer.canViewWorkbookSupervision === true
     )
   }
+  if (item.capability === "bos") return canViewBos(viewer)
+  if (item.capability === "sarpras") return canViewSarpras(viewer)
   return true
 }
 
@@ -105,6 +119,36 @@ export function activeNavHref(entries: NavEntry[], pathname: string): string | n
     if (best === null || item.href.length > best.length) best = item.href
   }
   return best
+}
+
+/** Group that owns `activeHref`, or null when the active item is top-level. */
+export function activeNavGroupId(entries: NavEntry[], activeHref: string | null): string | null {
+  if (!activeHref) return null
+  for (const entry of entries) {
+    if (!isNavGroup(entry)) continue
+    if (entry.children.some((child) => child.href === activeHref)) return entry.id
+  }
+  return null
+}
+
+/**
+ * Open/closed state for the collapsible groups.
+ *
+ * The active route only *seeds* the state: the first time a group becomes the
+ * active one (initial render, refresh, or navigating in from elsewhere) it is
+ * opened automatically so the current page is visible. From then on the entry
+ * lives in the same map as every manual toggle, so the user can close an active
+ * group again — the route never forces it back open.
+ */
+export function seedActiveGroup(
+  state: Record<string, boolean>,
+  previousActiveGroupId: string | null,
+  activeGroupId: string | null,
+): Record<string, boolean> {
+  if (!activeGroupId) return state
+  if (activeGroupId === previousActiveGroupId) return state
+  if (state[activeGroupId] === true) return state
+  return { ...state, [activeGroupId]: true }
 }
 
 export const dashboardItem: NavItem = {
@@ -205,6 +249,22 @@ export const mainNav: NavEntry[] = [
         capability: "workbookSupervision",
       },
     ],
+  },
+  {
+    title: "BOS",
+    href: "/bos",
+    icon: Wallet,
+    description: "Pengelolaan dan monitoring penggunaan dana BOS",
+    roles: ["ADMIN", "GURU"],
+    capability: "bos",
+  },
+  {
+    title: "Sarpras",
+    href: "/sarpras",
+    icon: Boxes,
+    description: "Inventaris dan kondisi sarana & prasarana sekolah",
+    roles: ["ADMIN", "GURU"],
+    capability: "sarpras",
   },
   {
     type: "group",

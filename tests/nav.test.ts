@@ -3,10 +3,12 @@ import { test } from "node:test"
 
 import {
   accountNav,
+  activeNavGroupId,
   activeNavHref,
   flattenNav,
   isNavGroup,
   mainNav,
+  seedActiveGroup,
   visibleNavEntries,
   visibleNavItems,
 } from "../lib/nav"
@@ -80,4 +82,105 @@ test("visibleNavItems tetap kompatibel sebagai daftar datar", () => {
   assert.ok(hrefs.includes("/"))
   assert.ok(hrefs.includes("/pengaturan"))
   assert.equal(new Set(hrefs).size, hrefs.length, "tidak boleh ada href duplikat")
+})
+
+test("BOS hanya terlihat oleh pemegang hak, bukan semua GURU", () => {
+  const hrefs = (viewer: Parameters<typeof visibleNavEntries>[1]) =>
+    flattenNav(visibleNavEntries(mainNav, viewer)).map((item) => item.href)
+
+  assert.ok(!hrefs(guru).includes("/bos"), "GURU polos tidak boleh melihat menu BOS")
+  assert.ok(hrefs({ role: "GURU", canViewBos: true }).includes("/bos"))
+  assert.ok(hrefs({ role: "GURU", canCreateBos: true }).includes("/bos"))
+  assert.ok(hrefs(admin).includes("/bos"))
+})
+
+test("BOS adalah menu utama tepat di bawah Kurikulum", () => {
+  const entries = visibleNavEntries(mainNav, admin)
+  const ids = entries.map((entry) => (isNavGroup(entry) ? entry.id : entry.href))
+  const bosIndex = ids.indexOf("/bos")
+
+  assert.ok(bosIndex > -1, "BOS harus ada di navigasi utama")
+  assert.equal(ids[bosIndex - 1], "kurikulum", "BOS tepat di bawah Kurikulum")
+
+  const bos = entries[bosIndex]
+  assert.ok(!isNavGroup(bos), "BOS bukan group/submenu")
+})
+
+test("route BOS aktif termasuk sub-halaman akses", () => {
+  const entries = visibleNavEntries(mainNav, admin)
+  assert.equal(activeNavHref(entries, "/bos"), "/bos")
+  assert.equal(activeNavHref(entries, "/bos/akses"), "/bos")
+})
+
+test("Sarpras adalah menu utama tepat di bawah BOS", () => {
+  const entries = visibleNavEntries(mainNav, admin)
+  const ids = entries.map((entry) => (isNavGroup(entry) ? entry.id : entry.href))
+  const sarprasIndex = ids.indexOf("/sarpras")
+
+  assert.ok(sarprasIndex > -1, "Sarpras harus ada di navigasi utama")
+  assert.equal(ids[sarprasIndex - 1], "/bos", "Sarpras tepat di bawah BOS")
+  assert.equal(ids[sarprasIndex + 1], "komunikasi-data", "Sarpras tepat di atas Komunikasi & Data")
+
+  const sarpras = entries[sarprasIndex]
+  assert.ok(!isNavGroup(sarpras), "Sarpras bukan group/submenu")
+})
+
+test("capability sarpras mengikuti guard server", () => {
+  const hrefs = (viewer: Parameters<typeof visibleNavEntries>[1]) =>
+    flattenNav(visibleNavEntries(mainNav, viewer)).map((item) => item.href)
+
+  assert.ok(!hrefs(guru).includes("/sarpras"), "GURU polos tidak boleh melihat menu Sarpras")
+  assert.ok(hrefs({ role: "GURU", canViewSarpras: true }).includes("/sarpras"))
+  // Hak edit menyiratkan hak lihat, sehingga menu tetap muncul.
+  assert.ok(hrefs({ role: "GURU", canEditSarpras: true }).includes("/sarpras"))
+  assert.ok(hrefs(admin).includes("/sarpras"))
+})
+
+test("route Sarpras aktif termasuk sub-halaman akses", () => {
+  const entries = visibleNavEntries(mainNav, admin)
+  assert.equal(activeNavHref(entries, "/sarpras"), "/sarpras")
+  assert.equal(activeNavHref(entries, "/sarpras/akses"), "/sarpras")
+})
+
+test("activeNavGroupId menemukan induk dari child yang aktif", () => {
+  const entries = visibleNavEntries(mainNav, admin)
+  assert.equal(activeNavGroupId(entries, activeNavHref(entries, "/absensi/input")), "absensi")
+  assert.equal(activeNavGroupId(entries, activeNavHref(entries, "/rekap-sekolah")), "absensi")
+  assert.equal(activeNavGroupId(entries, activeNavHref(entries, "/siswa")), "data-master")
+  // Menu top-level tidak punya induk.
+  assert.equal(activeNavGroupId(entries, activeNavHref(entries, "/bos")), null)
+  assert.equal(activeNavGroupId(entries, null), null)
+})
+
+test("group aktif dibuka otomatis saat pertama kali menjadi aktif", () => {
+  assert.deepEqual(seedActiveGroup({}, null, "absensi"), { absensi: true })
+})
+
+test("group aktif tetap bisa ditutup manual oleh pengguna", () => {
+  // Pengguna menutup "absensi" padahal route anaknya sedang aktif.
+  const closed = { absensi: false }
+  // Render ulang berikutnya (route yang sama) tidak boleh memaksa terbuka.
+  assert.deepEqual(seedActiveGroup(closed, "absensi", "absensi"), closed)
+})
+
+test("berpindah ke section lain membuka induk baru tanpa mengubah yang lain", () => {
+  const state = { absensi: false }
+  assert.deepEqual(seedActiveGroup(state, "absensi", "data-master"), {
+    absensi: false,
+    "data-master": true,
+  })
+})
+
+test("kembali ke section yang tadinya ditutup akan membukanya lagi", () => {
+  // absensi ditutup manual -> pindah ke data-master -> kembali ke absensi.
+  const afterClose = seedActiveGroup({ absensi: false }, "absensi", "data-master")
+  assert.deepEqual(seedActiveGroup(afterClose, "data-master", "absensi"), {
+    absensi: true,
+    "data-master": true,
+  })
+})
+
+test("route tanpa induk tidak mengubah state accordion", () => {
+  const state = { absensi: true }
+  assert.deepEqual(seedActiveGroup(state, "absensi", null), state)
 })

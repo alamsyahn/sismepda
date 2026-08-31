@@ -2,16 +2,18 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChevronRight, GraduationCap, LogOut } from "lucide-react"
 import { signOut, useSession } from "next-auth/react"
 import { cn } from "@/lib/utils"
 import {
   accountNav,
+  activeNavGroupId,
   activeNavHref,
   canSeeNavItem,
   isNavGroup,
   mainNav,
+  seedActiveGroup,
   visibleNavEntries,
   type NavGroup,
   type NavItem,
@@ -45,31 +47,54 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
       role,
       canSuperviseWorkbooks: session?.user.canSuperviseWorkbooks,
       canViewWorkbookSupervision: session?.user.canViewWorkbookSupervision,
+      canViewBos: session?.user.canViewBos,
+      canCreateBos: session?.user.canCreateBos,
+      canEditBos: session?.user.canEditBos,
+      canManageBosCategories: session?.user.canManageBosCategories,
+      canManageBosAccess: session?.user.canManageBosAccess,
+      canViewSarpras: session?.user.canViewSarpras,
+      canEditSarpras: session?.user.canEditSarpras,
     }),
-    [role, session?.user.canSuperviseWorkbooks, session?.user.canViewWorkbookSupervision],
+    [
+      role,
+      session?.user.canSuperviseWorkbooks,
+      session?.user.canViewWorkbookSupervision,
+      session?.user.canViewBos,
+      session?.user.canCreateBos,
+      session?.user.canEditBos,
+      session?.user.canManageBosCategories,
+      session?.user.canManageBosAccess,
+      session?.user.canViewSarpras,
+      session?.user.canEditSarpras,
+    ],
   )
 
   const entries = useMemo(() => visibleNavEntries(mainNav, viewer), [viewer])
   const accountItems = useMemo(() => accountNav.filter((item) => canSeeNavItem(item, viewer)), [viewer])
   const activeHref = useMemo(() => activeNavHref([...entries, ...accountItems], pathname), [entries, accountItems, pathname])
 
-  /** Group that owns the active route — always forced open, regardless of stored state. */
-  const activeGroupId = useMemo(() => {
-    if (!activeHref) return null
-    const group = entries.find(
-      (entry) => isNavGroup(entry) && entry.children.some((child) => child.href === activeHref),
-    )
-    return group && isNavGroup(group) ? group.id : null
-  }, [entries, activeHref])
+  /** Group that owns the active route — only used to seed the open state. */
+  const activeGroupId = useMemo(() => activeNavGroupId(entries, activeHref), [entries, activeHref])
 
-  const [manualState, setManualState] = useState<Record<string, boolean>>({})
+  /**
+   * Single source of truth for the accordion. The active route seeds it once
+   * (see `seedActiveGroup`) but never overrides it, so an active group stays
+   * collapsible.
+   */
+  const [groupState, setGroupState] = useState<Record<string, boolean>>({})
+  const seededGroupId = useRef<string | null>(null)
 
   useEffect(() => {
-    setManualState(readStoredGroups())
+    setGroupState(readStoredGroups())
   }, [])
 
+  useEffect(() => {
+    setGroupState((current) => seedActiveGroup(current, seededGroupId.current, activeGroupId))
+    seededGroupId.current = activeGroupId
+  }, [activeGroupId])
+
   const toggleGroup = useCallback((id: string, next: boolean) => {
-    setManualState((current) => {
+    setGroupState((current) => {
       const updated = { ...current, [id]: next }
       try {
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
@@ -99,7 +124,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
               key={entry.id}
               group={entry}
               activeHref={activeHref}
-              open={activeGroupId === entry.id || (manualState[entry.id] ?? false)}
+              open={groupState[entry.id] ?? false}
               onOpenChange={(next) => toggleGroup(entry.id, next)}
               onNavigate={onNavigate}
             />
