@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
+import { usePathname, useSearchParams } from "next/navigation"
 import { CalendarDays, CheckCircle2, ChevronRight, Clock, Grid3X3, ListChecks, Search } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -9,50 +10,101 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { DateFilter } from "@/components/date-filter"
 import { formatLongDate, localDateValue } from "@/lib/date"
-import { StatusPill } from "@/components/dashboard/status-pill"
-import { grades_list, type ClassRecord } from "@/lib/dashboard-data"
+import { grades_list, type AbsentStudent, type ClassRecord } from "@/lib/dashboard-data"
 import { ExportButton } from "@/components/export/export-button"
 import { ClassPeriodRecap } from "@/components/rekap/class-period-recap"
-import { selectCumulativeClass, selectMatrixClass } from "@/lib/rekap-kelas-navigation"
+import { ClassAbsenteeDetail } from "@/components/rekap/class-absentee-detail"
+import { indexAbsenteesByClass } from "@/lib/class-absentees"
+import {
+  isSameRecapView,
+  readRecapView,
+  recapViewSearch,
+  selectCumulativeClass,
+  selectMatrixClass,
+  shouldPushRecapHistory,
+  type RecapView,
+} from "@/lib/rekap-kelas-navigation"
 import { ProfileNameLink } from "@/components/profile/profile-name-link"
 
 const gradeOptions = [{ value: "all", label: "Semua Tingkat" }, ...grades_list.map((g) => ({ value: g, label: `Tingkat ${g}` }))]
-type Mode = "daily" | "cumulative" | "matrix"
 
 export default function RekapKelasPage() {
+  return (
+    <Suspense fallback={<PageContainer><PageHeading title="Rekap Kelas" description="Memuat rekap kelas..." /></PageContainer>}>
+      <RekapKelasView />
+    </Suspense>
+  )
+}
+
+function RekapKelasView() {
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const view = readRecapView(searchParams)
+  const { mode, classId: selectedClassId } = view
+
   const [classes, setClasses] = useState<ClassRecord[]>([])
+  const [absentStudents, setAbsentStudents] = useState<AbsentStudent[]>([])
   const [holiday, setHoliday] = useState<{ id: string; name: string } | null>(null)
   const [date, setDate] = useState(localDateValue())
   const [grade, setGrade] = useState("all")
   const [query, setQuery] = useState("")
-  const [mode, setMode] = useState<Mode>("daily")
-  const [selectedClassId, setSelectedClassId] = useState<string | null>(null)
-  useEffect(() => { fetch(`/api/dashboard?date=${date}`).then((r) => r.json()).then((data) => { setClasses(data.classes ?? []); setHoliday(data.holiday ?? null) }) }, [date])
-  const filtered = useMemo(() => classes.filter((c) => (grade === "all" || c.grade === grade) && (!query.trim() || c.name.toLowerCase().includes(query.toLowerCase()) || c.homeroom.toLowerCase().includes(query.toLowerCase()))), [classes, grade, query])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetch(`/api/dashboard?date=${date}`, { signal: controller.signal })
+      .then((r) => r.json())
+      .then((data) => {
+        setClasses(data.classes ?? [])
+        setAbsentStudents(data.absentStudents ?? [])
+        setHoliday(data.holiday ?? null)
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return
+        setClasses([])
+        setAbsentStudents([])
+      })
+    return () => controller.abort()
+  }, [date])
+
+  /**
+   * URL adalah sumber kebenaran tab aktif. Perpindahan tab memakai pushState
+   * sehingga tombol "back" di browser maupun HP kembali ke tab sebelumnya,
+   * sementara pergantian kelas di dalam tab hanya mengganti entri berjalan.
+   */
+  const applyView = useCallback(
+    (next: RecapView) => {
+      if (isSameRecapView(view, next)) return
+      const url = `${pathname}${recapViewSearch(searchParams.toString(), next)}`
+      if (shouldPushRecapHistory(view, next)) window.history.pushState(null, "", url)
+      else window.history.replaceState(null, "", url)
+    },
+    [pathname, searchParams, view],
+  )
+
+  const filtered = useMemo(
+    () =>
+      classes.filter(
+        (c) =>
+          (grade === "all" || c.grade === grade) &&
+          (!query.trim() || c.name.toLowerCase().includes(query.toLowerCase()) || c.homeroom.toLowerCase().includes(query.toLowerCase())),
+      ),
+    [classes, grade, query],
+  )
   const classOptions = useMemo(() => classes.map((item) => ({ id: item.id, name: item.name })), [classes])
-  const openCumulativeRecap = (classId: string) => {
-    const selection = selectCumulativeClass(classId)
-    setMode(selection.mode)
-    setSelectedClassId(selection.classId)
-  }
-  const openAttendanceCalendar = (classId: string) => {
-    const selection = selectMatrixClass(classId)
-    setMode(selection.mode)
-    setSelectedClassId(selection.classId)
-  }
+  const absenteesByClass = useMemo(() => indexAbsenteesByClass(absentStudents), [absentStudents])
 
   return <PageContainer>
     <PageHeading title="Rekap Kelas" description={mode === "daily" ? `Rincian kehadiran dan status input pada ${formatLongDate(date)}.` : "Rekap ketidakhadiran siswa berdasarkan kelas dan rentang tanggal."}
       action={mode === "daily" ? <><DateFilter value={date} onChange={setDate} ariaLabel="Tanggal rekap kelas"/><ExportButton type="attendance_classes" params={{ date, grade, query }}/></> : undefined}/>
     <div className="mb-5 flex w-fit flex-wrap rounded-xl bg-muted p-1">
-      <ModeButton active={mode === "daily"} onClick={() => setMode("daily")} icon={<CalendarDays/>}>Ringkasan Harian</ModeButton>
-      <ModeButton active={mode === "cumulative"} onClick={() => setMode("cumulative")} icon={<ListChecks/>}>Kumulatif</ModeButton>
-      <ModeButton active={mode === "matrix"} onClick={() => setMode("matrix")} icon={<Grid3X3/>}>Kalender Kehadiran</ModeButton>
+      <ModeButton active={mode === "daily"} onClick={() => applyView({ mode: "daily", classId: null })} icon={<CalendarDays/>}>Ringkasan Harian</ModeButton>
+      <ModeButton active={mode === "cumulative"} onClick={() => applyView({ mode: "cumulative", classId: selectedClassId })} icon={<ListChecks/>}>Kumulatif</ModeButton>
+      <ModeButton active={mode === "matrix"} onClick={() => applyView({ mode: "matrix", classId: selectedClassId })} icon={<Grid3X3/>}>Kalender Kehadiran</ModeButton>
     </div>
 
-    {mode !== "daily" ? <ClassPeriodRecap mode={mode} classes={classOptions} initialClassId={selectedClassId}/> : holiday ? (
+    {mode !== "daily" ? <ClassPeriodRecap mode={mode} classes={classOptions} initialClassId={selectedClassId} onClassChange={(id) => applyView({ mode, classId: id })}/> : holiday ? (
       <Card className="border-primary/30 bg-primary/5"><CardContent className="py-12 text-center"><p className="text-lg font-semibold">Hari Libur</p><p className="text-sm text-muted-foreground">{holiday.name}. Tidak ada kewajiban input absensi pada tanggal ini.</p></CardContent></Card>
-    ) : <DailyRecap classes={filtered} grade={grade} setGrade={setGrade} query={query} setQuery={setQuery} onSelectCumulativeClass={openCumulativeRecap} onSelectAttendanceCalendar={openAttendanceCalendar}/>}
+    ) : <DailyRecap classes={filtered} absenteesByClass={absenteesByClass} grade={grade} setGrade={setGrade} query={query} setQuery={setQuery} onSelectCumulativeClass={(id) => applyView(selectCumulativeClass(id))} onSelectAttendanceCalendar={(id) => applyView(selectMatrixClass(id))}/>}
   </PageContainer>
 }
 
@@ -60,18 +112,18 @@ function ModeButton({active,onClick,icon,children}:{active:boolean;onClick:()=>v
   return <Button variant={active ? "secondary" : "ghost"} size="sm" onClick={onClick} aria-pressed={active} className={active ? "bg-card shadow-sm" : "text-muted-foreground"}><span className="[&_svg]:size-4">{icon}</span>{children}</Button>
 }
 
-function DailyRecap({classes,grade,setGrade,query,setQuery,onSelectCumulativeClass,onSelectAttendanceCalendar}:{classes:ClassRecord[];grade:string;setGrade:(v:string)=>void;query:string;setQuery:(v:string)=>void;onSelectCumulativeClass:(classId:string)=>void;onSelectAttendanceCalendar:(classId:string)=>void}) {
+function DailyRecap({classes,absenteesByClass,grade,setGrade,query,setQuery,onSelectCumulativeClass,onSelectAttendanceCalendar}:{classes:ClassRecord[];absenteesByClass:Map<string,AbsentStudent[]>;grade:string;setGrade:(v:string)=>void;query:string;setQuery:(v:string)=>void;onSelectCumulativeClass:(classId:string)=>void;onSelectAttendanceCalendar:(classId:string)=>void}) {
   return <div className="space-y-5">
     <Card className="border-border/70"><CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
       <div className="relative flex-1"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"/><Input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Cari kelas atau wali kelas..." className="bg-card pl-9"/></div>
       <Select value={grade} onValueChange={(v)=>v&&setGrade(v)}><SelectTrigger className="w-full bg-card sm:w-48"><SelectValue>{(value:string)=>gradeOptions.find((o)=>o.value===value)?.label??"Pilih tingkat"}</SelectValue></SelectTrigger><SelectContent>{gradeOptions.map((o)=><SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select>
     </CardContent></Card>
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{classes.map((c)=><Card key={c.id} className="border-border/70"><CardContent className="space-y-4 p-5">
+    <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-3">{classes.map((c)=><Card key={c.id} className="border-border/70"><CardContent className="space-y-4 p-5">
       <div className="flex items-start justify-between gap-3"><div><p className="text-lg font-bold">{c.name}</p><p className="text-sm text-muted-foreground">{c.homeroomId ? <ProfileNameLink type="teacher" id={c.homeroomId} name={c.homeroom} /> : c.homeroom}</p></div>{c.submitted?<span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--chart-1)]/12 px-2.5 py-1 text-xs font-medium text-[var(--chart-1)]"><CheckCircle2 className="size-3.5"/>{c.submittedAt}</span>:<span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--chart-5)]/12 px-2.5 py-1 text-xs font-medium text-[var(--chart-5)]"><Clock className="size-3.5"/>Belum input</span>}</div>
-      {c.submitted?<><div className="flex items-baseline justify-between"><span className="text-sm text-muted-foreground">Kehadiran</span><span className="text-sm font-semibold">{c.hadir}/{c.totalStudents} siswa</span></div><div className="flex flex-wrap gap-1.5"><StatusPill status="hadir" count={c.hadir}/><StatusPill status="sakit" count={c.sakit}/><StatusPill status="izin" count={c.izin}/><StatusPill status="dispensasi" count={c.dispensasi}/><StatusPill status="alfa" count={c.alfa}/></div></>:<p className="rounded-lg bg-secondary/60 px-3 py-6 text-center text-sm text-muted-foreground">{c.totalStudents} siswa · absensi belum diinput pada tanggal ini</p>}
-      <div className="grid gap-2">
-        <Button type="button" variant="outline" className="w-full" onClick={()=>onSelectCumulativeClass(c.id)}>Buka rekap kumulatif<ChevronRight className="size-4" /></Button>
-        <Button type="button" className="w-full" onClick={()=>onSelectAttendanceCalendar(c.id)}><CalendarDays className="size-4" />Buka kalender kehadiran<ChevronRight className="size-4" /></Button>
+      {c.submitted?<ClassAbsenteeDetail className={c.name} students={absenteesByClass.get(c.id)??[]} hadir={c.hadir} totalStudents={c.totalStudents}/>:<p className="rounded-lg bg-secondary/60 px-3 py-6 text-center text-sm text-muted-foreground">{c.totalStudents} siswa · absensi belum diinput pada tanggal ini</p>}
+      <div className="grid gap-2 border-t border-border/60 pt-3 sm:grid-cols-2">
+        <Button type="button" variant="ghost" size="sm" className="w-full justify-between text-muted-foreground hover:text-foreground" onClick={()=>onSelectCumulativeClass(c.id)}><span className="flex items-center gap-1.5"><ListChecks className="size-4" />Rekap kumulatif</span><ChevronRight className="size-4" /></Button>
+        <Button type="button" variant="ghost" size="sm" className="w-full justify-between text-muted-foreground hover:text-foreground" onClick={()=>onSelectAttendanceCalendar(c.id)}><span className="flex items-center gap-1.5"><CalendarDays className="size-4" />Kalender kehadiran</span><ChevronRight className="size-4" /></Button>
       </div>
     </CardContent></Card>)}</div>
     {classes.length===0?<p className="py-12 text-center text-sm text-muted-foreground">Tidak ada kelas yang cocok dengan pencarian.</p>:null}
