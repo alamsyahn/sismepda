@@ -218,7 +218,7 @@ export function AttendanceTrendChart({ classes }: { classes: ClassOption[] }) {
         {invalidRange ? <ChartMessage kind="error">Tanggal mulai tidak boleh setelah tanggal akhir.</ChartMessage> : null}
         {!invalidRange && state.error ? <ChartMessage kind="error">{state.error}</ChartMessage> : null}
         {!invalidRange && state.loading ? (
-          <div className="flex h-80 items-center justify-center text-sm text-muted-foreground" role="status" aria-live="polite">
+          <div className="flex h-64 items-center justify-center text-sm text-muted-foreground" role="status" aria-live="polite">
             <Loader2 className="mr-2 size-5 animate-spin" />Memuat tren ketidakhadiran...
           </div>
         ) : null}
@@ -238,7 +238,7 @@ export function AttendanceTrendChart({ classes }: { classes: ClassOption[] }) {
 
 function ChartMessage({ children, kind = "empty" }: { children: React.ReactNode; kind?: "empty" | "error" }) {
   return (
-    <div className={cn("flex h-80 items-center justify-center gap-2 rounded-xl border border-dashed px-6 text-center text-sm", kind === "error" ? "border-destructive/40 text-destructive" : "text-muted-foreground")} role={kind === "error" ? "alert" : "status"}>
+    <div className={cn("flex h-64 items-center justify-center gap-2 rounded-xl border border-dashed px-6 text-center text-sm", kind === "error" ? "border-destructive/40 text-destructive" : "text-muted-foreground")} role={kind === "error" ? "alert" : "status"}>
       <Info className="size-4 shrink-0" />{children}
     </div>
   )
@@ -247,8 +247,8 @@ function ChartMessage({ children, kind = "empty" }: { children: React.ReactNode;
 function StackedBarChart({ buckets, statuses, measure }: { buckets: TrendBucket[]; statuses: TrendStatus[]; measure: TrendMeasure }) {
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const width = 960
-  const height = 350
-  const margin = { top: 20, right: 18, bottom: 66, left: 58 }
+  const height = 310
+  const margin = { top: 12, right: 18, bottom: 54, left: 64 }
   const plotWidth = width - margin.left - margin.right
   const plotHeight = height - margin.top - margin.bottom
 
@@ -259,13 +259,13 @@ function StackedBarChart({ buckets, statuses, measure }: { buckets: TrendBucket[
   const maxValue = niceMaximum(Math.max(...values, 0), measure)
   const ticks = Array.from({ length: 5 }, (_, index) => (maxValue / 4) * index)
   const band = plotWidth / Math.max(buckets.length, 1)
-  const barWidth = Math.min(34, Math.max(4, band * 0.66))
+  const barWidth = Math.min(38, Math.max(5, band * 0.72))
   const labelEvery = Math.max(1, Math.ceil(buckets.length / 10))
   const active = buckets.find((bucket) => bucket.key === activeKey) ?? null
 
   return (
     <div className="relative">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto min-h-72 w-full" role="img" aria-label={`Grafik batang bertumpuk tren ketidakhadiran dalam mode ${measure}`} onMouseLeave={() => setActiveKey(null)}>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto min-h-60 w-full" role="img" aria-label={`Grafik batang bertumpuk tren ketidakhadiran dalam mode ${measure}`} onMouseLeave={() => setActiveKey(null)}>
         {ticks.map((tick) => {
           const y = margin.top + plotHeight - (tick / maxValue) * plotHeight
           return (
@@ -281,6 +281,8 @@ function StackedBarChart({ buckets, statuses, measure }: { buckets: TrendBucket[
         {buckets.map((bucket, index) => {
           const x = margin.left + index * band + (band - barWidth) / 2
           let cumulative = 0
+          const visibleStatuses = statuses.filter((status) => (trendValue(bucket, status, measure) ?? 0) > 0)
+          const topStatus = visibleStatuses.at(-1) ?? null
           const showLabel = index % labelEvery === 0 || index === buckets.length - 1
           return (
             <g
@@ -297,20 +299,30 @@ function StackedBarChart({ buckets, statuses, measure }: { buckets: TrendBucket[
               <rect x={margin.left + index * band} y={margin.top} width={band} height={plotHeight} fill="transparent" />
               {bucket.validRecords === 0 ? (
                 <rect x={x} y={margin.top + plotHeight - 2} width={barWidth} height={2} rx={1} fill="var(--muted)" />
-              ) : statuses.map((status, statusIndex) => {
+              ) : statuses.map((status) => {
                 const raw = trendValue(bucket, status, measure) ?? 0
                 const segmentHeight = (raw / maxValue) * plotHeight
                 const y = margin.top + plotHeight - cumulative - segmentHeight
                 cumulative += segmentHeight
                 if (segmentHeight <= 0) return null
+                if (status === topStatus) {
+                  return (
+                    <path
+                      key={status}
+                      d={roundedTopSegmentPath(x, y, barWidth, segmentHeight, 5)}
+                      fill={statusTokens[status]}
+                      opacity={activeKey && activeKey !== bucket.key ? 0.48 : 1}
+                      className="transition-opacity"
+                    />
+                  )
+                }
                 return (
                   <rect
                     key={status}
                     x={x}
                     y={y}
                     width={barWidth}
-                    height={Math.max(segmentHeight, 0.75)}
-                    rx={statusIndex === statuses.length - 1 ? Math.min(3, barWidth / 3) : 0}
+                    height={segmentHeight}
                     fill={statusTokens[status]}
                     opacity={activeKey && activeKey !== bucket.key ? 0.48 : 1}
                     className="transition-opacity"
@@ -326,7 +338,7 @@ function StackedBarChart({ buckets, statuses, measure }: { buckets: TrendBucket[
           )
         })}
         <text x={15} y={margin.top + plotHeight / 2} textAnchor="middle" transform={`rotate(-90 15 ${margin.top + plotHeight / 2})`} fill="var(--muted-foreground)" fontSize="11">
-          {measure === "jumlah" ? "Jumlah record" : "Persentase"}
+          {measure === "jumlah" ? "Jumlah ketidakhadiran" : "Persentase ketidakhadiran (%)"}
         </text>
       </svg>
 
@@ -376,6 +388,21 @@ function niceMaximum(max: number, measure: TrendMeasure) {
   const normalized = padded / magnitude
   const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10
   return nice * magnitude
+}
+
+function roundedTopSegmentPath(x: number, y: number, width: number, height: number, radius: number) {
+  const topRadius = Math.min(radius, width / 2, height)
+  const right = x + width
+  const bottom = y + height
+  return [
+    `M ${x} ${bottom}`,
+    `V ${y + topRadius}`,
+    `Q ${x} ${y} ${x + topRadius} ${y}`,
+    `H ${right - topRadius}`,
+    `Q ${right} ${y} ${right} ${y + topRadius}`,
+    `V ${bottom}`,
+    "Z",
+  ].join(" ")
 }
 
 function formatAxis(value: number) {
