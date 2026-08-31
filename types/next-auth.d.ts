@@ -7,6 +7,13 @@ declare module "next-auth" {
     nip?: string | null
     canSuperviseWorkbooks?: boolean
     canViewWorkbookSupervision?: boolean
+    canViewBos?: boolean
+    canCreateBos?: boolean
+    canEditBos?: boolean
+    canManageBosCategories?: boolean
+    canManageBosAccess?: boolean
+    canViewSarpras?: boolean
+    canEditSarpras?: boolean
   }
   interface Session {
     user: {
@@ -18,6 +25,13 @@ declare module "next-auth" {
       image?: string | null
       canSuperviseWorkbooks?: boolean
       canViewWorkbookSupervision?: boolean
+      canViewBos?: boolean
+      canCreateBos?: boolean
+      canEditBos?: boolean
+      canManageBosCategories?: boolean
+      canManageBosAccess?: boolean
+    canViewSarpras?: boolean
+    canEditSarpras?: boolean
     }
   }
 }
@@ -28,5 +42,12 @@ declare module "next-auth/jwt" {
     nip?: string | null
     canSuperviseWorkbooks?: boolean
     canViewWorkbookSupervision?: boolean
+    canViewBos?: boolean
+    canCreateBos?: boolean
+    canEditBos?: boolean
+    canManageBosCategories?: boolean
+    canManageBosAccess?: boolean
+    canViewSarpras?: boolean
+    canEditSarpras?: boolean
   }
 }

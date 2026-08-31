@@ -64,6 +64,18 @@ model User {
   workbookItemStatuses TeacherWorkbookItemStatus[] @relation("WorkbookItemStatusTeacher")
   workbookReviews TeacherWorkbookItemStatus[] @relation("WorkbookItemStatusReviewer")
   auditLogs AuditLog[]
+  canViewBos Boolean @default(false)
+  canCreateBos Boolean @default(false)
+  canEditBos Boolean @default(false)
+  canManageBosCategories Boolean @default(false)
+  canManageBosAccess Boolean @default(false)
+  bosEntriesCreated BosEntry[] @relation("BosEntryCreator")
+  bosEntriesUpdated BosEntry[] @relation("BosEntryUpdater")
+  canViewSarpras Boolean @default(false)
+  canEditSarpras Boolean @default(false)
+  sarprasItemsCreated SarprasItem[] @relation("SarprasItemCreator")
+  sarprasItemsUpdated SarprasItem[] @relation("SarprasItemUpdater")
+  sarprasHistories SarprasHistory[] @relation("SarprasHistoryActor")
 }
 
 model Subject {
@@ -243,6 +255,55 @@ model TeacherWorkbookItemStatus {
   @@index([workbookItemId])
 }
 
+/** Single-row configuration for the BOS module (mirrors SchoolSetting). */
+model BosSetting {
+  id String @id @default("default")
+  /** Anggaran awal; null selama belum diisi admin. */
+  initialBudget Decimal? @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BosCategory {
+  id String @id @default(cuid())
+  name String
+  /** Lowercase + whitespace-collapsed name; blocks "ATK" / "atk" / " ATK " duplicates. */
+  slug String @unique
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  entries BosEntry[]
+}
+
+model BosEntry {
+  id String @id @default(cuid())
+  categoryId String
+  description String
+  occurredAt DateTime
+  /** Realisasi rupiah — decimal, never float. */
+  amount Decimal @db.Decimal(14, 2)
+  createdById String?
+  updatedById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  category BosCategory @relation(fields: [categoryId], references: [id])
+  createdBy User? @relation("BosEntryCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User? @relation("BosEntryUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  documents BosDocument[]
+  @@index([categoryId])
+  @@index([occurredAt])
+}
+
+model BosDocument {
+  id String @id @default(cuid())
+  entryId String
+  label String?
+  url String
+  createdAt DateTime @default(now())
+  entry BosEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  @@index([entryId])
+}
+
 model AuditLog {
   id String @id @default(cuid())
   actorId String?
@@ -258,4 +319,96 @@ model AuditLog {
   @@index([entity, entityId, createdAt])
   @@index([targetUserId, createdAt])
   @@index([createdAt])
+}
+
+enum SarprasPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+/// Lokasi sarpras berbentuk tree bebas kedalaman (Gedung > Lantai > Ruang > Area).
+/// Sebuah node boleh memiliki child DAN barang sekaligus.
+model SarprasLocation {
+  id String @id @default(cuid())
+  name String
+  slug String
+  parentId String?
+  sortOrder Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  parent SarprasLocation? @relation("SarprasLocationTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children SarprasLocation[] @relation("SarprasLocationTree")
+  items SarprasItem[]
+  /// Nama unik per induk: "VII A" boleh ada di bawah Kelas dan di bawah Gedung B.
+  @@unique([parentId, slug])
+  @@index([parentId, sortOrder])
+}
+
+/// Master jenis barang (CCTV, Proyektor, Kursi Siswa) supaya nama tidak diketik ulang.
+model SarprasItemType {
+  id String @id @default(cuid())
+  name String
+  slug String @unique
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  items SarprasItem[]
+}
+
+/// Kebutuhan satu jenis barang pada satu lokasi.
+model SarprasItem {
+  id String @id @default(cuid())
+  locationId String
+  itemTypeId String
+  targetQuantity Int @default(0)
+  availableQuantity Int @default(0)
+  goodQuantity Int @default(0)
+  moderateQuantity Int @default(0)
+  repairQuantity Int @default(0)
+  acquisitionDate DateTime?
+  inventoryCode String?
+  description String?
+  priority SarprasPriority?
+  createdById String?
+  updatedById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  location SarprasLocation @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  itemType SarprasItemType @relation(fields: [itemTypeId], references: [id], onDelete: Restrict)
+  createdBy User? @relation("SarprasItemCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User? @relation("SarprasItemUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  photos SarprasPhoto[]
+  histories SarprasHistory[]
+  /// Satu baris per jenis barang per lokasi; perubahan jumlah cukup di-update.
+  @@unique([locationId, itemTypeId])
+  @@index([locationId])
+  @@index([itemTypeId])
+}
+
+/// Foto barang disimpan sebagai bytes, mengikuti pola User.photoData.
+model SarprasPhoto {
+  id String @id @default(cuid())
+  itemId String
+  data Bytes
+  mimeType String
+  caption String?
+  sortOrder Int @default(0)
+  createdAt DateTime @default(now())
+  item SarprasItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  @@index([itemId, sortOrder])
+}
+
+/// Riwayat perubahan jumlah/kondisi satu barang, untuk panel detail.
+model SarprasHistory {
+  id String @id @default(cuid())
+  itemId String
+  actorId String?
+  summary String
+  before Json?
+  after Json?
+  createdAt DateTime @default(now())
+  item SarprasItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  actor User? @relation("SarprasHistoryActor", fields: [actorId], references: [id], onDelete: SetNull)
+  @@index([itemId, createdAt])
 }

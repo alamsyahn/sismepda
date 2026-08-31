@@ -3,6 +3,8 @@ import Credentials from "next-auth/providers/credentials"
 import { compare } from "bcryptjs"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
+import { canViewBos, hasBosPermission } from "@/lib/bos"
+import { canViewSarpras } from "@/lib/sarpras"
 import { clearLoginFailures, consumeLoginAttempt } from "@/lib/login-rate-limit"
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -32,6 +34,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             photoUpdatedAt: true,
             canSuperviseWorkbooks: true,
             canViewWorkbookSupervision: true,
+            canViewBos: true,
+            canCreateBos: true,
+            canEditBos: true,
+            canManageBosCategories: true,
+            canManageBosAccess: true,
+            canViewSarpras: true,
+            canEditSarpras: true,
           },
         })
         if (!user || !(await compare(parsed.data.password, user.passwordHash))) return null
@@ -44,6 +53,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           nip: user.nip,
           canSuperviseWorkbooks: user.canSuperviseWorkbooks,
           canViewWorkbookSupervision: user.canViewWorkbookSupervision,
+          canViewBos: user.canViewBos,
+          canCreateBos: user.canCreateBos,
+          canEditBos: user.canEditBos,
+          canManageBosCategories: user.canManageBosCategories,
+          canManageBosAccess: user.canManageBosAccess,
+          canViewSarpras: user.canViewSarpras,
+          canEditSarpras: user.canEditSarpras,
           image: user.photoUpdatedAt ? `/api/profile/photo?v=${user.photoUpdatedAt.getTime()}` : null,
         }
       },
@@ -57,6 +73,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.nip = user.nip
         token.canSuperviseWorkbooks = user.canSuperviseWorkbooks
         token.canViewWorkbookSupervision = user.canViewWorkbookSupervision
+        token.canViewBos = user.canViewBos
+        token.canCreateBos = user.canCreateBos
+        token.canEditBos = user.canEditBos
+        token.canManageBosCategories = user.canManageBosCategories
+        token.canManageBosAccess = user.canManageBosAccess
+        token.canViewSarpras = user.canViewSarpras
+        token.canEditSarpras = user.canEditSarpras
         token.picture = user.image
       }
       if (trigger === "update" && token.id) {
@@ -71,6 +94,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             photoUpdatedAt: true,
             canSuperviseWorkbooks: true,
             canViewWorkbookSupervision: true,
+            canViewBos: true,
+            canCreateBos: true,
+            canEditBos: true,
+            canManageBosCategories: true,
+            canManageBosAccess: true,
+            canViewSarpras: true,
+            canEditSarpras: true,
           },
         })
         if (current?.active) {
@@ -80,6 +110,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.role = current.role
           token.canSuperviseWorkbooks = current.canSuperviseWorkbooks
           token.canViewWorkbookSupervision = current.canViewWorkbookSupervision
+          token.canViewBos = current.canViewBos
+          token.canCreateBos = current.canCreateBos
+          token.canEditBos = current.canEditBos
+          token.canManageBosCategories = current.canManageBosCategories
+          token.canManageBosAccess = current.canManageBosAccess
+          token.canViewSarpras = current.canViewSarpras
+          token.canEditSarpras = current.canEditSarpras
           token.picture = current.photoUpdatedAt ? `/api/profile/photo?v=${current.photoUpdatedAt.getTime()}` : null
         }
       }
@@ -91,6 +128,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.nip = token.nip as string | null
       session.user.canSuperviseWorkbooks = token.canSuperviseWorkbooks === true
       session.user.canViewWorkbookSupervision = token.canViewWorkbookSupervision === true
+      session.user.canViewBos = token.canViewBos === true
+      session.user.canCreateBos = token.canCreateBos === true
+      session.user.canEditBos = token.canEditBos === true
+      session.user.canManageBosCategories = token.canManageBosCategories === true
+      session.user.canManageBosAccess = token.canManageBosAccess === true
+      session.user.canViewSarpras = token.canViewSarpras === true
+      session.user.canEditSarpras = token.canEditSarpras === true
       Object.assign(session.user, {
         name: token.name ?? null,
         email: token.email ?? null,
@@ -112,6 +156,28 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         adminOnlyExact.includes(path)
       if (isAdminRoute && auth?.user.role !== "ADMIN") {
         return Response.redirect(new URL("/", request.nextUrl))
+      }
+      // Modul BOS: tapis awal berbasis sesi. Guard sebenarnya tetap di
+      // requireBosPermission() pada setiap halaman dan route handler.
+      if (path === "/bos" || path.startsWith("/bos/")) {
+        if (!canViewBos(auth!.user)) return Response.redirect(new URL("/", request.nextUrl))
+        if (
+          (path === "/bos/akses" || path.startsWith("/bos/akses/")) &&
+          !hasBosPermission(auth!.user, "bos.manage_access")
+        ) {
+          return Response.redirect(new URL("/bos", request.nextUrl))
+        }
+      }
+      // Modul Sarpras: tapis awal berbasis sesi. Guard sebenarnya tetap di
+      // requireSarprasPermission() pada halaman dan setiap route handler.
+      if (path === "/sarpras" || path.startsWith("/sarpras/")) {
+        if (!canViewSarpras(auth!.user)) return Response.redirect(new URL("/", request.nextUrl))
+        if (
+          (path === "/sarpras/akses" || path.startsWith("/sarpras/akses/")) &&
+          auth!.user.role !== "ADMIN"
+        ) {
+          return Response.redirect(new URL("/sarpras", request.nextUrl))
+        }
       }
       return true
     },

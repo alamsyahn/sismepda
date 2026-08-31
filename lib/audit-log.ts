@@ -2,12 +2,37 @@ import { prisma } from "@/lib/prisma"
 import type { Prisma } from "@/app/generated/prisma/client"
 
 /** Entities tracked in the audit trail. Extend as other features adopt it. */
-export type AuditEntity = "TeacherWorkbook" | "TeacherWorkbookItemStatus" | "User"
+export type AuditEntity =
+  | "TeacherWorkbook"
+  | "TeacherWorkbookItemStatus"
+  | "User"
+  | "BosSetting"
+  | "BosCategory"
+  | "BosEntry"
+  | "SarprasLocation"
+  | "SarprasItemType"
+  | "SarprasItem"
 
 export type AuditAction =
   | "WORKBOOK_LINK_UPDATED"
   | "WORKBOOK_ITEM_STATUS_CHANGED"
   | "WORKBOOK_SUPERVISION_SCOPE_CHANGED"
+  | "BOS_BUDGET_UPDATED"
+  | "BOS_ENTRY_CREATED"
+  | "BOS_ENTRY_UPDATED"
+  | "BOS_CATEGORY_CREATED"
+  | "BOS_CATEGORY_UPDATED"
+  | "BOS_ACCESS_CHANGED"
+  | "SARPRAS_LOCATION_CREATED"
+  | "SARPRAS_LOCATION_UPDATED"
+  | "SARPRAS_LOCATION_DELETED"
+  | "SARPRAS_ITEM_TYPE_CREATED"
+  | "SARPRAS_ITEM_TYPE_UPDATED"
+  | "SARPRAS_ITEM_TYPE_DELETED"
+  | "SARPRAS_ITEM_CREATED"
+  | "SARPRAS_ITEM_UPDATED"
+  | "SARPRAS_ITEM_DELETED"
+  | "SARPRAS_ACCESS_CHANGED"
 
 export type AuditEntry = {
   actorId: string | null
