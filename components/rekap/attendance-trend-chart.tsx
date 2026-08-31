@@ -11,7 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   defaultRange,
   formatPercentage,
+  selectedStatusTotal,
   statusPercentage,
+  trendValue,
   TREND_STATUSES,
   type TrendBucket,
   type TrendGranularity,
@@ -114,10 +116,7 @@ export function AttendanceTrendChart({ classes }: { classes: ClassOption[] }) {
   const enabledStatuses = TREND_STATUSES.filter((status) => selected[status])
   const selectedTotal = useMemo(() => {
     if (!state.data) return 0
-    return state.data.buckets.reduce(
-      (sum, bucket) => sum + enabledStatuses.reduce((bucketSum, status) => bucketSum + bucket.counts[status], 0),
-      0,
-    )
+    return selectedStatusTotal(state.data.buckets, enabledStatuses)
   }, [enabledStatuses, state.data])
 
   const invalidRange = granularity !== "semester" && (!from || !to || from > to)
@@ -254,7 +253,7 @@ function StackedBarChart({ buckets, statuses, measure }: { buckets: TrendBucket[
   const plotHeight = height - margin.top - margin.bottom
 
   const values = buckets.map((bucket) => statuses.reduce((sum, status) => {
-    const value = measure === "jumlah" ? bucket.counts[status] : (statusPercentage(bucket.counts[status], bucket.validRecords) ?? 0)
+    const value = trendValue(bucket, status, measure) ?? 0
     return sum + value
   }, 0))
   const maxValue = niceMaximum(Math.max(...values, 0), measure)
@@ -299,7 +298,7 @@ function StackedBarChart({ buckets, statuses, measure }: { buckets: TrendBucket[
               {bucket.validRecords === 0 ? (
                 <rect x={x} y={margin.top + plotHeight - 2} width={barWidth} height={2} rx={1} fill="var(--muted)" />
               ) : statuses.map((status, statusIndex) => {
-                const raw = measure === "jumlah" ? bucket.counts[status] : (statusPercentage(bucket.counts[status], bucket.validRecords) ?? 0)
+                const raw = trendValue(bucket, status, measure) ?? 0
                 const segmentHeight = (raw / maxValue) * plotHeight
                 const y = margin.top + plotHeight - cumulative - segmentHeight
                 cumulative += segmentHeight

@@ -12,8 +12,10 @@ import {
   jakartaDateValue,
   jakartaEndOfDay,
   semesterStartValue,
+  selectedStatusTotal,
   startOfWeekValue,
   statusPercentage,
+  trendValue,
   weekRangeLabel,
 } from "../lib/attendance-trend"
 
@@ -115,6 +117,28 @@ test("bucket tanpa record sama sekali tetap muncul dengan nilai nol", () => {
   assert.deepEqual(buckets[0].counts, { sakit: 0, izin: 0, alfa: 0, dispensasi: 0 })
   assert.equal(statusPercentage(buckets[0].counts.alfa, buckets[0].validRecords), null)
   assert.equal(buckets[1].counts.sakit, 4)
+})
+
+test("toggle status membatasi seri dan total tanpa mengubah data bucket", () => {
+  const [first, second] = buildBuckets({
+    granularity: "harian",
+    bucketKeys: ["2026-08-30", "2026-08-31"],
+    rows: [
+      { bucket: "2026-08-30", status: "HADIR", total: 90 },
+      { bucket: "2026-08-30", status: "SAKIT", total: 2 },
+      { bucket: "2026-08-30", status: "ALFA", total: 8 },
+      { bucket: "2026-08-31", status: "HADIR", total: 95 },
+      { bucket: "2026-08-31", status: "IZIN", total: 3 },
+      { bucket: "2026-08-31", status: "ALFA", total: 2 },
+    ],
+  })
+
+  assert.equal(selectedStatusTotal([first, second], ["alfa"]), 10)
+  assert.equal(selectedStatusTotal([first, second], ["sakit", "izin"]), 5)
+  assert.equal(selectedStatusTotal([first, second], ["sakit", "izin", "alfa", "dispensasi"]), 15)
+  assert.equal(trendValue(first, "alfa", "jumlah"), 8)
+  assert.equal(formatPercentage(trendValue(first, "alfa", "persentase")), "8%")
+  assert.deepEqual(first.counts, { sakit: 2, izin: 0, alfa: 8, dispensasi: 0 })
 })
 
 test("deret bucket harian menutupi seluruh rentang", () => {

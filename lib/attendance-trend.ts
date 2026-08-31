@@ -166,6 +166,28 @@ export function statusPercentage(count: number, validRecords: number): number | 
   return (count / validRecords) * 100
 }
 
+/** Nilai satu seri untuk mode grafik yang dipilih. */
+export function trendValue(
+  bucket: Pick<TrendBucket, "counts" | "validRecords">,
+  status: TrendStatus,
+  measure: TrendMeasure,
+): number | null {
+  return measure === "jumlah"
+    ? bucket.counts[status]
+    : statusPercentage(bucket.counts[status], bucket.validRecords)
+}
+
+/** Total hanya dari status yang sedang dicentang pengguna. */
+export function selectedStatusTotal(
+  buckets: Array<Pick<TrendBucket, "counts">>,
+  statuses: readonly TrendStatus[],
+): number {
+  return buckets.reduce(
+    (sum, bucket) => sum + statuses.reduce((bucketSum, status) => bucketSum + bucket.counts[status], 0),
+    0,
+  )
+}
+
 /** Pembulatan tampilan: satu desimal, tanpa ".0" yang mubazir. */
 export function formatPercentage(value: number | null): string {
   if (value === null) return "–"
