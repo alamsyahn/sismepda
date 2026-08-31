@@ -78,6 +78,11 @@
   --danger-foreground: oklch(0.42 0.16 22);
   --info: oklch(0.93 0.035 245);
   --info-foreground: oklch(0.38 0.12 245);
+  /* Status kondisi sarpras: netral, merah, oranye, hijau. */
+  --sarpras-missing: oklch(0.55 0.02 275);
+  --sarpras-repair: oklch(0.62 0.2 18);
+  --sarpras-moderate: oklch(0.75 0.15 70);
+  --sarpras-good: oklch(0.65 0.16 155);
   --radius: 0.875rem;
   --sidebar: oklch(0.99 0.005 275);
   --sidebar-foreground: oklch(0.28 0.03 275);
@@ -122,6 +127,10 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --sarpras-missing: oklch(0.65 0.015 275);
+  --sarpras-repair: oklch(0.7 0.19 22);
+  --sarpras-moderate: oklch(0.8 0.15 70);
+  --sarpras-good: oklch(0.72 0.16 155);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -158,6 +167,10 @@
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.556 0 0);
+  --sarpras-missing: oklch(0.65 0.015 275);
+  --sarpras-repair: oklch(0.7 0.19 22);
+  --sarpras-moderate: oklch(0.8 0.15 70);
+  --sarpras-good: oklch(0.72 0.16 155);
   }
 }
 
