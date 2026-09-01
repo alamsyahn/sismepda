@@ -6,6 +6,8 @@ import { Menu } from "lucide-react"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { SidebarNav } from "./sidebar-nav"
+import { AppLogo } from "@/components/layout/app-logo"
+import { useAppBranding } from "@/components/layout/app-branding-provider"
 
 // Rute yang memakai layout autentikasi tersendiri (tanpa sidebar & topbar).
 const BARE_ROUTES = ["/login"]
@@ -13,6 +15,7 @@ const BARE_ROUTES = ["/login"]
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
+  const branding = useAppBranding()
 
   if (BARE_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`))) {
     return <>{children}</>
@@ -44,11 +47,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             <Menu className="size-5" />
           </Button>
-          <div className="flex items-center gap-2">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
-              S
-            </span>
-            <span className="font-semibold text-foreground">SISMEPDA</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <AppLogo
+              logoUrl={branding.appLogoUrl}
+              hasCustomLogo={branding.hasAppLogo}
+              appName={branding.appName}
+              className="size-8 shrink-0 rounded-lg"
+              iconClassName="size-4"
+              size={32}
+            />
+            <span className="truncate font-semibold text-foreground">{branding.appName}</span>
           </div>
         </header>
 

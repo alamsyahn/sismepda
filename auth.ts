@@ -145,6 +145,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     authorized({ auth, request }) {
       const path = request.nextUrl.pathname
       const loggedIn = Boolean(auth?.user)
+      // Logo aplikasi dipakai pada halaman login yang belum terautentikasi,
+      // jadi pembacaannya harus publik. Penulisannya (PUT/DELETE) tetap
+      // dijaga requireAdmin() di dalam route handler-nya.
+      if (path === "/app-logo" && request.method === "GET") return true
       if (path === "/login") return loggedIn ? Response.redirect(new URL("/", request.nextUrl)) : true
       if (!loggedIn) return false
       const adminOnly = ["/siswa/input", "/siswa/kelola", "/guru/input", "/guru/kelola", "/wali-kelas/input", "/pengaturan", "/supervisi-buku-kerja/kelola"]

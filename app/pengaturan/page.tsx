@@ -15,7 +15,14 @@ import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { HolidayManager } from "@/components/settings/holiday-manager"
 import { DatabaseBackupCard } from "@/components/settings/database-backup"
 import { StatusColorSettings } from "@/components/settings/status-color-settings"
-import { FAVICON_ACCEPT, MAX_FAVICON_BYTES } from "@/lib/site-branding"
+import { AppBrandingSettings } from "@/components/settings/app-branding-settings"
+import {
+  DEFAULT_APP_FULL_NAME,
+  DEFAULT_APP_LOGO_URL,
+  DEFAULT_APP_NAME,
+  FAVICON_ACCEPT,
+  MAX_FAVICON_BYTES,
+} from "@/lib/site-branding"
 import { DEFAULT_STATUS_COLORS, parseStatusColors, type AttendanceStatusColors } from "@/lib/attendance-status-colors"
 
 export default function PengaturanPage() {
@@ -37,16 +44,22 @@ export default function PengaturanPage() {
   const [faviconPreview, setFaviconPreview] = useState<string | null>(null)
   const [uploadingFavicon, setUploadingFavicon] = useState(false)
   const [statusColors, setStatusColors] = useState<AttendanceStatusColors>(DEFAULT_STATUS_COLORS)
+  const [appName, setAppName] = useState(DEFAULT_APP_NAME)
+  const [appFullName, setAppFullName] = useState(DEFAULT_APP_FULL_NAME)
+  const [appLogoUrl, setAppLogoUrl] = useState(DEFAULT_APP_LOGO_URL)
+  const [hasAppLogo, setHasAppLogo] = useState(false)
   const faviconInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
-  useEffect(() => { fetch("/api/admin/settings").then((r) => r.json()).then((s) => { setWebsiteTitle(s.websiteTitle); setSchoolName(s.schoolName); setNpsn(s.npsn ?? ""); setAcademicYear(s.academicYear); setSemester(s.semester); setOpenTime(s.attendanceOpenTime); setCloseTime(s.attendanceCloseTime); setAutoLock(s.autoLock); setAllowTeachersAccessAllClasses(s.allowTeachersAccessAllClasses ?? false); setFaviconUrl(s.faviconUrl ?? "/favicon.ico"); setStatusColors(parseStatusColors(JSON.stringify(s.attendanceStatusColors ?? DEFAULT_STATUS_COLORS))) }) }, [])
+  useEffect(() => { fetch("/api/admin/settings").then((r) => r.json()).then((s) => { setWebsiteTitle(s.websiteTitle); setSchoolName(s.schoolName); setNpsn(s.npsn ?? ""); setAcademicYear(s.academicYear); setSemester(s.semester); setOpenTime(s.attendanceOpenTime); setCloseTime(s.attendanceCloseTime); setAutoLock(s.autoLock); setAllowTeachersAccessAllClasses(s.allowTeachersAccessAllClasses ?? false); setFaviconUrl(s.faviconUrl ?? "/favicon.ico"); setAppName(s.appName ?? DEFAULT_APP_NAME); setAppFullName(s.appFullName ?? DEFAULT_APP_FULL_NAME); setAppLogoUrl(s.appLogoUrl ?? DEFAULT_APP_LOGO_URL); setHasAppLogo(Boolean(s.hasAppLogo)); setStatusColors(parseStatusColors(JSON.stringify(s.attendanceStatusColors ?? DEFAULT_STATUS_COLORS))) }) }, [])
   useEffect(() => () => { if (faviconPreview) URL.revokeObjectURL(faviconPreview) }, [faviconPreview])
 
   async function save() {
     if (!websiteTitle.trim()) { toast.error("Title website wajib diisi"); return }
+    if (!appName.trim()) { toast.error("Nama aplikasi wajib diisi"); return }
+    if (!appFullName.trim()) { toast.error("Nama lengkap aplikasi wajib diisi"); return }
     setSaving(true)
-    const response = await fetch("/api/admin/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ websiteTitle, schoolName, npsn, academicYear, semester, attendanceOpenTime: openTime, attendanceCloseTime: closeTime, autoLock, allowTeachersAccessAllClasses, attendanceStatusColors: statusColors }) })
+    const response = await fetch("/api/admin/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ websiteTitle, appName, appFullName, schoolName, npsn, academicYear, semester, attendanceOpenTime: openTime, attendanceCloseTime: closeTime, autoLock, allowTeachersAccessAllClasses, attendanceStatusColors: statusColors }) })
     setSaving(false)
     if (response.ok) {
       document.title = websiteTitle.trim()
@@ -141,6 +154,16 @@ export default function PengaturanPage() {
           </div>
         </CardContent>
       </Card>
+
+      <AppBrandingSettings
+        appName={appName}
+        appFullName={appFullName}
+        logoUrl={appLogoUrl}
+        hasLogo={hasAppLogo}
+        onAppNameChange={setAppName}
+        onAppFullNameChange={setAppFullName}
+        onLogoChange={({ logoUrl, hasLogo }) => { setAppLogoUrl(logoUrl); setHasAppLogo(hasLogo); router.refresh() }}
+      />
 
       <StatusColorSettings colors={statusColors} onChange={setStatusColors} />
 

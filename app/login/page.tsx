@@ -2,8 +2,9 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AppLogo } from "@/components/layout/app-logo";
+import { useAppBranding } from "@/components/layout/app-branding-provider";
 import {
-  GraduationCap,
   Eye,
   EyeOff,
   Loader2,
@@ -18,6 +19,7 @@ import { signIn } from "next-auth/react";
 
 export default function LoginPage() {
   const router = useRouter();
+  const branding = useAppBranding();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -63,11 +65,16 @@ export default function LoginPage() {
         <div className="w-full max-w-sm">
           {/* Branding */}
           <div className="mb-8 flex flex-col items-center text-center">
-            <span className="flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
-              <GraduationCap className="size-7" />
-            </span>
+            <AppLogo
+              logoUrl={branding.appLogoUrl}
+              hasCustomLogo={branding.hasAppLogo}
+              appName={branding.appName}
+              className="size-14"
+              iconClassName="size-7"
+              size={56}
+            />
             <h1 className="mt-4 text-2xl font-bold tracking-tight text-foreground text-balance">
-              Masuk ke SISMEPDA
+              Masuk ke {branding.appName}
             </h1>
             <p className="mt-1.5 text-sm text-muted-foreground text-pretty">
               Sistem Absensi Sekolah. Masuk untuk mengelola kehadiran dan data
@@ -186,8 +193,8 @@ export default function LoginPage() {
           </div>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            &copy; {new Date().getFullYear()} SISMEPDA. Sistem Manajemen SMPN 2
-            Blitar.
+            &copy; {new Date().getFullYear()} {branding.appName}.{" "}
+            {branding.appFullName}.
           </p>
         </div>
       </div>

@@ -2,7 +2,15 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { requireAdmin } from "@/lib/auth-guards"
 import { prisma } from "@/lib/prisma"
-import { DEFAULT_WEBSITE_TITLE, faviconUrl } from "@/lib/site-branding"
+import {
+  appLogoUrl,
+  DEFAULT_WEBSITE_TITLE,
+  faviconUrl,
+  MAX_APP_FULL_NAME_LENGTH,
+  MAX_APP_NAME_LENGTH,
+  resolveAppFullName,
+  resolveAppName,
+} from "@/lib/site-branding"
 import {
   normalizeHexColor,
   parseStatusColors,
@@ -20,6 +28,8 @@ const hexColor = z.string().transform((value, ctx) => {
 
 const settingInput = z.object({
   websiteTitle: z.string().trim().min(1).max(100),
+  appName: z.string().trim().min(1).max(MAX_APP_NAME_LENGTH),
+  appFullName: z.string().trim().min(1).max(MAX_APP_FULL_NAME_LENGTH),
   schoolName: z.string().trim().min(1).max(150),
   npsn: z.string().trim().max(30).transform((value) => value || null),
   academicYear: z.string().trim().min(1).max(20),
@@ -40,6 +50,9 @@ const settingInput = z.object({
 
 const settingSelect = {
   websiteTitle: true,
+  appName: true,
+  appFullName: true,
+  appLogoUpdatedAt: true,
   schoolName: true,
   npsn: true,
   academicYear: true,
@@ -55,6 +68,9 @@ const settingSelect = {
 
 function settingResponse(setting: {
   websiteTitle: string
+  appName: string
+  appFullName: string
+  appLogoUpdatedAt: Date | null
   schoolName: string
   npsn: string | null
   academicYear: string
@@ -67,10 +83,14 @@ function settingResponse(setting: {
   faviconData: Uint8Array | null
   faviconUpdatedAt: Date | null
 }) {
-  const { faviconData, faviconUpdatedAt, attendanceStatusColors, ...values } = setting
+  const { faviconData, faviconUpdatedAt, appLogoUpdatedAt, attendanceStatusColors, ...values } = setting
   return {
     ...values,
     websiteTitle: values.websiteTitle || DEFAULT_WEBSITE_TITLE,
+    appName: resolveAppName(values.appName),
+    appFullName: resolveAppFullName(values.appFullName),
+    appLogoUrl: appLogoUrl(appLogoUpdatedAt),
+    hasAppLogo: Boolean(appLogoUpdatedAt),
     attendanceStatusColors: parseStatusColors(attendanceStatusColors),
     hasFavicon: Boolean(faviconData),
     faviconUrl: faviconUrl(faviconUpdatedAt),

@@ -186,6 +186,11 @@ model SchoolSetting {
   faviconData Bytes?
   faviconMimeType String?
   faviconUpdatedAt DateTime?
+  appName String @default("SISMEPDA")
+  appFullName String @default("Sistem Informasi Sekolah")
+  appLogoData Bytes?
+  appLogoMimeType String?
+  appLogoUpdatedAt DateTime?
   schoolName String @default("SMP Negeri 1 Contoh")
   npsn String?
   academicYear String @default("2025/2026")

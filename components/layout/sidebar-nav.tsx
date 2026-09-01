@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ChevronRight, GraduationCap, LogOut } from "lucide-react"
+import { ChevronRight, LogOut } from "lucide-react"
 import { signOut, useSession } from "next-auth/react"
 import { cn } from "@/lib/utils"
 import {
@@ -19,6 +19,8 @@ import {
   type NavItem,
 } from "@/lib/nav"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { AppLogo } from "@/components/layout/app-logo"
+import { useAppBranding } from "@/components/layout/app-branding-provider"
 
 const STORAGE_KEY = "sismepda:sidebar-groups"
 
@@ -40,6 +42,7 @@ function readStoredGroups(): Record<string, boolean> {
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
   const { data: session } = useSession()
+  const branding = useAppBranding()
   const role = session?.user.role ?? "GURU"
 
   const viewer = useMemo(
@@ -108,12 +111,15 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-3 px-5 py-6">
-        <span className="flex size-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
-          <GraduationCap className="size-5" />
-        </span>
-        <div className="leading-tight">
-          <p className="text-base font-bold tracking-tight text-sidebar-foreground">SISMEPDA</p>
-          <p className="text-xs text-muted-foreground">Sistem Informasi Sekolah</p>
+        <AppLogo
+          logoUrl={branding.appLogoUrl}
+          hasCustomLogo={branding.hasAppLogo}
+          appName={branding.appName}
+          className="size-10 shrink-0"
+        />
+        <div className="min-w-0 leading-tight">
+          <p className="truncate text-base font-bold tracking-tight text-sidebar-foreground">{branding.appName}</p>
+          <p className="truncate text-xs text-muted-foreground">{branding.appFullName}</p>
         </div>
       </div>
 
