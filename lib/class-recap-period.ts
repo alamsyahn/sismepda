@@ -57,7 +57,12 @@ export function buildClassRecap(input: {
       const key = localDateKey(date)
       if (input.holidays.has(key)) return "HOLIDAY"
       if (!input.submittedDates.has(key)) return "NOT_SUBMITTED"
-      const status = recordMap.get(`${student.id}:${key}`) ?? "HADIR"
+      // Hari sudah punya AttendanceDay, tetapi siswa ini belum diberi status.
+      // Sejak penyimpanan parsial diizinkan, ketiadaan baris berarti "belum
+      // diisi" — bukan hadir. Pada hari yang terisi penuh setiap siswa punya
+      // baris, sehingga perilaku lama tetap sama.
+      const status = recordMap.get(`${student.id}:${key}`)
+      if (!status) return "NOT_SUBMITTED"
       counts[status.toLowerCase() as keyof typeof counts] += 1
       return status
     })

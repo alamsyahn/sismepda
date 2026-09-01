@@ -86,6 +86,25 @@ test("matches records created from UTC timestamps to local calendar dates", () =
   assert.equal(result.rows[0].codes[0], "S")
 })
 
+test("hari terisi parsial: siswa tanpa record tetap 'belum diinput', bukan hadir", () => {
+  const result = buildClassRecap({
+    students: [
+      { id: "a", nis: null, nisn: null, name: "Andi" },
+      { id: "b", nis: null, nisn: null, name: "Budi" },
+    ],
+    dates: [new Date(2026, 7, 3)],
+    holidays: new Set(),
+    submittedDates: new Set(["2026-08-03"]),
+    // Hanya Andi yang diisi; Budi belum.
+    records: [{ studentId: "a", date: new Date(2026, 7, 3), status: "SAKIT" }],
+  })
+
+  assert.deepEqual(result.rows[0].codes, ["S"])
+  assert.deepEqual(result.rows[1].codes, ["·"])
+  assert.equal(result.rows[1].counts.hadir, 0)
+  assert.equal(result.rows[1].totalAbsent, 0)
+})
+
 test("does not count a submitted attendance day when it is a holiday", () => {
   const result = buildClassRecap({
     students: [{ id: "a", nis: null, nisn: null, name: "Ahmad" }],

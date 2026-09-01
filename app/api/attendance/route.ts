@@ -5,13 +5,16 @@ import { prisma } from "@/lib/prisma"
 import { parseDateValue, startOfToday } from "@/lib/date"
 import { sortClasses } from "@/lib/class-order"
 import { canAccessClass, getClassAccess } from "@/lib/class-access"
+import { FILLED_WIRE_STATUSES, UNFILLED_WIRE_STATUS, planAttendanceWrite } from "@/lib/attendance-save"
 
 const attendanceInput = z.object({
   classId: z.string().min(1),
   date: z.string().optional(),
   records: z.array(z.object({
     studentId: z.string().min(1),
-    status: z.enum(["HADIR", "SAKIT", "IZIN", "ALFA", "DISPENSASI"]),
+    // "BELUM" = siswa sengaja dibiarkan kosong. Diterima di sini agar absensi
+    // parsial bisa disimpan, lalu diterjemahkan menjadi penghapusan baris.
+    status: z.enum([...FILLED_WIRE_STATUSES, UNFILLED_WIRE_STATUS]),
     note: z.string().optional(),
   })),
 })
@@ -46,9 +49,12 @@ export async function POST(request: Request) {
     if (date > startOfToday()) return NextResponse.json({ error: "Tanggal absensi tidak boleh di masa depan" }, { status: 400 })
     const holiday = await prisma.schoolHoliday.findUnique({ where: { date }, select: { name: true } })
     if (holiday) return NextResponse.json({ error: `Tanggal ini ditandai sebagai hari libur: ${holiday.name}` }, { status: 400 })
+    const plan = planAttendanceWrite(body.records)
     await prisma.$transaction(async (tx) => {
       const day = await tx.attendanceDay.upsert({ where: { classId_date: { classId: body.classId, date } }, update: { submittedById: user.id }, create: { classId: body.classId, date, submittedById: user.id } })
-      for (const r of body.records) await tx.attendance.upsert({ where: { attendanceDayId_studentId: { attendanceDayId: day.id, studentId: r.studentId } }, update: { status: r.status, note: r.note }, create: { attendanceDayId: day.id, studentId: r.studentId, status: r.status, note: r.note } })
+      for (const r of plan.upserts) await tx.attendance.upsert({ where: { attendanceDayId_studentId: { attendanceDayId: day.id, studentId: r.studentId } }, update: { status: r.status, note: r.note }, create: { attendanceDayId: day.id, studentId: r.studentId, status: r.status, note: r.note } })
+      // Siswa yang dikosongkan kembali menjadi "belum diisi" = barisnya dihapus.
+      if (plan.clears.length > 0) await tx.attendance.deleteMany({ where: { attendanceDayId: day.id, studentId: { in: plan.clears } } })
     })
     return NextResponse.json({ ok: true, submittedAt: new Date().toISOString(), submittedBy: { id: user.id, name: user.name ?? "Guru" } })
   } catch { return NextResponse.json({ error: "Gagal menyimpan absensi" }, { status: 400 }) }

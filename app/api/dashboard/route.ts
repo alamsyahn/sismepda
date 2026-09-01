@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { parseDateValue } from "@/lib/date"
 import { sortClasses } from "@/lib/class-order"
 import { getClassAccess } from "@/lib/class-access"
+import { isClassRecapComplete } from "@/lib/attendance-save"
 
 function jakartaMinutes(date: Date) {
   const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(date)
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
     const classes = sortClasses(rows).map((c) => {
       const day = c.attendanceDays[0]; const count = (status: string) => day?.attendances.filter((a) => a.status === status).length ?? 0
       const previous = previousByClass.get(c.id) ?? []
-      return { id: c.id, name: c.name, grade: c.grade, homeroom: c.homeroomUser?.name ?? "Belum ditentukan", homeroomId: c.homeroomUser?.id ?? null, totalStudents: c.students.length, submitted: Boolean(day), submittedAt: day ? new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit", hour12: false }).format(day.submittedAt).replace(".", ":") : null, onTime: day ? jakartaMinutes(day.submittedAt) <= closeMinutes : null, hadir: count("HADIR"), sakit: count("SAKIT"), izin: count("IZIN"), alfa: count("ALFA"), dispensasi: count("DISPENSASI"), previousHadir: previous.filter((attendance) => attendance.status === "HADIR").length, previousTotal: previous.length }
+      return { id: c.id, name: c.name, grade: c.grade, homeroom: c.homeroomUser?.name ?? "Belum ditentukan", homeroomId: c.homeroomUser?.id ?? null, totalStudents: c.students.length, submitted: isClassRecapComplete({ totalStudents: c.students.length, recorded: day?.attendances.length ?? 0 }), submittedAt: day ? new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit", hour12: false }).format(day.submittedAt).replace(".", ":") : null, onTime: day ? jakartaMinutes(day.submittedAt) <= closeMinutes : null, hadir: count("HADIR"), sakit: count("SAKIT"), izin: count("IZIN"), alfa: count("ALFA"), dispensasi: count("DISPENSASI"), previousHadir: previous.filter((attendance) => attendance.status === "HADIR").length, previousTotal: previous.length }
     })
     const absentStudents = rows.flatMap((c) => c.attendanceDays[0]?.attendances.filter((a) => a.status !== "HADIR").map((a) => { const count = (status: string) => a.student.attendances.filter((item) => item.status === status).length; return { id: a.student.id, name: a.student.name, nis: a.student.nis, nisn: a.student.nisn, classId: c.id, className: c.name, status: a.status.toLowerCase(), note: a.note ?? "-", history: { sakit: count("SAKIT"), izin: count("IZIN"), alfa: count("ALFA"), dispensasi: count("DISPENSASI") } } }) ?? [])
     const recentDays = await prisma.attendanceDay.findMany({ where: { date, schoolClass: classWhere }, include: { schoolClass: true, submittedBy: true, attendances: { select: { status: true } } }, orderBy: { updatedAt: "desc" }, take: 7 })

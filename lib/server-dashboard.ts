@@ -4,6 +4,7 @@ import type { ClassRecord } from "@/lib/dashboard-data"
 import type { AbsenceRankingRow } from "@/components/dashboard/absence-ranking"
 import { sortClasses } from "@/lib/class-order"
 import { getClassAccess } from "@/lib/class-access"
+import { isClassRecapComplete } from "@/lib/attendance-save"
 
 export async function getClassRecords(date: Date): Promise<ClassRecord[]> {
   const user = await requireUser()
@@ -19,7 +20,7 @@ export async function getClassRecords(date: Date): Promise<ClassRecord[]> {
     return {
       id: c.id, name: c.name, grade: c.grade as ClassRecord["grade"],
       homeroom: c.homeroomUser?.name ?? "Belum ditentukan", homeroomId: c.homeroomUser?.id ?? null, totalStudents: c.students.length,
-      submitted: Boolean(day), submittedAt: day ? new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit" }).format(day.submittedAt).replace(".", ":") : null,
+      submitted: isClassRecapComplete({ totalStudents: c.students.length, recorded: day?.attendances.length ?? 0 }), submittedAt: day ? new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit" }).format(day.submittedAt).replace(".", ":") : null,
       onTime: null, previousHadir: 0, previousTotal: 0,
       hadir: count("HADIR"), sakit: count("SAKIT"), izin: count("IZIN"), alfa: count("ALFA"), dispensasi: count("DISPENSASI"),
     }
