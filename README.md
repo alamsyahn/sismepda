@@ -27,85 +27,88 @@ Admin membuat akun guru melalui Input Guru, lalu menetapkan kelas melalui Wali K
 
 ## Deployment VPS dengan Docker
 
-Kebutuhan minimum yang disarankan:
+Deployment produksi di VPS SMPN 2 Blitar memakai infrastruktur bersama yang sudah
+ada, bukan membuat PostgreSQL atau Caddy baru:
 
-- Ubuntu 22.04/24.04 atau Debian 12.
-- RAM 2 GB, 2 vCPU, dan penyimpanan 20 GB.
-- Docker Engine beserta plugin Docker Compose.
-- Domain yang record `A`-nya mengarah ke IP publik VPS.
-- Port TCP 80/443 dan UDP 443 terbuka.
+```text
+Internet -> edge-caddy-1 -> network edge -> sismepda-new-app:3000
+                                       app -> sismepda-dashboard_internal -> db:5432
+```
 
 ### 1. Siapkan environment
-
-Salin template berikut pada VPS:
 
 ```bash
 cp .env.production.example .env.production
 nano .env.production
 ```
 
-Gunakan password PostgreSQL berbentuk alfanumerik/hex agar aman digunakan dalam URL. Contoh pembuatan secret:
+Jangan commit `.env.production`. Gunakan kembali kredensial database,
+`AUTH_SECRET`, dan akun admin dari deployment lama; jangan membuat secret baru
+saat cutover. `DOMAIN` produksi adalah `app.smpn2blitar.sch.id`.
+
+### 2. Validasi dan build
 
 ```bash
-openssl rand -hex 32
-openssl rand -base64 32
+docker compose --env-file .env.production config
+docker compose --env-file .env.production build
 ```
 
-Isi `POSTGRES_PASSWORD` dan bagian password pada `DATABASE_URL` dengan nilai hex yang sama. Isi `AUTH_SECRET` dengan hasil perintah kedua. Jangan commit `.env.production`.
+`compose.edge.yaml` menyambungkan hanya service `app` ke network eksternal
+`edge` dengan alias `sismepda-new-app`. Stack ini tidak memublikasikan port
+80/443 atau 5432 dan tidak menjalankan Caddy/PostgreSQL baru.
 
-### 2. Jalankan
+### 3. Migrasi dan startup (hanya saat jadwal deployment disetujui)
+
+Sebelum migrasi, pastikan koneksi menuju database yang dimaksud. Migrasi
+production harus dijalankan terpisah dan diperiksa sebelum aplikasi dinaikkan:
 
 ```bash
-docker compose --env-file .env.production up -d --build
+docker compose --env-file .env.production --profile migration run --rm -T migrate \
+  sh -c 'npx prisma migrate status && npx prisma migrate deploy && npx prisma db seed'
+docker compose --env-file .env.production up -d app
 docker compose --env-file .env.production ps
-docker compose --env-file .env.production logs -f migrate app caddy
+docker compose --env-file .env.production logs -f --tail=200 app
 ```
 
-Caddy otomatis meminta dan memperpanjang sertifikat HTTPS. Setelah container sehat, buka `https://DOMAIN_ANDA` dan login memakai `SEED_ADMIN_EMAIL` serta `SEED_ADMIN_PASSWORD`.
+Shared Caddy harus dikonfigurasi secara terpisah untuk meneruskan
+`app.smpn2blitar.sch.id` ke `sismepda-new-app:3000`. Blok yang nantinya perlu
+ditambahkan ke Caddyfile edge adalah:
 
-### 3. Update aplikasi
+```caddyfile
+app.smpn2blitar.sch.id {
+    encode zstd gzip
 
-Setelah source code terbaru tersedia di VPS:
+    reverse_proxy sismepda-new-app:3000
 
-```bash
-docker compose --env-file .env.production up -d --build
-docker image prune -f
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+}
 ```
 
-Container `migrate` menjalankan migration Prisma yang belum diterapkan dan seed sebelum versi aplikasi baru dimulai.
-
-### Backup PostgreSQL
-
-```bash
-mkdir -p backups
-docker compose --env-file .env.production exec -T db pg_dump -U sismepda -d sismepda -Fc > backups/sismepda-$(date +%F-%H%M).dump
-```
-
-Salin backup secara berkala ke mesin/lokasi lain. Volume Docker saja bukan backup.
-
-Restore ke database kosong:
-
-```bash
-docker compose --env-file .env.production exec -T db pg_restore -U sismepda -d sismepda --clean --if-exists < backups/NAMA_FILE.dump
-```
+Validasi Caddyfile sebelum reload. Jangan jalankan Compose atau mengubah edge
+Caddy sebelum backup, maintenance window, dan cutover disetujui.
 
 ### Operasional
 
 ```bash
-# Melihat status
+# Melihat status/log aplikasi baru
 docker compose --env-file .env.production ps
-
-# Melihat log aplikasi
 docker compose --env-file .env.production logs -f --tail=200 app
 
-# Restart aplikasi
+# Restart hanya aplikasi baru
 docker compose --env-file .env.production restart app
 
-# Menghentikan stack tanpa menghapus data
+# Hentikan hanya stack baru (external networks/data tidak dihapus)
 docker compose --env-file .env.production down
 ```
 
-Jangan menjalankan `docker compose down -v`, karena opsi `-v` menghapus volume PostgreSQL.
+Backup/restore database tetap dilakukan melalui container PostgreSQL produksi
+yang sudah ada (`sismepda-dashboard-db-1`), bukan melalui Compose repo baru.
+Jangan menjalankan operasi restore/drop tanpa prosedur maintenance terpisah.
 
 ## Menjalankan development dengan PostgreSQL
 
