@@ -57,15 +57,12 @@ async function seedWorkbooks() {
       })
     }
 
-    // Drop items removed from the master list so the checklist never shows stale rows.
-    await prisma.workbookItem.deleteMany({
-      where: { workbookId: workbook.id, sortOrder: { gt: entry.items.length } },
-    })
+    // Jangan hapus item yang sudah tidak ada di master: item dapat memiliki
+    // status supervisi buatan pengguna yang terhapus secara cascade.
   }
 
-  await prisma.workbook.deleteMany({
-    where: { number: { notIn: workbookMasterData.map((entry) => entry.number) } },
-  })
+  // Workbook di luar master juga dipertahankan karena dapat memiliki tautan
+  // dan status supervisi buatan pengguna. Seed hanya menginisialisasi/upsert.
 }
 
 main().finally(() => prisma.$disconnect())
