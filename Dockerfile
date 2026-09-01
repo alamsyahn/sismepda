@@ -1,7 +1,9 @@
 FROM node:24-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# Skrip postinstall (prisma generate) butuh prisma/schema.prisma yang belum
+# tersedia di stage ini; generate dijalankan eksplisit pada stage builder.
+RUN npm ci --ignore-scripts
 
 FROM node:24-bookworm-slim AS builder
 WORKDIR /app
@@ -16,6 +18,8 @@ ENV NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/app/generated ./app/generated
 COPY prisma ./prisma
+# prisma/seed.ts mengimpor lib/database-config dan lib/workbook-master.
+COPY lib ./lib
 COPY prisma.config.ts package.json ./
 CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed"]
 
