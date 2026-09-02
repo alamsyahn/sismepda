@@ -50,6 +50,43 @@ export type ActivityItem = {
 
 const grades = ["VII", "VIII", "IX"] as const
 
+/**
+ * Persentase tampilan tunggal untuk seluruh kartu kehadiran.
+ *
+ * Perhitungan memakai nilai mentah dan hanya dibulatkan di akhir, sehingga
+ * angka besar di tengah donut dan persentase di legend selalu berasal dari
+ * rumus yang sama. Total 0 mengembalikan 0, bukan NaN/Infinity.
+ */
+export function sharePercentage(value: number, total: number): number {
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) return 0
+  return Math.round((value / total) * 100)
+}
+
+/**
+ * Denominator distribusi kehadiran: jumlah status yang benar-benar tercatat
+ * pada tanggal tersebut (Hadir + Sakit + Izin + Alfa + Dispensasi).
+ *
+ * Ini SENGAJA bukan jumlah siswa terdaftar. Sejak absensi boleh disimpan
+ * sebagian, siswa yang belum diberi status tidak punya baris Attendance,
+ * sehingga memakai jumlah siswa sebagai pembagi membuat persentase tidak
+ * sebanding dengan slice donut.
+ */
+export function attendanceDistributionTotal(counts: {
+  totalHadir: number
+  totalSakit: number
+  totalIzin: number
+  totalAlfa: number
+  totalDispensasi: number
+}): number {
+  return (
+    counts.totalHadir +
+    counts.totalSakit +
+    counts.totalIzin +
+    counts.totalAlfa +
+    counts.totalDispensasi
+  )
+}
+
 export function computeSummary(records: ClassRecord[]) {
   const totalClasses = records.length
   const submitted = records.filter((c) => c.submitted)
@@ -61,15 +98,22 @@ export function computeSummary(records: ClassRecord[]) {
   const totalAlfa = records.reduce((sum, c) => sum + c.alfa, 0)
   const totalDispensasi = records.reduce((sum, c) => sum + c.dispensasi, 0)
 
-  // Only count students in submitted classes for attendance ratio
-  const totalPresentEligible = submitted.reduce((sum, c) => sum + c.totalStudents, 0)
-  const attendanceRate =
-    totalPresentEligible > 0 ? Math.round((totalHadir / totalPresentEligible) * 100) : 0
+  // Denominator kehadiran = status yang tercatat, IDENTIK dengan dataset donut.
+  // Sebelumnya pembilang mencakup seluruh kelas sementara pembagi hanya kelas
+  // yang sudah input, sehingga rasionya bisa melebihi 100%.
+  const totalRecorded = attendanceDistributionTotal({
+    totalHadir,
+    totalSakit,
+    totalIzin,
+    totalAlfa,
+    totalDispensasi,
+  })
+  const attendanceRate = sharePercentage(totalHadir, totalRecorded)
 
   const totalStudentsAll = records.reduce((sum, c) => sum + c.totalStudents, 0)
   const previousHadir = records.reduce((sum, c) => sum + c.previousHadir, 0)
   const previousTotal = records.reduce((sum, c) => sum + c.previousTotal, 0)
-  const previousAttendanceRate = previousTotal > 0 ? Math.round((previousHadir / previousTotal) * 100) : null
+  const previousAttendanceRate = previousTotal > 0 ? sharePercentage(previousHadir, previousTotal) : null
   const attendanceDelta = previousAttendanceRate === null ? null : attendanceRate - previousAttendanceRate
   const onTimeCount = submitted.filter((record) => record.onTime).length
 
@@ -82,6 +126,7 @@ export function computeSummary(records: ClassRecord[]) {
     totalIzin,
     totalAlfa,
     totalDispensasi,
+    totalRecorded,
     attendanceRate,
     totalStudentsAll,
     completionRate: totalClasses > 0 ? Math.round((submitted.length / totalClasses) * 100) : 0,

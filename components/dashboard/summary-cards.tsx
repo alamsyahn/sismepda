@@ -49,7 +49,7 @@ export function SummaryCards({
     {
       label: "Tingkat Kehadiran",
       value: `${attendanceRate}%`,
-      caption: "Dari kelas yang sudah input",
+      caption: "Dari status yang sudah tercatat",
       icon: UserCheck,
       iconTone: "bg-info/10 text-info-foreground",
       trend: submittedCount === 0 || attendanceDelta === null

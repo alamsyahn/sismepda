@@ -2,7 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DonutChart } from "@/components/dashboard/donut-chart"
 import { AttendanceBarChart } from "@/components/dashboard/attendance-bar-chart"
 import type { ClassRecord } from "@/lib/dashboard-data"
-import { statusMeta } from "@/lib/dashboard-data"
+import { statusMeta, sharePercentage } from "@/lib/dashboard-data"
 
 type ChartsSummary = {
   submittedCount: number
@@ -48,6 +48,11 @@ export function AttendanceCard({ summary }: { summary: ChartsSummary }) {
     { label: "Alfa", value: summary.totalAlfa, color: statusMeta.alfa.token },
   ]
 
+  // Angka di tengah dihitung dari segmen yang SAMA dengan yang digambar dan
+  // dipakai legend, sehingga tidak mungkin memakai denominator berbeda.
+  const distributionTotal = attendanceSegments.reduce((sum, segment) => sum + segment.value, 0)
+  const hadirPercentage = sharePercentage(summary.totalHadir, distributionTotal)
+
   return (
     <Card className="border-border/60 shadow-sm">
       <CardHeader>
@@ -57,7 +62,7 @@ export function AttendanceCard({ summary }: { summary: ChartsSummary }) {
       <CardContent>
         <DonutChart
           segments={attendanceSegments}
-          centerValue={`${summary.attendanceRate}%`}
+          centerValue={`${hadirPercentage}%`}
           centerLabel="Hadir"
         />
       </CardContent>

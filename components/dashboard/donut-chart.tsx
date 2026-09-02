@@ -1,5 +1,7 @@
 "use client"
 
+import { sharePercentage } from "@/lib/dashboard-data"
+
 export type DonutSegment = {
   label: string
   value: number
@@ -86,7 +88,7 @@ export function DonutChart({
 
       <ul className="grid w-full grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-1">
         {segments.map((segment) => {
-          const pct = total > 0 ? Math.round((segment.value / total) * 100) : 0
+          const pct = sharePercentage(segment.value, total)
           return (
             <li key={segment.label} className="flex items-center gap-2.5">
               <span
