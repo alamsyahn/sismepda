@@ -10,6 +10,12 @@ __v0_jsx-dev-runtime.ts
 .env*
 !.env.example
 !.env.production.example
+*.dump
+/*.sql
+*.backup
+*.db
+*.sqlite
+*.sqlite3
 prisma/dev.db*
 dev.db*
 app/generated/prisma/

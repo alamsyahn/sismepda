@@ -1,9 +1,14 @@
 FROM node:24-bookworm-slim AS deps
 WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 # Skrip postinstall (prisma generate) butuh prisma/schema.prisma yang belum
 # tersedia di stage ini; generate dijalankan eksplisit pada stage builder.
-RUN npm ci --ignore-scripts
+# Paksa engine Prisma terunduh saat build agar migrator tidak bergantung pada
+# binaries.prisma.sh ketika dijalankan di production.
+RUN PRISMA_CLI_BINARY_TARGETS=debian-openssl-3.0.x npm ci --ignore-scripts \
+  && node node_modules/@prisma/engines/scripts/postinstall.js
 
 FROM node:24-bookworm-slim AS builder
 WORKDIR /app
@@ -15,6 +20,8 @@ RUN npx prisma generate && npm run build
 FROM node:24-bookworm-slim AS migrator
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/app/generated ./app/generated
 COPY prisma ./prisma
