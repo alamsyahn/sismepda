@@ -38,6 +38,13 @@ export function countAbsenteesByStatus(students: AbsentStudent[]): Record<Absent
   return counts
 }
 
+export function filterAbsenteesByStatuses(
+  students: AbsentStudent[],
+  statuses: ReadonlySet<AbsentStatus>,
+): AbsentStudent[] {
+  return students.filter((student) => statuses.has(student.status))
+}
+
 /**
  * Konteks singkat untuk siswa yang berulang kali absen dengan status yang sama.
  * Mengembalikan null ketika ini kejadian pertama supaya daftar tidak berisik.

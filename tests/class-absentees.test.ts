@@ -4,6 +4,7 @@ import test from "node:test"
 import {
   absenteeSummaryLabel,
   countAbsenteesByStatus,
+  filterAbsenteesByStatuses,
   groupAbsentees,
   indexAbsenteesByClass,
   repeatedAbsenceLabel,
@@ -60,6 +61,21 @@ test("counts absentees per status", () => {
     ]),
     { alfa: 2, izin: 1, sakit: 0, dispensasi: 0 },
   )
+})
+
+test("filters absentees by every selected status", () => {
+  const students = [
+    student({ id: "1", name: "Ali", status: "alfa" }),
+    student({ id: "2", name: "Budi", status: "izin" }),
+    student({ id: "3", name: "Citra", status: "sakit" }),
+    student({ id: "4", name: "Dewi", status: "dispensasi" }),
+  ]
+
+  assert.deepEqual(
+    filterAbsenteesByStatuses(students, new Set(["sakit", "alfa"])).map((item) => item.name),
+    ["Ali", "Citra"],
+  )
+  assert.deepEqual(filterAbsenteesByStatuses(students, new Set()), [])
 })
 
 test("repeat context only appears from the second occurrence", () => {

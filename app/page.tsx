@@ -104,7 +104,7 @@ export default function DashboardPage() {
 
               <ClassesNotInput records={records} date={date} />
 
-              <AbsentStudentsTable students={filteredAbsent} />
+              <AbsentStudentsTable students={filteredAbsent} date={date} />
 
               <section aria-labelledby="dashboard-analysis-title" className="space-y-4">
                 <div>

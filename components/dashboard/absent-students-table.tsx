@@ -9,6 +9,8 @@ import {
   ChevronsUpDown,
   ChevronLeft,
   ChevronRight,
+  CalendarDays,
+  Check,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -20,11 +22,15 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { formatLongDate } from "@/lib/date"
 import { statusMeta, type AbsentStudent } from "@/lib/dashboard-data"
+import {
+  filterAbsenteesByStatuses,
+  type AbsentStatus,
+} from "@/lib/class-absentees"
 import { compareClassNames } from "@/lib/class-order"
 import { ProfileNameLink } from "@/components/profile/profile-name-link"
 
@@ -39,50 +45,51 @@ function initials(name: string) {
 
 type SortKey = "name" | "nis" | "className" | "status" | "note" | "total" | "riwayat"
 type SortDir = "asc" | "desc"
-type SortState = { key: SortKey; dir: SortDir } | null
+type SortState = { key: SortKey; dir: SortDir }
 
 const PER_PAGE_OPTIONS = [10, 25, 50] as const
 
-// Kategori riwayat (dispensasi opsional mengikuti checkbox)
-const HISTORY_KEYS = ["sakit", "izin", "alfa", "dispensasi"] as const
+const HISTORY_KEYS: AbsentStatus[] = ["sakit", "izin", "alfa", "dispensasi"]
 
-export function AbsentStudentsTable({ students }: { students: AbsentStudent[] }) {
-  const [includeDispensasi, setIncludeDispensasi] = useState(true)
+export function AbsentStudentsTable({ students, date }: { students: AbsentStudent[]; date: string }) {
+  const [activeStatuses, setActiveStatuses] = useState<Set<AbsentStatus>>(
+    () => new Set(HISTORY_KEYS),
+  )
   const [query, setQuery] = useState("")
-  const [sort, setSort] = useState<SortState>(null)
+  const [sort, setSort] = useState<SortState>({ key: "total", dir: "desc" })
   const [perPage, setPerPage] = useState<number>(10)
   const [page, setPage] = useState(1)
 
-  const total = (s: AbsentStudent) =>
-    s.history.sakit + s.history.izin + s.history.alfa + (includeDispensasi ? s.history.dispensasi : 0)
+  const total = (student: AbsentStudent) =>
+    HISTORY_KEYS.reduce(
+      (sum, status) => sum + (activeStatuses.has(status) ? student.history[status] : 0),
+      0,
+    )
 
-  const riwayatScore = (s: AbsentStudent) =>
-    HISTORY_KEYS.filter((k) => (k === "dispensasi" && !includeDispensasi ? false : s.history[k] > 0)).length
+  const riwayatScore = (student: AbsentStudent) =>
+    HISTORY_KEYS.filter((status) => activeStatuses.has(status) && student.history[status] > 0).length
 
-  // 1. Filter berdasarkan checkbox dispensasi
-  const checkboxFiltered = useMemo(
-    () => (includeDispensasi ? students : students.filter((s) => s.status !== "dispensasi")),
-    [students, includeDispensasi],
+  const statusFiltered = useMemo(
+    () => filterAbsenteesByStatuses(students, activeStatuses),
+    [students, activeStatuses],
   )
 
-  // 2. Filter pencarian (nama / kelas)
   const searched = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return checkboxFiltered
-    return checkboxFiltered.filter(
-      (s) => s.name.toLowerCase().includes(q) || s.nis?.includes(q) || s.nisn?.includes(q) || s.className.toLowerCase().includes(q),
+    const normalizedQuery = query.trim().toLowerCase()
+    if (!normalizedQuery) return statusFiltered
+    return statusFiltered.filter(
+      (student) =>
+        student.name.toLowerCase().includes(normalizedQuery) ||
+        student.nis?.includes(normalizedQuery) ||
+        student.nisn?.includes(normalizedQuery) ||
+        student.className.toLowerCase().includes(normalizedQuery),
     )
-  }, [checkboxFiltered, query])
+  }, [statusFiltered, query])
 
   // 3. Sorting
   const sorted = useMemo(() => {
     const rows = [...searched]
     const byName = (a: AbsentStudent, b: AbsentStudent) => a.name.localeCompare(b.name, "id")
-
-    if (!sort) {
-      // Default: total ketidakhadiran terbesar -> terkecil, lalu alfabet nama
-      return rows.sort((a, b) => total(b) - total(a) || byName(a, b))
-    }
 
     const dir = sort.dir === "asc" ? 1 : -1
     return rows.sort((a, b) => {
@@ -113,12 +120,11 @@ export function AbsentStudentsTable({ students }: { students: AbsentStudent[] })
       return cmp * dir || byName(a, b)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searched, sort, includeDispensasi])
+  }, [searched, sort, activeStatuses])
 
-  // Reset ke halaman 1 ketika filter berubah
   useEffect(() => {
     setPage(1)
-  }, [query, includeDispensasi, perPage, students])
+  }, [query, activeStatuses, perPage, students])
 
   const totalItems = sorted.length
   const totalPages = Math.max(1, Math.ceil(totalItems / perPage))
@@ -127,36 +133,47 @@ export function AbsentStudentsTable({ students }: { students: AbsentStudent[] })
   const paged = sorted.slice(startIndex, startIndex + perPage)
 
   function toggleSort(key: SortKey) {
-    setSort((prev) => {
-      if (!prev || prev.key !== key) return { key, dir: "asc" }
-      if (prev.dir === "asc") return { key, dir: "desc" }
-      return null
+    setSort((current) => ({
+      key,
+      dir: current.key === key && current.dir === "asc" ? "desc" : "asc",
+    }))
+  }
+
+  function toggleStatus(status: AbsentStatus) {
+    setActiveStatuses((current) => {
+      const next = new Set(current)
+      if (next.has(status)) next.delete(status)
+      else next.add(status)
+      return next
     })
   }
 
-  const shownKeys = HISTORY_KEYS.filter((k) => k !== "dispensasi" || includeDispensasi)
+  const shownKeys = HISTORY_KEYS.filter((status) => activeStatuses.has(status))
 
   return (
     <Card className="border-border/60 shadow-sm">
       <CardHeader>
-        <div className="flex items-center justify-between gap-2">
-          <div className="space-y-1">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
             <CardTitle className="flex items-center gap-2 text-base">
               <UserX className="size-4 text-[var(--chart-5)]" />
               Siswa Tidak Hadir pada Tanggal Dipilih
             </CardTitle>
-            <CardDescription>
-              Daftar siswa dengan status sakit, izin, dispensasi, atau alfa
+            <CardDescription className="flex items-center gap-1.5 font-medium text-foreground/80">
+              <CalendarDays className="size-3.5 text-primary" />
+              {formatLongDate(date)}
             </CardDescription>
+            <p className="text-sm text-muted-foreground">
+              Daftar siswa dengan status sakit, izin, dispensasi, atau alfa
+            </p>
           </div>
-          <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-sm font-semibold text-foreground tabular-nums">
-            {checkboxFiltered.length}
+          <span className="w-fit shrink-0 rounded-full bg-muted px-3 py-1 text-sm font-semibold text-foreground tabular-nums">
+            {statusFiltered.length} siswa
           </span>
         </div>
 
-        {/* Kontrol: pencarian + checkbox dispensasi */}
-        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:max-w-xs">
+        <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="relative w-full lg:max-w-xs">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
@@ -166,13 +183,33 @@ export function AbsentStudentsTable({ students }: { students: AbsentStudent[] })
               aria-label="Cari nama siswa atau kelas"
             />
           </div>
-          <label className="flex cursor-pointer select-none items-center gap-2 text-sm text-foreground">
-            <Checkbox
-              checked={includeDispensasi}
-              onCheckedChange={(checked) => setIncludeDispensasi(checked === true)}
-            />
-            Hitung siswa dispensasi
-          </label>
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">Filter status</p>
+            <div role="group" aria-label="Filter status ketidakhadiran" className="flex flex-wrap gap-1.5">
+              {HISTORY_KEYS.map((status) => {
+                const active = activeStatuses.has(status)
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => toggleStatus(status)}
+                    className={cn(
+                      "inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
+                      active
+                        ? cn(statusMeta[status].badge, "border-current/25 shadow-sm")
+                        : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <span className={cn("flex size-4 items-center justify-center rounded-sm border", active ? "border-current/35 bg-current/10" : "border-input")}>
+                      {active ? <Check className="size-3" /> : null}
+                    </span>
+                    {statusMeta[status].label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </div>
       </CardHeader>
 
@@ -181,20 +218,22 @@ export function AbsentStudentsTable({ students }: { students: AbsentStudent[] })
           <p className="py-10 text-center text-sm text-muted-foreground">
             {query
               ? "Tidak ada siswa yang cocok dengan pencarian."
-              : "Semua siswa hadir. Tidak ada catatan ketidakhadiran."}
+              : activeStatuses.size === 0
+                ? "Aktifkan setidaknya satu filter status untuk menampilkan siswa."
+                : "Semua siswa hadir. Tidak ada catatan ketidakhadiran."}
           </p>
         ) : (
           <>
             <div className="overflow-x-auto">
               <Table className="min-w-[1000px] table-fixed">
                 <colgroup>
-                  <col style={{ width: "19%" }} />
+                  <col style={{ width: "20%" }} />
                   <col style={{ width: "10%" }} />
                   <col style={{ width: "8%" }} />
-                  <col style={{ width: "12%" }} />
-                  <col style={{ width: "21%" }} />
+                  <col style={{ width: "11%" }} />
+                  <col style={{ width: "17%" }} />
+                  <col style={{ width: "16%" }} />
                   <col style={{ width: "18%" }} />
-                  <col style={{ width: "19%" }} />
                 </colgroup>
                 <TableHeader>
                   <TableRow>
@@ -205,11 +244,11 @@ export function AbsentStudentsTable({ students }: { students: AbsentStudent[] })
                     <SortHead label="Keterangan" col="note" sort={sort} onSort={toggleSort} />
                     <SortHead
                       label="Total Ketidakhadiran"
-                      subLabel={includeDispensasi ? "(termasuk dispensasi)" : undefined}
+                      subLabel="berdasarkan filter aktif"
                       col="total"
                       sort={sort}
                       onSort={toggleSort}
-                      align="right"
+                      align="center"
                     />
                     <SortHead label="Riwayat" col="riwayat" sort={sort} onSort={toggleSort} />
                   </TableRow>
@@ -251,11 +290,13 @@ export function AbsentStudentsTable({ students }: { students: AbsentStudent[] })
                         <TableCell className="text-pretty text-muted-foreground">
                           {s.note}
                         </TableCell>
-                        <TableCell className="text-right">
-                          <span className="font-semibold text-foreground tabular-nums">
-                            {total(s)}
+                        <TableCell className="text-center">
+                          <span className="inline-flex items-baseline justify-center gap-1 whitespace-nowrap">
+                            <span className="text-xl font-bold leading-none tracking-tight text-foreground tabular-nums">
+                              {total(s)}
+                            </span>
+                            <span className="text-xs font-medium text-muted-foreground">hari</span>
                           </span>
-                          <span className="text-xs text-muted-foreground"> hari</span>
                         </TableCell>
                         <TableCell>
                           {badges.length === 0 ? (
@@ -301,7 +342,7 @@ export function AbsentStudentsTable({ students }: { students: AbsentStudent[] })
                 </span>
               </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-3 sm:justify-end">
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs text-muted-foreground">Per halaman</span>
                   <div className="flex items-center gap-1 rounded-lg border border-border/60 p-0.5">
@@ -335,22 +376,28 @@ export function AbsentStudentsTable({ students }: { students: AbsentStudent[] })
                   >
                     <ChevronLeft className="size-4" />
                   </Button>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setPage(p)}
-                      className={cn(
-                        "flex size-8 items-center justify-center rounded-md text-sm font-medium tabular-nums transition-colors",
-                        p === currentPage
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:bg-muted",
-                      )}
-                      aria-current={p === currentPage ? "page" : undefined}
-                    >
-                      {p}
-                    </button>
-                  ))}
+                  <span className="min-w-16 text-center text-xs text-muted-foreground tabular-nums sm:hidden">
+                    {currentPage} / {totalPages}
+                  </span>
+                  <div className="hidden items-center gap-1 sm:flex">
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setPage(p)}
+                        className={cn(
+                          "flex size-8 items-center justify-center rounded-md text-sm font-medium tabular-nums transition-colors",
+                          p === currentPage
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:bg-muted",
+                        )}
+                        aria-current={p === currentPage ? "page" : undefined}
+                        aria-label={`Halaman ${p}`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
                   <Button
                     variant="outline"
                     size="icon"
@@ -384,21 +431,26 @@ function SortHead({
   col: SortKey
   sort: SortState
   onSort: (key: SortKey) => void
-  align?: "left" | "right"
+  align?: "left" | "center"
 }) {
   const active = sort?.key === col
+  const ariaSort = active ? (sort?.dir === "asc" ? "ascending" : "descending") : "none"
   return (
-    <TableHead className={cn("h-auto py-3 align-middle", align === "right" && "text-right")}>
+    <TableHead
+      aria-sort={ariaSort}
+      className={cn("h-auto py-3 align-middle", align === "center" && "text-center")}
+    >
       <button
         type="button"
         onClick={() => onSort(col)}
+        aria-label={`${label}, ${active ? `diurutkan ${sort?.dir === "asc" ? "menaik" : "menurun"}` : "belum diurutkan"}`}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-md transition-colors hover:text-foreground",
-          align === "right" && "flex-row-reverse",
-          active ? "font-semibold text-foreground" : "text-muted-foreground",
+          "inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
+          align === "center" && "justify-center",
+          active ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground",
         )}
       >
-        <span className={cn("flex flex-col", align === "right" ? "items-end" : "items-start")}>
+        <span className={cn("flex flex-col", align === "center" ? "items-center" : "items-start")}>
           <span className="whitespace-nowrap leading-tight">{label}</span>
           {subLabel ? (
             <span className="whitespace-nowrap text-[11px] font-normal leading-tight text-muted-foreground">
