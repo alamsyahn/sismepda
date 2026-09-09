@@ -18,7 +18,6 @@ export function OperationalBrief({
 }) {
   const pending = records.filter((record) => !record.submitted)
   const urgentAbsences = absentStudents.filter((student) => student.status === "alfa")
-  const nextClass = pending[0]
   const attendanceAction = dashboardAttendanceAction(date)
   const reportAction = dashboardWhatsappReportAction(date)
 
@@ -35,11 +34,11 @@ export function OperationalBrief({
               ? "Seluruh kelas sudah menyelesaikan input absensi."
               : `${pending.length} kelas masih menunggu input absensi.`}
           </h2>
-          <p className="mt-2 max-w-[65ch] text-sm leading-6 text-background/70">
-            {pending.length === 0
-              ? "Tidak ada kelas yang perlu dikejar. Tinjau siswa tidak hadir untuk menentukan tindak lanjut berikutnya."
-              : `Prioritaskan ${nextClass?.name ?? "kelas yang belum input"} agar ringkasan sekolah segera lengkap.`}
-          </p>
+          {pending.length === 0 ? (
+            <p className="mt-2 max-w-[65ch] text-sm leading-6 text-background/70">
+              Tidak ada kelas yang perlu dikejar. Tinjau siswa tidak hadir untuk menentukan tindak lanjut berikutnya.
+            </p>
+          ) : null}
           <div className="mt-5 flex flex-wrap gap-2">
             <Button
               size="lg"
