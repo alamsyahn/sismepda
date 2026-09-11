@@ -14,6 +14,7 @@ export type AuditEntity =
   | "SarprasItem"
   | "EuksVisit"
   | "StudentHealthMeasurement"
+  | "Attendance"
   | "EuksProfile"
   | "EuksOfficer"
   | "EuksFacility"
@@ -51,6 +52,7 @@ export type AuditAction =
   | "EUKS_FACILITY_UPDATED"
   | "EUKS_COMPLAINT_OPTION_CREATED"
   | "EUKS_COMPLAINT_OPTION_UPDATED"
+  | "EUKS_SICK_ABSENCE_UPDATED"
 
 export type AuditEntry = {
   actorId: string | null

@@ -112,6 +112,37 @@ call it, so the bands on the chart and the z-score behind a category can never
 diverge. A point sitting between the median and -1 SD is exactly a point whose
 z-score is between 0 and -1.
 
+### Sick-absence table
+
+The sick-absence table on `/e-uks/pantauan-kesehatan` reads from `Attendance`
+rows with status `SAKIT`. It owns three behaviours worth knowing:
+
+**Consecutive-day counting.** `lib/sick-streak.ts` counts a run of sick days
+treating school holidays as if they did not exist: sick on the 7th, 8th and
+10th with the 9th listed in `SchoolHoliday` counts as a 3-day run. Only dates
+recorded in `SchoolHoliday` are skipped. Weekends are *not* skipped on their
+own, because this school teaches on Saturday and an empty Sunday is an ordinary
+break between two separate illnesses. A gap wider than `MAX_HOLIDAY_GAP`
+consecutive holidays never joins two runs, so a long school break cannot merge
+illnesses months apart. A one-day run is deliberately left unhighlighted;
+colour is reserved for runs that need attention, red from three days up.
+
+**`Attendance.followUp`.** The school follow-up column is a nullable column on
+`Attendance`, separate from `note`. `note` holds what the parent or student
+reported; `followUp` holds what the school did about it. Existing rows stay
+`NULL` until someone fills them in.
+
+**In-place editing.** `PATCH /api/e-uks/sick-absences/[attendanceId]` updates
+only `note` and `followUp`, and refuses rows whose status is not `SAKIT`.
+Status, date and class are intentionally not editable here: changing them moves
+attendance totals, which belongs on Input Absensi where the holiday, future-date
+and class-scope checks live. The Edit button links to
+`/absensi/input?classId=…&date=…` using the class recorded on that attendance
+day, not the student's current class, so a student who changed classes still
+lands on the register that holds the row. Permission is `euks.edit` rather than
+class ownership, because a UKS officer who is not a homeroom teacher still needs
+to record follow-up.
+
 ### Select triggers must map value to label
 
 Base UI's `Select.Value` renders the raw `value` unless it is given a render

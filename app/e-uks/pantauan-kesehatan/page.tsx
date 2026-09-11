@@ -1,11 +1,10 @@
 import { redirect } from "next/navigation"
-import Link from "next/link"
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { EuksStudentSelector } from "@/components/e-uks/euks-student-selector"
 import { EuksMeasurementTable } from "@/components/e-uks/euks-measurement-table"
+import { EuksSickAbsenceTable } from "@/components/e-uks/euks-sick-absence-table"
 import { EuksBmiChart } from "@/components/e-uks/euks-bmi-chart"
 import { EuksKmsChart } from "@/components/e-uks/euks-kms-chart"
 import { EuksAccessError, requireEuksViewer } from "@/lib/euks-access"
@@ -107,51 +106,16 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
             <CardHeader>
               <CardTitle>Riwayat Ketidakhadiran Karena Sakit</CardTitle>
               <p className="text-muted-foreground text-sm">
-                Data diambil otomatis dari rekap absensi Sismepda.
+                Data diambil otomatis dari rekap absensi Sismepda. Kolom Berturut-turut
+                menghitung hari sakit beruntun dengan mengabaikan tanggal yang terdaftar
+                sebagai hari libur. Catatan dan tindak lanjut dapat diubah langsung di tabel.
               </p>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">No</TableHead>
-                    <TableHead>Tanggal</TableHead>
-                    <TableHead>Catatan</TableHead>
-                    <TableHead>Tindak Lanjut Sekolah</TableHead>
-                    <TableHead className="text-right">Edit di Sismepda</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {monitoring.sickAbsences.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-muted-foreground py-8 text-center">
-                        Tidak ada ketidakhadiran karena sakit.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    monitoring.sickAbsences.map((absence, index) => (
-                      <TableRow key={absence.id}>
-                        <TableCell>{index + 1}</TableCell>
-                        <TableCell>{fromPrismaDate(absence.date)}</TableCell>
-                        <TableCell>{absence.note ?? "-"}</TableCell>
-                        {/* Attendance has a single note field; there is no
-                            separate school follow-up column to read from. */}
-                        <TableCell className="text-muted-foreground">-</TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            nativeButton={false}
-                            render={<Link href="/absensi/input" />}
-                          >
-                            Edit
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+              <EuksSickAbsenceTable
+                rows={monitoring.sickAbsences}
+                canEdit={capabilities.canEdit}
+              />
             </CardContent>
           </Card>
 

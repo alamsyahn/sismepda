@@ -307,6 +307,9 @@ model Attendance {
   studentId String
   status AttendanceStatus
   note String?
+  /// Tindak lanjut sekolah atas ketidakhadiran, diisi dari Pantauan Kesehatan
+  /// E-UKS. Terpisah dari `note` yang berisi keterangan dari orang tua/siswa.
+  followUp String?
   attendanceDay AttendanceDay @relation(fields: [attendanceDayId], references: [id], onDelete: Cascade)
   student Student @relation(fields: [studentId], references: [id])
   @@unique([attendanceDayId, studentId])

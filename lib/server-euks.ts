@@ -1,7 +1,13 @@
 import { prisma } from "@/lib/prisma"
 import type { EuksStudentOption, HealthMeasurement } from "@/lib/euks"
 import type { TrendVisit } from "@/lib/euks-trends"
-import { fromPrismaDate, prismaSchoolDateRange, type SchoolDate } from "@/lib/school-date"
+import {
+  compareSchoolDates,
+  fromPrismaDate,
+  prismaSchoolDateRange,
+  type SchoolDate,
+} from "@/lib/school-date"
+import { sickStreakLengths } from "@/lib/sick-streak"
 
 export type EuksVisitRow = {
   id: string
@@ -172,8 +178,18 @@ export async function readEuksClassOptions(): Promise<EuksClassOption[]> {
 
 export type SickAbsenceRow = {
   id: string
-  date: Date
+  date: SchoolDate
   note: string | null
+  /** Tindak lanjut sekolah; terpisah dari catatan orang tua/siswa. */
+  followUp: string | null
+  /**
+   * Kelas pada hari absensi itu, bukan kelas siswa saat ini. Dipakai untuk
+   * menautkan tombol Edit ke Input Absensi yang tepat; siswa yang pindah kelas
+   * tetap mengarah ke kelas yang benar-benar mencatat kehadirannya hari itu.
+   */
+  classId: string
+  /** Panjang rentetan sakit yang memuat tanggal ini, hari libur diabaikan. */
+  streak: number
 }
 
 export type StudentMonitoringData = {
@@ -215,7 +231,12 @@ export async function readStudentMonitoring(studentId: string): Promise<StudentM
     }),
     prisma.attendance.findMany({
       where: { studentId, status: "SAKIT" },
-      select: { id: true, note: true, attendanceDay: { select: { date: true } } },
+      select: {
+        id: true,
+        note: true,
+        followUp: true,
+        attendanceDay: { select: { date: true, classId: true } },
+      },
       orderBy: { attendanceDay: { date: "desc" } },
     }),
     prisma.euksVisit.findMany({
@@ -233,6 +254,37 @@ export async function readStudentMonitoring(studentId: string): Promise<StudentM
     }),
   ])
 
+  // Hari libur hanya dibaca sepanjang rentang tanggal sakit siswa ini; di luar
+  // rentang itu tidak ada celah yang perlu disambung.
+  const sickDates = absences.map((item) => fromPrismaDate(item.attendanceDay.date))
+  const holidays =
+    sickDates.length === 0
+      ? []
+      : (
+          await prisma.schoolHoliday.findMany({
+            where: {
+              date: prismaSchoolDateRange(
+                sickDates.reduce((a, b) => (compareSchoolDates(a, b) <= 0 ? a : b)),
+                sickDates.reduce((a, b) => (compareSchoolDates(a, b) >= 0 ? a : b)),
+              ),
+            },
+            select: { date: true },
+          })
+        ).map((holiday) => fromPrismaDate(holiday.date))
+
+  const streaks = sickStreakLengths(
+    sickDates.map((date) => ({ date })),
+    holidays,
+  )
+  const sickAbsences: SickAbsenceRow[] = absences.map((item, index) => ({
+    id: item.id,
+    date: sickDates[index],
+    note: item.note,
+    followUp: item.followUp,
+    classId: item.attendanceDay.classId,
+    streak: streaks[index],
+  }))
+
   return {
     student: {
       id: student.id,
@@ -249,7 +301,7 @@ export async function readStudentMonitoring(studentId: string): Promise<StudentM
       weightKg: Number(item.weightKg),
       note: item.note,
     })),
-    sickAbsences: absences.map((item) => ({ id: item.id, date: item.attendanceDay.date, note: item.note })),
+    sickAbsences,
     visits: visits.map((visit) => ({
       id: visit.id,
       studentId: visit.studentId,
