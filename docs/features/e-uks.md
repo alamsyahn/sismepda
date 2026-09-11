@@ -19,7 +19,27 @@ E-UKS follows the Sarpras delegation model: `User.canViewEuks` and `User.canEdit
 
 ## Data model
 
-Only permission columns exist so far (`20260911120000_add_euks_access`). The remaining models — visit records, student health measurements, and the relational content collections for carousel/pengurus/fasilitas — are introduced by the following phases and documented here as they land.
+### EuksVisit
+
+One row per student visit to the health unit, and the single source of truth for every E-UKS statistic: the visit table, the per-student UKS history on Pantauan Kesehatan, the disease trend map, and the treatment statistics on the home page. No chart value is ever entered manually.
+
+| Field | Notes |
+|---|---|
+| `studentId` | References the existing `Student`; student and class names are always read through this relation, never copied |
+| `occurredAt` | `@db.Date` — a school date, not a timestamp |
+| `complaint`, `treatment` | Free text; aggregation normalizes them (see below) |
+| `followUp` | Optional |
+| `recordedById` | The recording user, `SetNull` on delete so history survives account removal |
+
+Indexed on `occurredAt` and on `(studentId, occurredAt)` to serve both the chronological log and per-student lookups.
+
+Because complaints are free text, `countVisitTerms()` in `lib/euks.ts` groups them case- and whitespace-insensitively, so "Pusing", "pusing" and "Pusing " count as one term. Ties sort alphabetically to keep chart order stable.
+
+Student health measurements and the relational content collections for carousel/pengurus/fasilitas are introduced by the following phases and documented here as they land.
+
+## API
+
+`POST /api/e-uks/visits` creates a visit; `PATCH`/`DELETE /api/e-uks/visits/[visitId]` edit and remove one. All three require `euks.edit`, validate with zod, reject inactive students, and append an `AuditLog` entry (`EUKS_VISIT_CREATED`/`UPDATED`/`DELETED`) inside the same transaction as the change. Clients refresh via `router.refresh()` rather than optimistic updates.
 
 ## Open reference-data requirement
 

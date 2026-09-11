@@ -78,6 +78,7 @@ model User {
   sarprasHistories SarprasHistory[] @relation("SarprasHistoryActor")
   canViewEuks Boolean @default(false)
   canEditEuks Boolean @default(false)
+  euksVisitsRecorded EuksVisit[] @relation("EuksVisitRecorder")
 }
 
 model Subject {
@@ -141,6 +142,7 @@ model Student {
   schoolClass SchoolClass @relation(fields: [classId], references: [id])
   attendances Attendance[]
   violationPoints StudentViolationPoint[]
+  euksVisits EuksVisit[]
 }
 
 model StudentViolationPoint {
@@ -155,6 +157,26 @@ model StudentViolationPoint {
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
   recordedBy User @relation(fields: [recordedById], references: [id])
 
+  @@index([studentId, occurredAt])
+}
+
+/// Satu kunjungan siswa ke UKS. Menjadi source of truth untuk riwayat
+/// kunjungan, tren keluhan, dan statistik tindakan pada modul E-UKS.
+model EuksVisit {
+  id String @id @default(cuid())
+  studentId String
+  /// Tanggal kunjungan — tanggal sekolah, bukan timestamp.
+  occurredAt DateTime @db.Date
+  complaint String
+  treatment String
+  followUp String?
+  recordedById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  recordedBy User? @relation("EuksVisitRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@index([occurredAt])
   @@index([studentId, occurredAt])
 }
 

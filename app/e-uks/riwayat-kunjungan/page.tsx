@@ -1,15 +1,23 @@
 import { redirect } from "next/navigation"
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
-import { Card, CardContent } from "@/components/ui/card"
+import { EuksVisitTable } from "@/components/e-uks/euks-visit-table"
 import { EuksAccessError, requireEuksViewer } from "@/lib/euks-access"
+import { readEuksStudentOptions, readEuksVisits } from "@/lib/server-euks"
 
 export default async function EuksRiwayatKunjunganPage() {
+  let viewer
   try {
-    await requireEuksViewer()
+    viewer = await requireEuksViewer()
   } catch (error) {
     if (error instanceof EuksAccessError) redirect("/")
     throw error
   }
+
+  // Students are only needed by the form, so they are fetched for editors alone.
+  const [visits, students] = await Promise.all([
+    readEuksVisits(),
+    viewer.capabilities.canEdit ? readEuksStudentOptions() : Promise.resolve([]),
+  ])
 
   return (
     <PageContainer>
@@ -17,11 +25,12 @@ export default async function EuksRiwayatKunjunganPage() {
         title="Riwayat Kunjungan UKS"
         description="Catatan keluhan, tindakan yang diberikan, dan tindak lanjut setiap kunjungan"
       />
-      <Card>
-        <CardContent className="py-14 text-center text-sm text-muted-foreground">
-          Belum ada kunjungan UKS yang tercatat.
-        </CardContent>
-      </Card>
+
+      <EuksVisitTable
+        visits={visits}
+        students={students}
+        canEdit={viewer.capabilities.canEdit}
+      />
     </PageContainer>
   )
 }
