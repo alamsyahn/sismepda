@@ -1,7 +1,7 @@
 import { addSchoolDays, compareSchoolDates, type SchoolDate } from "@/lib/school-date"
 
 /**
- * Menghitung panjang rentetan ketidakhadiran karena sakit.
+ * Menomori hari ke berapa sebuah tanggal berada dalam rentetan sakitnya.
  *
  * Hari libur sekolah dianggap tidak ada: bila seorang siswa sakit pada 7, 8,
  * dan 10 sementara tanggal 9 terdaftar sebagai hari libur, ketiganya tetap
@@ -49,10 +49,10 @@ export const MAX_HOLIDAY_GAP = 30
  * seperti masukan. Masukan boleh dalam urutan apa pun dan boleh memuat tanggal
  * kembar; keduanya dinormalkan lebih dulu.
  *
- * Nilai yang dikembalikan adalah panjang TOTAL rentetan yang memuat tanggal
- * tersebut, bukan posisi hari ke berapa. Jadi tiga hari berturut-turut
- * menghasilkan 3, 3, 3 — bukan 1, 2, 3 — supaya pembaca tabel dapat langsung
- * melihat bobot satu episode dari baris mana pun.
+ * Nilai yang dikembalikan adalah POSISI tanggal tersebut di dalam rentetannya,
+ * dihitung maju dari hari pertama. Jadi tiga hari berturut-turut menghasilkan
+ * 1, 2, 3 — setiap baris menyatakan "ini hari sakit ke berapa" sehingga baris
+ * terakhir sekaligus menunjukkan panjang episode yang sedang berjalan.
  */
 export function sickStreakLengths(
   days: readonly SickDay[],
@@ -66,7 +66,7 @@ export function sickStreakLengths(
     compareSchoolDates(a, b),
   )
 
-  // Panjang rentetan per tanggal unik.
+  // Nomor urut hari di dalam rentetannya, dihitung maju dari hari pertama.
   const lengthByDate = new Map<string, number>()
   let index = 0
   while (index < unique.length) {
@@ -76,9 +76,8 @@ export function sickStreakLengths(
       if (expected === null || expected !== unique[end + 1]) break
       end += 1
     }
-    const length = end - index + 1
     for (let position = index; position <= end; position += 1) {
-      lengthByDate.set(unique[position], length)
+      lengthByDate.set(unique[position], position - index + 1)
     }
     index = end + 1
   }
@@ -90,13 +89,15 @@ export function sickStreakLengths(
 export type StreakTone = "none" | "warning" | "danger"
 
 /**
- * Satu hari tidak ditandai sama sekali — itu kejadian biasa dan mewarnainya
- * hanya menambah bising. Tiga hari atau lebih ditandai merah karena sudah
- * pantas ditindaklanjuti; dua hari diberi penanda lebih lembut sebagai
+ * Ambang dibaca dari nomor hari pada baris itu sendiri, sehingga warna baru
+ * muncul saat rentetan benar-benar sudah mencapai panjang tersebut. Hari
+ * pertama tidak ditandai sama sekali — itu kejadian biasa dan mewarnainya hanya
+ * menambah bising. Hari ketiga dan seterusnya ditandai merah karena sudah
+ * pantas ditindaklanjuti; hari kedua diberi penanda lebih lembut sebagai
  * peringatan dini.
  */
-export function streakTone(length: number): StreakTone {
-  if (length >= 3) return "danger"
-  if (length === 2) return "warning"
+export function streakTone(dayNumber: number): StreakTone {
+  if (dayNumber >= 3) return "danger"
+  if (dayNumber === 2) return "warning"
   return "none"
 }

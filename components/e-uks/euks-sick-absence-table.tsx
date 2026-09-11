@@ -125,7 +125,7 @@ export function EuksSickAbsenceTable({
               />
 
               <TableCell>
-                <StreakBadge length={row.streak} />
+                <StreakBadge dayNumber={row.streak} />
               </TableCell>
 
               <EditableCell
@@ -164,12 +164,14 @@ export function EuksSickAbsenceTable({
 }
 
 /**
- * Satu hari sengaja tidak diberi warna: itu kejadian biasa, dan mewarnainya
+ * Angka pada baris ini adalah hari ke berapa siswa sakit berturut-turut, jadi
+ * labelnya ditulis "Hari ke-n" agar tidak terbaca sebagai panjang episode.
+ * Hari pertama sengaja tidak diberi warna: itu kejadian biasa, dan mewarnainya
  * membuat baris yang benar-benar perlu perhatian jadi tenggelam.
  */
-function StreakBadge({ length }: { length: number }) {
-  const tone = streakTone(length)
-  const label = `${length} hari`
+function StreakBadge({ dayNumber }: { dayNumber: number }) {
+  const tone = streakTone(dayNumber)
+  const label = `Hari ke-${dayNumber}`
   if (tone === "none") {
     return <span className="text-muted-foreground text-sm">{label}</span>
   }

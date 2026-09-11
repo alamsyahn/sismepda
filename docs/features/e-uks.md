@@ -117,17 +117,24 @@ z-score is between 0 and -1.
 The sick-absence table on `/e-uks/pantauan-kesehatan` reads from `Attendance`
 rows with status `SAKIT`. It owns three behaviours worth knowing:
 
-**Consecutive-day counting.** `lib/sick-streak.ts` counts a run of sick days
-treating school holidays as if they did not exist: sick on the 7th, 8th and
-10th with the 9th resolving to a holiday counts as a 3-day run. Holidays come
+**Consecutive-day counting.** `lib/sick-streak.ts` numbers each row with its
+position inside its own run — the first sick day is 1, the next 2, and so on —
+so the column reads "which sick day in a row is this", and the most recent row
+shows how long the current run has reached. It is deliberately not the run's
+total length repeated on every row: that made a run's first day already display
+its final size, which reads as though the student had been sick that long from
+the start.
+
+Runs treat school holidays as if they did not exist: sick on the 7th, 8th and
+10th with the 9th resolving to a holiday numbers them 1, 2, 3. Holidays come
 from `lib/server-holidays.ts`, so all three calendar kinds apply — including a
 recurring Sunday rule and a `SCHOOL_DAY` override that turns a holiday back into
 a school day. Weekdays are not skipped on their own: this school teaches on
 Saturday, and if Sunday should bridge two illnesses it must be entered as a
 recurring holiday in Pengaturan rather than assumed here. A gap wider than `MAX_HOLIDAY_GAP`
 consecutive holidays never joins two runs, so a long school break cannot merge
-illnesses months apart. A one-day run is deliberately left unhighlighted;
-colour is reserved for runs that need attention, red from three days up.
+illnesses months apart. Day one is deliberately left unhighlighted; colour is
+reserved for runs that need attention, red from the third day up.
 
 **`Attendance.followUp`.** The school follow-up column is a nullable column on
 `Attendance`, separate from `note`. `note` holds what the parent or student
