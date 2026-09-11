@@ -23,9 +23,12 @@ const FIELD_LABELS: Record<EditableField, string> = {
 export function EuksSickAbsenceTable({
   rows,
   canEdit,
+  studentName,
 }: {
   rows: SickAbsenceRow[]
   canEdit: boolean
+  /** Diteruskan ke Input Absensi agar pencariannya langsung terisi nama ini. */
+  studentName: string
 }) {
   const router = useRouter()
   const [editing, setEditing] = useState<{ id: string; field: EditableField } | null>(null)
@@ -148,7 +151,7 @@ export function EuksSickAbsenceTable({
                   nativeButton={false}
                   render={
                     <Link
-                      href={`/absensi/input?classId=${encodeURIComponent(row.classId)}&date=${encodeURIComponent(row.date)}`}
+                      href={`/absensi/input?classId=${encodeURIComponent(row.classId)}&date=${encodeURIComponent(row.date)}&siswa=${encodeURIComponent(studentName)}`}
                     />
                   }
                 >

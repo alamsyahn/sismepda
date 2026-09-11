@@ -9,13 +9,16 @@ import {
   Eraser,
   Loader2,
   Save,
+  Search,
   CircleCheckBig,
   TriangleAlert,
+  X,
 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -39,6 +42,7 @@ import { AttendanceEditor } from "@/components/absensi/attendance-editor"
 import { StatusSummary } from "@/components/absensi/status-summary"
 import {
   currentJam,
+  filterRosterByName,
   formatJam,
   type InputStatus,
 } from "@/lib/attendance-input"
@@ -57,6 +61,7 @@ export default function AbsensiInputPage() {
   const [date, setDate] = useState<string>(() => today())
   const [dateReady, setDateReady] = useState(false)
   const [requestedClass, setRequestedClass] = useState("")
+  const [search, setSearch] = useState("")
   const [selectedClass, setSelectedClass] = useState("")
   const [classes, setClasses] = useState<ApiClass[]>([])
   const [holiday, setHoliday] = useState<{ name: string } | null>(null)
@@ -80,6 +85,10 @@ export default function AbsensiInputPage() {
     const requestedDate = params.get("date")
     if (requestedDate) setDate(parseSchoolDate(requestedDate) ?? today())
     setRequestedClass(params.get("classId") ?? "")
+    // Halaman lain (mis. Pantauan Kesehatan E-UKS) dapat mengarahkan ke sini
+    // sambil menyebutkan siswa yang ingin dilihat, supaya pengguna langsung
+    // fokus ke anak tersebut tanpa mencari manual.
+    setSearch(params.get("siswa") ?? "")
     setDateReady(true)
   }, [today])
   const dateLabel = formatSchoolDate(parseSchoolDate(date) ?? today())
@@ -117,6 +126,13 @@ export default function AbsensiInputPage() {
     [selected],
   )
   const roster = useMemo(() => (selected?.students ?? []).map((s, i) => ({ ...s, no: i + 1 })), [selected])
+
+  // Hanya untuk tampilan. `roster` penuh tetap dipakai saat menyimpan dan
+  // menghitung ringkasan status, supaya menyimpan ketika pencarian aktif tidak
+  // menghapus status siswa yang sedang tersembunyi. Nomor urut ikut dari daftar
+  // penuh agar tetap merujuk posisi siswa di kelas.
+  const visibleRoster = useMemo(() => filterRosterByName(roster, search), [roster, search])
+  const searching = search.trim().length > 0
 
   const counts = useMemo(() => {
     const c = emptyCounts()
@@ -156,6 +172,10 @@ export default function AbsensiInputPage() {
     setStatuses(nextStatuses)
     setNotes(nextNotes)
     setDirty(false)
+    // Kata kunci dari kelas sebelumnya hampir pasti tidak cocok di kelas baru,
+    // dan daftar yang tampak kosong tanpa sebab lebih membingungkan daripada
+    // kehilangan kata kunci.
+    setSearch("")
     if (option?.submitted && option.submittedAt) {
       setHasSaved(true)
       setLastSaved({ time: formatJam(option.submittedAt, timeZone), by: option.submittedBy })
@@ -341,13 +361,56 @@ export default function AbsensiInputPage() {
           </Card>
 
           {/* Daftar siswa */}
-          <AttendanceEditor
-            roster={roster}
-            statuses={statuses}
-            notes={notes}
-            onStatus={handleStatus}
-            onNote={handleNote}
-          />
+          <div className="space-y-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="relative w-full sm:max-w-sm">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Cari nama siswa..."
+                  aria-label="Cari nama siswa"
+                  className="pl-9 pr-9"
+                />
+                {searching ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    aria-label="Hapus pencarian"
+                    className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="size-4" />
+                  </button>
+                ) : null}
+              </div>
+              {searching ? (
+                <p className="text-xs text-muted-foreground">
+                  Menampilkan {visibleRoster.length} dari {roster.length} siswa. Status siswa yang
+                  tersembunyi tetap tersimpan, dan aksi massal tetap berlaku untuk seluruh kelas.
+                </p>
+              ) : null}
+            </div>
+
+            {searching && visibleRoster.length === 0 ? (
+              <Card className="border-dashed border-border shadow-none">
+                <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
+                  <p className="font-semibold text-foreground">Tidak ada siswa yang cocok</p>
+                  <p className="text-sm text-muted-foreground text-pretty">
+                    Tidak ada nama yang cocok dengan &ldquo;{search.trim()}&rdquo; di kelas{" "}
+                    {classOption?.name}.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <AttendanceEditor
+                roster={visibleRoster}
+                statuses={statuses}
+                notes={notes}
+                onStatus={handleStatus}
+                onNote={handleNote}
+              />
+            )}
+          </div>
 
           {/* Aksi simpan bawah (desktop) */}
           <div className="hidden items-center justify-between gap-4 rounded-xl border border-border/60 bg-card px-5 py-4 shadow-sm lg:flex">

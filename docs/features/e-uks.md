@@ -146,9 +146,11 @@ only `note` and `followUp`, and refuses rows whose status is not `SAKIT`.
 Status, date and class are intentionally not editable here: changing them moves
 attendance totals, which belongs on Input Absensi where the holiday, future-date
 and class-scope checks live. The Edit button links to
-`/absensi/input?classId=…&date=…` using the class recorded on that attendance
-day, not the student's current class, so a student who changed classes still
-lands on the register that holds the row. Permission is `euks.edit` rather than
+`/absensi/input?classId=…&date=…&siswa=…` using the class recorded on that
+attendance day, not the student's current class, so a student who changed
+classes still lands on the register that holds the row. `siswa` carries the
+student's name so the attendance search box arrives pre-filled and the register
+is already narrowed to that child. Permission is `euks.edit` rather than
 class ownership, because a UKS officer who is not a homeroom teacher still needs
 to record follow-up.
 

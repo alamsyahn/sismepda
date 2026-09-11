@@ -115,6 +115,7 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
               <EuksSickAbsenceTable
                 rows={monitoring.sickAbsences}
                 canEdit={capabilities.canEdit}
+                studentName={monitoring.student.name}
               />
             </CardContent>
           </Card>

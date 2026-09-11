@@ -20,6 +20,32 @@ export type ClassOption = {
   homeroom: string
 }
 
+/**
+ * Menyaring daftar siswa berdasarkan nama untuk kotak pencarian Input Absensi.
+ *
+ * Hasilnya HANYA untuk tampilan. Penyimpanan absensi dan penghitungan status
+ * harus tetap memakai daftar penuh, karena menyimpan daftar yang tersaring akan
+ * menghapus status siswa yang sedang tersembunyi.
+ *
+ * Pencocokan mengabaikan huruf besar/kecil dan spasi berlebih di kedua sisi,
+ * sehingga nama yang tersalin dari halaman lain (misalnya "Budi  Santoso")
+ * tetap ditemukan. Kata kunci dipecah per kata dan semuanya harus muncul,
+ * tetapi tidak harus berurutan: "santoso budi" tetap menemukan "Budi Santoso",
+ * dan ini juga membuat nama yang diisikan otomatis dari halaman lain tetap
+ * cocok meski urutan katanya berbeda.
+ */
+export function filterRosterByName<T extends { name: string }>(
+  roster: readonly T[],
+  query: string,
+): T[] {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+  if (terms.length === 0) return [...roster]
+  return roster.filter((student) => {
+    const name = student.name.toLowerCase()
+    return terms.every((term) => name.includes(term))
+  })
+}
+
 // Urutan tampil status pada segmented buttons & ringkasan
 export const INPUT_STATUS_ORDER: InputStatus[] = [
   "belum",

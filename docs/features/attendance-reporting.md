@@ -6,6 +6,17 @@ Authenticated users use the dashboard (`/`), attendance input, school/class/stud
 
 `GET /api/attendance?date=` returns accessible class rosters and holiday state. `POST /api/attendance` accepts a class, date and full roster of unique student IDs with `HADIR|SAKIT|IZIN|ALFA|DISPENSASI|BELUM`. The class and every student are scope-checked. Future dates and school holidays are rejected. `BELUM` deletes the student's `Attendance` row; filled statuses are upserted. Partial saves are valid, but a class is complete only when every active student has a real status. An `AttendanceDay` remains the class/date submission envelope and records submitter/timestamps.
 
+Attendance input has a name search box (`filterRosterByName` in
+`lib/attendance-input.ts`) that filters the roster as the user types; all typed
+words must appear in the name but order does not matter. It is a **display
+filter only**: the save payload, the status summary and the bulk actions keep
+using the full roster, because submitting a filtered roster would clear the
+hidden students' statuses. Row numbers also come from the full roster, so they
+still point at the student's position in the class. Changing class clears the
+keyword, otherwise the new class looks empty for no visible reason. A `siswa`
+query parameter pre-fills the box, which is how the E-UKS sick-absence table
+jumps straight to one student alongside `classId` and `date`.
+
 ## Reporting rules
 
 - Dashboard attendance percentage is HADIR divided by all **recorded statuses**, not registered students. Completion is complete classes divided by accessible classes.
