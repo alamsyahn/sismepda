@@ -27,7 +27,9 @@ import {
 import { cn } from "@/lib/utils"
 import {
   buildRegisteredStudentIdentifiers,
+  genderLabels,
   validateManual,
+  GENDER_VALUES,
   type ManualErrors,
   type RegisteredStudentIdentifiers,
 } from "@/lib/student-input"
@@ -39,6 +41,8 @@ export function ManualInputForm() {
   const [nisn, setNisn] = useState("")
   const [nama, setNama] = useState("")
   const [kelas, setKelas] = useState("")
+  const [tanggalLahir, setTanggalLahir] = useState("")
+  const [jenisKelamin, setJenisKelamin] = useState("")
   const [classOptions, setClassOptions] = useState<string[]>([])
   const [registered, setRegistered] = useState<RegisteredStudentIdentifiers>({ nis: {}, nisn: {} })
 
@@ -54,7 +58,7 @@ export function ManualInputForm() {
 
   const nisRef = useRef<HTMLInputElement>(null)
 
-  const liveErrors = touched ? validateManual({ nis, nisn, nama, kelas }, classOptions, registered) : {}
+  const liveErrors = touched ? validateManual({ nis, nisn, nama, kelas, tanggalLahir, jenisKelamin }, classOptions, registered) : {}
 
   function handleNisChange(value: string) {
     setNis(value.replace(/\D/g, "").slice(0, 30))
@@ -68,7 +72,7 @@ export function ManualInputForm() {
 
   async function runSave(mode: "single" | "again") {
     setTouched(true)
-    const validation = validateManual({ nis, nisn, nama, kelas }, classOptions, registered)
+    const validation = validateManual({ nis, nisn, nama, kelas, tanggalLahir, jenisKelamin }, classOptions, registered)
     setErrors(validation)
 
     if (validation.nis === "NIS sudah terdaftar pada siswa lain") {
@@ -87,7 +91,7 @@ export function ManualInputForm() {
     setSaveError(false)
 
     try {
-      const response = await fetch("/api/admin/students", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nis, nisn, name: nama.trim(), className: kelas }) })
+      const response = await fetch("/api/admin/students", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nis, nisn, name: nama.trim(), className: kelas, birthDate: tanggalLahir || null, gender: jenisKelamin || null }) })
       if (!response.ok) {
         if (response.status === 409) setDuplicateInfo({ label: nis ? "NIS" : "NISN", value: nis || nisn, nama: "siswa lain" })
         throw new Error("Gagal menyimpan")
@@ -102,6 +106,8 @@ export function ManualInputForm() {
           setNis("")
           setNisn("")
           setNama("")
+          setTanggalLahir("")
+          setJenisKelamin("")
           setTouched(false)
           setErrors({})
           toast.success("Siswa berhasil ditambahkan", {
@@ -119,6 +125,8 @@ export function ManualInputForm() {
   const nisnError = touched ? liveErrors.nisn : errors.nisn
   const namaError = touched ? liveErrors.nama : errors.nama
   const kelasError = touched ? liveErrors.kelas : errors.kelas
+  const tanggalLahirError = touched ? liveErrors.tanggalLahir : errors.tanggalLahir
+  const jenisKelaminError = touched ? liveErrors.jenisKelamin : errors.jenisKelamin
 
   return (
     <>
@@ -238,6 +246,55 @@ export function ManualInputForm() {
                 </SelectContent>
               </Select>
               {kelasError ? <p className="text-xs text-destructive">{kelasError}</p> : null}
+            </div>
+
+            {/* Tanggal lahir & jenis kelamin — opsional, dipakai E-UKS untuk
+                menentukan status gizi berdasarkan IMT-menurut-umur. */}
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="tanggal-lahir">Tanggal Lahir</Label>
+                <Input
+                  id="tanggal-lahir"
+                  type="date"
+                  value={tanggalLahir}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setTanggalLahir(e.target.value)}
+                  onBlur={() => setTouched(true)}
+                  aria-invalid={Boolean(tanggalLahirError)}
+                  aria-describedby="tanggal-lahir-help"
+                />
+                <p
+                  id="tanggal-lahir-help"
+                  className={cn("text-xs", tanggalLahirError ? "text-destructive" : "text-muted-foreground")}
+                >
+                  {tanggalLahirError ?? "Opsional. Dipakai E-UKS untuk menghitung status gizi."}
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="jenis-kelamin">Jenis Kelamin</Label>
+                <Select
+                  value={jenisKelamin}
+                  onValueChange={(v) => {
+                    if (!v) return
+                    setJenisKelamin(v)
+                  }}
+                >
+                  <SelectTrigger id="jenis-kelamin" className="w-full bg-card" aria-invalid={Boolean(jenisKelaminError)}>
+                    <SelectValue placeholder="Pilih jenis kelamin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GENDER_VALUES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {genderLabels[value]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className={cn("text-xs", jenisKelaminError ? "text-destructive" : "text-muted-foreground")}>
+                  {jenisKelaminError ?? "Opsional. Kurva pertumbuhan berbeda per jenis kelamin."}
+                </p>
+              </div>
             </div>
 
             {saveError ? (

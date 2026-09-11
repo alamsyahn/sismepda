@@ -58,13 +58,21 @@ by the following phases and documented here as they land.
 
 ## Nutrition status is intentionally unresolved
 
-The "Status Gizi (berdasarkan IMT)" card renders "Belum dapat ditentukan".
 Classifying a school-age child requires **BMI-for-age** against a WHO/Permenkes
-LMS reference, which needs the student's **age and sex** — and `Student` stores
-neither `birthDate` nor `gender`. Adult BMI cut-offs (18.5/25/30) are clinically
-wrong for children and are deliberately not used. `nutritionStatus()` therefore
-returns `"unknown"` until both the reference dataset and the demographic fields
-exist. See the technical debt registry.
+LMS reference, which needs the student's **age and sex**. Adult BMI cut-offs
+(18.5/25/30) are clinically wrong for children and are deliberately not used.
+
+Age and sex are now available: `Student.birthDate` and `Student.gender` are
+optional columns filled from the student screens (see [Students](students.md)),
+and `ageInMonths()` computes age at the measurement date — full months, so a
+birthday later in the month does not round up.
+
+What is still missing is the LMS reference table itself (TD-011). Rather than a
+single "unknown", `nutritionStatus()` reports which input is absent —
+`no_measurement`, `no_birth_date`, `no_gender`, or `no_reference_data` — so the
+card tells the operator exactly what to fix for that student instead of hiding
+the cause behind a dash. The card also shows the student's age at the last
+measurement once a birth date exists.
 
 ## API
 

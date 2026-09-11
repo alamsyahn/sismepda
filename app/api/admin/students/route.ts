@@ -3,9 +3,29 @@ import { z } from "zod"
 import { requireAdmin } from "@/lib/auth-guards"
 import { prisma } from "@/lib/prisma"
 import { sortClasses } from "@/lib/class-order"
+import { fromPrismaDate, parseSchoolDate, toPrismaDate } from "@/lib/school-date"
+
+/** Ubah YYYY-MM-DD menjadi Date kolom @db.Date, atau null bila dikosongkan. */
+function toBirthDate(value: string | null | undefined): Date | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  const parsed = parseSchoolDate(value)
+  if (!parsed) throw new Error("INVALID_BIRTH_DATE")
+  return toPrismaDate(parsed)
+}
 
 const optionalNis = z.string().trim().max(30).regex(/^\d+$/).or(z.literal("")).transform((value) => value || null)
 const optionalNisn = z.string().trim().regex(/^\d{10}$/).or(z.literal("")).transform((value) => value || null)
+
+// Keduanya opsional dan nullable: siswa lama belum punya data ini.
+const optionalBirthDate = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .or(z.literal(""))
+  .nullable()
+  .transform((value) => value || null)
+const optionalGender = z.enum(["LAKI_LAKI", "PEREMPUAN"]).or(z.literal("")).nullable().transform((value) => value || null)
 
 const identifiers = z.object({ nis: optionalNis, nisn: optionalNisn }).refine(
   (value) => value.nis !== null || value.nisn !== null,
@@ -17,6 +37,8 @@ const student = z.object({
   nisn: optionalNisn.default(""),
   name: z.string().trim().min(1),
   className: z.string().min(1),
+  birthDate: optionalBirthDate.optional().default(null),
+  gender: optionalGender.optional().default(null),
 }).refine((value) => value.nis !== null || value.nisn !== null, {
   message: "Minimal salah satu NIS atau NISN wajib diisi",
 })
@@ -36,10 +58,17 @@ function studentResponse(studentData: {
   nisn: string | null
   name: string
   active: boolean
+  birthDate?: Date | null
+  gender?: "LAKI_LAKI" | "PEREMPUAN" | null
   schoolClass: { name: string }
 }) {
-  const { schoolClass, ...item } = studentData
-  return { ...item, className: schoolClass.name }
+  const { schoolClass, birthDate, ...item } = studentData
+  return {
+    ...item,
+    // Kirim sebagai YYYY-MM-DD agar cocok dengan input type="date".
+    birthDate: birthDate ? fromPrismaDate(birthDate) : null,
+    className: schoolClass.name,
+  }
 }
 
 export async function GET() {
@@ -48,7 +77,7 @@ export async function GET() {
     const [classes, students] = await Promise.all([
       prisma.schoolClass.findMany({ select: { name: true }, orderBy: { name: "asc" } }),
       prisma.student.findMany({
-        select: { id: true, nis: true, nisn: true, name: true, active: true, schoolClass: { select: { name: true } } },
+        select: { id: true, nis: true, nisn: true, name: true, active: true, birthDate: true, gender: true, schoolClass: { select: { name: true } } },
         orderBy: [{ active: "desc" }, { name: "asc" }],
       }),
     ])
@@ -68,6 +97,8 @@ const studentUpdate = z.object({
   name: z.string().trim().min(1).optional(),
   className: z.string().min(1).optional(),
   active: z.boolean().optional(),
+  birthDate: optionalBirthDate.optional(),
+  gender: optionalGender.optional(),
 })
 
 export async function PATCH(request: Request) {
@@ -91,14 +122,23 @@ export async function PATCH(request: Request) {
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(schoolClass ? { classId: schoolClass.id } : {}),
         ...(body.active !== undefined ? { active: body.active } : {}),
+        ...(body.birthDate !== undefined ? { birthDate: toBirthDate(body.birthDate) } : {}),
+        ...(body.gender !== undefined ? { gender: body.gender } : {}),
       },
       include: { schoolClass: { select: { name: true } } },
     })
     return NextResponse.json(studentResponse(updated))
   } catch (error) {
     const duplicate = isDuplicateError(error)
+    const badBirthDate = error instanceof Error && error.message === "INVALID_BIRTH_DATE"
     return NextResponse.json(
-      { error: duplicate ? "NIS atau NISN sudah digunakan siswa lain" : "Data siswa tidak valid" },
+      {
+        error: duplicate
+          ? "NIS atau NISN sudah digunakan siswa lain"
+          : badBirthDate
+            ? "Tanggal lahir tidak valid"
+            : "Data siswa tidak valid",
+      },
       { status: duplicate ? 409 : 400 },
     )
   }
@@ -171,6 +211,9 @@ export async function POST(request: Request) {
                 classId,
                 ...(row.nis ? { nis: row.nis } : {}),
                 ...(row.nisn ? { nisn: row.nisn } : {}),
+                // Kolom kosong pada CSV tidak menimpa data yang sudah ada.
+                ...(row.birthDate ? { birthDate: toBirthDate(row.birthDate) } : {}),
+                ...(row.gender ? { gender: row.gender } : {}),
               },
               select: { id: true, nis: true, nisn: true, name: true },
             })
@@ -181,7 +224,14 @@ export async function POST(request: Request) {
             updated += 1
           } else {
             const created = await tx.student.create({
-              data: { nis: row.nis, nisn: row.nisn, name: row.name, classId },
+              data: {
+                nis: row.nis,
+                nisn: row.nisn,
+                name: row.name,
+                classId,
+                birthDate: toBirthDate(row.birthDate) ?? null,
+                gender: row.gender,
+              },
               select: { id: true, nis: true, nisn: true, name: true },
             })
             if (created.nis) byNis.set(created.nis, created)
@@ -199,15 +249,33 @@ export async function POST(request: Request) {
     for (const row of rows) {
       const cls = await prisma.schoolClass.findUnique({ where: { name: row.className } })
       if (!cls) throw new Error("Kelas tidak ditemukan")
-      await prisma.student.create({ data: { nis: row.nis, nisn: row.nisn, name: row.name, classId: cls.id } })
+      await prisma.student.create({
+        data: {
+          nis: row.nis,
+          nisn: row.nisn,
+          name: row.name,
+          classId: cls.id,
+          birthDate: toBirthDate(row.birthDate) ?? null,
+          gender: row.gender,
+        },
+      })
       count += 1
     }
     return NextResponse.json({ count }, { status: 201 })
   } catch (error) {
     const duplicate = isDuplicateError(error)
     const conflict = error instanceof Error && error.message === "IDENTIFIER_CONFLICT"
+    const badBirthDate = error instanceof Error && error.message === "INVALID_BIRTH_DATE"
     return NextResponse.json(
-      { error: conflict ? "NIS dan NISN mengarah ke dua siswa yang berbeda" : duplicate ? "NIS atau NISN sudah terdaftar" : "Data siswa tidak valid" },
+      {
+        error: conflict
+          ? "NIS dan NISN mengarah ke dua siswa yang berbeda"
+          : duplicate
+            ? "NIS atau NISN sudah terdaftar"
+            : badBirthDate
+              ? "Tanggal lahir tidak valid"
+              : "Data siswa tidak valid",
+      },
       { status: duplicate || conflict ? 409 : 400 },
     )
   }

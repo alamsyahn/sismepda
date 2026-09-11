@@ -209,7 +209,7 @@ export function CsvUpload() {
     setImporting(true)
     try {
       const importRows = parseResult.rows.filter((row) => csvStatusMeta[row.status].tone !== "error")
-      const response = await fetch("/api/admin/students", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ behavior, rows: importRows.map((r) => ({ nis: r.nis, nisn: r.nisn, name: r.nama, className: r.kelas })) }) })
+      const response = await fetch("/api/admin/students", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ behavior, rows: importRows.map((r) => ({ nis: r.nis, nisn: r.nisn, name: r.nama, className: r.kelas, birthDate: r.tanggalLahir, gender: r.jenisKelamin })) }) })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error ?? "Import siswa gagal")
       await loadStudentOptions()

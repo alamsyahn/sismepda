@@ -106,22 +106,70 @@ export function formatBmi(bmi: number | null): string {
 }
 
 /**
- * Nutritional status categories used by the "Status Gizi" card.
- *
- * The clinically correct classification for school-age children is BMI-for-age
- * against a WHO/Permenkes LMS reference, which this repository does not have
- * (see TD-011), and it additionally needs the student's age and sex, which the
- * Student model does not store. Until that reference exists this returns
- * "unknown" rather than a number dressed up as a diagnosis.
+ * Umur dalam bulan penuh pada tanggal pengukuran — satuan yang dipakai tabel
+ * IMT-menurut-umur. Mengembalikan null bila tanggal lahir belum diisi atau
+ * pengukuran terjadi sebelum kelahiran (data tidak konsisten).
  */
-export type NutritionStatus = "unknown"
+export function ageInMonths(birthDate: string, measuredAt: string): number | null {
+  const birth = new Date(`${birthDate}T00:00:00Z`)
+  const measured = new Date(`${measuredAt}T00:00:00Z`)
+  if (Number.isNaN(birth.getTime()) || Number.isNaN(measured.getTime())) return null
+  if (measured < birth) return null
 
-export function nutritionStatus(): NutritionStatus {
-  return "unknown"
+  let months =
+    (measured.getUTCFullYear() - birth.getUTCFullYear()) * 12 +
+    (measured.getUTCMonth() - birth.getUTCMonth())
+  // Bulan belum genap bila tanggalnya belum terlewati.
+  if (measured.getUTCDate() < birth.getUTCDate()) months -= 1
+  return Math.max(0, months)
+}
+
+/** Umur dalam tahun penuh, untuk ditampilkan. */
+export function ageInYears(birthDate: string, measuredAt: string): number | null {
+  const months = ageInMonths(birthDate, measuredAt)
+  return months === null ? null : Math.floor(months / 12)
+}
+
+/**
+ * Alasan status gizi tidak dapat ditentukan. Dibedakan agar antarmuka dapat
+ * memberi tahu operator persis data apa yang kurang, bukan sekadar "-".
+ */
+export type NutritionStatus =
+  | "no_measurement"
+  | "no_birth_date"
+  | "no_gender"
+  | "no_reference_data"
+
+export type NutritionInput = {
+  hasMeasurement: boolean
+  birthDate: string | null
+  gender: "LAKI_LAKI" | "PEREMPUAN" | null
+}
+
+/**
+ * Klasifikasi status gizi anak usia sekolah memakai IMT-menurut-umur, yang
+ * menuntut umur DAN jenis kelamin DAN tabel rujukan LMS (WHO/Permenkes).
+ * Ambang IMT dewasa (18.5/25/30) tidak sahih untuk anak sehingga tidak dipakai.
+ *
+ * Umur dan jenis kelamin kini tersedia; tabel rujukannya belum ada (TD-011),
+ * jadi fungsi ini melaporkan penyebabnya alih-alih menebak kategori.
+ */
+export function nutritionStatus(input: NutritionInput): NutritionStatus {
+  if (!input.hasMeasurement) return "no_measurement"
+  if (!input.birthDate) return "no_birth_date"
+  if (!input.gender) return "no_gender"
+  return "no_reference_data"
+}
+
+const nutritionStatusLabels: Record<NutritionStatus, string> = {
+  no_measurement: "Belum ada pengukuran",
+  no_birth_date: "Tanggal lahir belum diisi",
+  no_gender: "Jenis kelamin belum diisi",
+  no_reference_data: "Menunggu tabel rujukan IMT/U",
 }
 
 export function nutritionStatusLabel(status: NutritionStatus): string {
-  return status === "unknown" ? "Belum dapat ditentukan" : status
+  return nutritionStatusLabels[status]
 }
 
 /** A measurement plus its derived IMT, newest first, for chart and table. */

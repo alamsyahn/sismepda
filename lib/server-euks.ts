@@ -77,7 +77,13 @@ export type SickAbsenceRow = {
 }
 
 export type StudentMonitoringData = {
-  student: { id: string; name: string; className: string }
+  student: {
+    id: string
+    name: string
+    className: string
+    birthDate: string | null
+    gender: "LAKI_LAKI" | "PEREMPUAN" | null
+  }
   measurements: HealthMeasurement[]
   sickAbsences: SickAbsenceRow[]
   visits: EuksVisitRow[]
@@ -91,7 +97,13 @@ export type StudentMonitoringData = {
 export async function readStudentMonitoring(studentId: string): Promise<StudentMonitoringData | null> {
   const student = await prisma.student.findUnique({
     where: { id: studentId },
-    select: { id: true, name: true, schoolClass: { select: { name: true } } },
+    select: {
+      id: true,
+      name: true,
+      birthDate: true,
+      gender: true,
+      schoolClass: { select: { name: true } },
+    },
   })
   if (!student) return null
 
@@ -122,7 +134,13 @@ export async function readStudentMonitoring(studentId: string): Promise<StudentM
   ])
 
   return {
-    student: { id: student.id, name: student.name, className: student.schoolClass.name },
+    student: {
+      id: student.id,
+      name: student.name,
+      className: student.schoolClass.name,
+      birthDate: student.birthDate ? fromPrismaDate(student.birthDate) : null,
+      gender: student.gender,
+    },
     // Decimal must not cross the server/client boundary as a Prisma object.
     measurements: measurements.map((item) => ({
       id: item.id,

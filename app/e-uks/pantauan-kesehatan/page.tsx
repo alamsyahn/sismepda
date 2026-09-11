@@ -8,7 +8,7 @@ import { EuksStudentSelector } from "@/components/e-uks/euks-student-selector"
 import { EuksMeasurementTable } from "@/components/e-uks/euks-measurement-table"
 import { EuksBmiChart } from "@/components/e-uks/euks-bmi-chart"
 import { EuksAccessError, requireEuksViewer } from "@/lib/euks-access"
-import { formatBmi, latestMeasurement, nutritionStatusLabel, nutritionStatus, toBmiSeries } from "@/lib/euks"
+import { ageInYears, formatBmi, latestMeasurement, nutritionStatusLabel, nutritionStatus, toBmiSeries } from "@/lib/euks"
 import { readEuksClassOptions, readEuksStudentOptions, readStudentMonitoring } from "@/lib/server-euks"
 import { fromPrismaDate } from "@/lib/school-date"
 
@@ -35,6 +35,17 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
   const series = monitoring ? toBmiSeries(monitoring.measurements) : []
   const latest = monitoring ? latestMeasurement(monitoring.measurements) : null
   const latestBmi = series.length > 0 ? series[series.length - 1].bmi : null
+  const status = monitoring
+    ? nutritionStatus({
+        hasMeasurement: latest !== null,
+        birthDate: monitoring.student.birthDate,
+        gender: monitoring.student.gender,
+      })
+    : null
+  const age =
+    monitoring && monitoring.student.birthDate && latest
+      ? ageInYears(monitoring.student.birthDate, latest.measuredAt)
+      : null
 
   return (
     <PageContainer>
@@ -52,7 +63,11 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
         />
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard title="Status Gizi (berdasarkan IMT)" value={nutritionStatusLabel(nutritionStatus())} />
+          <SummaryCard
+            title="Status Gizi (berdasarkan IMT)"
+            value={status ? nutritionStatusLabel(status) : "-"}
+            hint={age !== null ? `Umur ${age} tahun saat pengukuran terakhir` : undefined}
+          />
           <SummaryCard title="Tinggi Badan Saat ini" value={latest ? `${latest.heightCm} cm` : "-"} />
           <SummaryCard title="Berat Badan Saat ini" value={latest ? `${latest.weightKg} kg` : "-"} />
           <SummaryCard title="IMT" value={formatBmi(latestBmi)} />
@@ -179,14 +194,15 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
   )
 }
 
-function SummaryCard({ title, value }: { title: string; value: string }) {
+function SummaryCard({ title, value, hint }: { title: string; value: string; hint?: string }) {
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-muted-foreground text-sm font-medium">{title}</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-1">
         <p className="text-2xl font-semibold">{value}</p>
+        {hint ? <p className="text-muted-foreground text-xs">{hint}</p> : null}
       </CardContent>
     </Card>
   )

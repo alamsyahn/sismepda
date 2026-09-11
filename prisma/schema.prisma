@@ -12,6 +12,13 @@ enum Role {
   GURU
 }
 
+/// Jenis kelamin siswa. Diperlukan untuk klasifikasi IMT-menurut-umur
+/// (kurva pertumbuhan berbeda antara laki-laki dan perempuan).
+enum Gender {
+  LAKI_LAKI
+  PEREMPUAN
+}
+
 enum AttendanceStatus {
   HADIR
   SAKIT
@@ -139,6 +146,11 @@ model Student {
   nisn String? @unique
   name String
   active Boolean @default(true)
+  /// Dasar perhitungan umur untuk IMT-menurut-umur.
+  /// Nullable: data historis belum memilikinya.
+  birthDate DateTime? @db.Date
+  /// Nullable untuk alasan yang sama seperti birthDate.
+  gender Gender?
   classId String
   schoolClass SchoolClass @relation(fields: [classId], references: [id])
   attendances Attendance[]

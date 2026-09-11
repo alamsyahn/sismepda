@@ -2,6 +2,8 @@ import { strict as assert } from "node:assert"
 import { test } from "node:test"
 
 import {
+  ageInMonths,
+  ageInYears,
   calculateBmi,
   canViewEuks,
   countVisitTerms,
@@ -99,9 +101,29 @@ test("formatBmi menampilkan satu desimal dan strip untuk null", () => {
   assert.equal(formatBmi(null), "-")
 })
 
-test("status gizi belum dapat ditentukan tanpa referensi IMT-menurut-umur", () => {
-  assert.equal(nutritionStatus(), "unknown")
-  assert.equal(nutritionStatusLabel(nutritionStatus()), "Belum dapat ditentukan")
+test("status gizi melaporkan data spesifik yang masih kurang", () => {
+  const base = { hasMeasurement: true, birthDate: "2014-05-10", gender: "LAKI_LAKI" as const }
+
+  assert.equal(nutritionStatus({ ...base, hasMeasurement: false }), "no_measurement")
+  assert.equal(nutritionStatus({ ...base, birthDate: null }), "no_birth_date")
+  assert.equal(nutritionStatus({ ...base, gender: null }), "no_gender")
+  // Umur dan jenis kelamin lengkap, tetapi tabel rujukan LMS belum ada (TD-011).
+  assert.equal(nutritionStatus(base), "no_reference_data")
+  assert.equal(nutritionStatusLabel(nutritionStatus(base)), "Menunggu tabel rujukan IMT/U")
+})
+
+test("umur dihitung dalam bulan penuh pada tanggal pengukuran", () => {
+  // Ulang tahun belum terlewati pada bulan pengukuran.
+  assert.equal(ageInMonths("2014-05-10", "2026-05-09"), 143)
+  // Tepat pada hari ulang tahun.
+  assert.equal(ageInMonths("2014-05-10", "2026-05-10"), 144)
+  assert.equal(ageInYears("2014-05-10", "2026-05-09"), 11)
+  assert.equal(ageInYears("2014-05-10", "2026-05-10"), 12)
+})
+
+test("umur null bila pengukuran mendahului kelahiran atau tanggal tidak valid", () => {
+  assert.equal(ageInMonths("2026-05-10", "2014-05-10"), null)
+  assert.equal(ageInMonths("bukan-tanggal", "2026-05-10"), null)
 })
 
 test("toBmiSeries mengurutkan menaik dan menurunkan IMT tiap titik", () => {
