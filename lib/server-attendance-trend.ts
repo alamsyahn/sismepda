@@ -13,7 +13,8 @@ import {
   type ValidAttendanceStatus,
 } from "@/lib/attendance-trend"
 import type { requireUser } from "@/lib/auth-guards"
-import { differenceInSchoolDays, fromPrismaDate, parseSchoolDate, todayInSchoolTimeZone, toPrismaDate } from "@/lib/school-date"
+import { differenceInSchoolDays, eachSchoolDate, fromPrismaDate, parseSchoolDate, todayInSchoolTimeZone, toPrismaDate } from "@/lib/school-date"
+import { readHolidayDates } from "@/lib/server-holidays"
 
 type User = Awaited<ReturnType<typeof requireUser>>
 const MAX_RANGE_DAYS = 800
@@ -95,16 +96,14 @@ export async function readAttendanceTrend(
       where: { date: { gte: queryFrom, lte: toDate }, classId: { in: classIds } },
       select: { date: true, classId: true },
     }),
-    prisma.schoolHoliday.findMany({
-      where: { date: { gte: queryFrom, lte: toDate } }, select: { date: true, name: true },
-    }),
+    readHolidayDates(eachSchoolDate(fromPrismaDate(queryFrom), fromPrismaDate(toDate))),
   ])
 
   const normalizedRows = rows.map((row) => ({
     date: row.date, classId: row.classId, status: row.status, total: Number(row.total),
   }))
   const normalizedDays = submittedDays.map((day) => ({ date: fromPrismaDate(day.date), classId: day.classId }))
-  const normalizedHolidays = holidays.map((holiday) => ({ date: fromPrismaDate(holiday.date), name: holiday.name }))
+  const normalizedHolidays = [...holidays].map(([date, name]) => ({ date, name }))
   const buildRange = (rangeFrom: string, rangeTo: string) => buildClassifiedBuckets({
     granularity, from: rangeFrom, to: rangeTo, today, expectedByClass,
     submittedDays: normalizedDays, rows: normalizedRows, holidays: normalizedHolidays,

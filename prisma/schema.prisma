@@ -338,11 +338,28 @@ model SchoolSetting {
   attendanceStatusColors String?
 }
 
+/// Satu entri kalender libur. Tiga tipe dibedakan oleh `kind`:
+/// SINGLE memakai `date`; RECURRING memakai `weekday` + `startDate`/`endDate`
+/// (`endDate` null = selamanya); SCHOOL_DAY memakai `date` dan membatalkan
+/// libur pada tanggal itu. Lihat `lib/holiday-rules.ts`.
 model SchoolHoliday {
   id String @id @default(cuid())
-  date DateTime @db.Date @unique
+  kind HolidayKind @default(SINGLE)
+  /// Unik hanya bermakna untuk SINGLE dan SCHOOL_DAY; RECURRING memakai null.
+  date DateTime? @db.Date
   name String
+  weekday Int?
+  startDate DateTime? @db.Date
+  endDate DateTime? @db.Date
   createdAt DateTime @default(now())
+
+  @@unique([kind, date])
+}
+
+enum HolidayKind {
+  SINGLE
+  RECURRING
+  SCHOOL_DAY
 }
 
 model Workbook {

@@ -6,6 +6,7 @@ import { sortClasses } from "@/lib/class-order"
 import { getClassAccess } from "@/lib/class-access"
 import { isClassRecapComplete } from "@/lib/attendance-save"
 import { formatSchoolTime, fromPrismaDate, toPrismaDate } from "@/lib/school-date"
+import { readHolidayFor } from "@/lib/server-holidays"
 
 export async function getClassRecords(date: Date, timeZone: string): Promise<ClassRecord[]> {
   const prismaDate = toPrismaDate(fromPrismaDate(date))
@@ -70,5 +71,5 @@ export async function getAbsenceRanking(): Promise<AbsenceRankingRow[]> {
 }
 
 export async function getHoliday(date: Date) {
-  return prisma.schoolHoliday.findUnique({ where: { date: toPrismaDate(fromPrismaDate(date)) }, select: { id: true, name: true } })
+  return readHolidayFor(fromPrismaDate(date))
 }

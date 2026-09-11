@@ -6,6 +6,8 @@ import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import { sortClasses } from "@/lib/class-order"
 import { getClassAccess } from "@/lib/class-access"
 import { isClassRecapComplete } from "@/lib/attendance-save"
+import { readHolidayFor, readHolidayRules } from "@/lib/server-holidays"
+import { resolveHoliday } from "@/lib/holiday-rules"
 
 function timeLimitMinutes(value: string) {
   const [hour, minute] = value.split(":").map(Number)
@@ -22,7 +24,7 @@ export async function GET(request: Request) {
     if (!schoolDate) return NextResponse.json({ error: "Tanggal tidak valid" }, { status: 400 })
     const date = toPrismaDate(schoolDate)
     const classWhere = access.where
-    const holiday = await prisma.schoolHoliday.findUnique({ where: { date }, select: { id: true, name: true } })
+    const holiday = await readHolidayFor(schoolDate)
     const rows = await prisma.schoolClass.findMany({
       where: classWhere,
       include: {
@@ -44,10 +46,11 @@ export async function GET(request: Request) {
     const [setting, priorDays, priorHolidays] = await Promise.all([
       prisma.schoolSetting.findUnique({ where: { id: "default" }, select: { attendanceCloseTime: true } }),
       prisma.attendanceDay.findMany({ where: { date: { lt: date }, schoolClass: classWhere }, select: { date: true }, orderBy: { date: "desc" } }),
-      prisma.schoolHoliday.findMany({ where: { date: { lt: date } }, select: { date: true } }),
+      readHolidayRules(),
     ])
-    const priorHolidayDates = new Set(priorHolidays.map((item) => fromPrismaDate(item.date)))
-    const previousDate = priorDays.find((day) => !priorHolidayDates.has(fromPrismaDate(day.date)))?.date
+    // Aturan berulang tidak dapat disaring di SQL, sehingga tanggal calon
+    // diperiksa satu per satu terhadap seluruh aturan.
+    const previousDate = priorDays.find((day) => !resolveHoliday(fromPrismaDate(day.date), priorHolidays).isHoliday)?.date
     const previousDays = previousDate ? await prisma.attendanceDay.findMany({ where: { date: previousDate, schoolClass: classWhere }, select: { classId: true, attendances: { select: { status: true } } } }) : []
     const previousByClass = new Map(previousDays.map((day) => [day.classId, day.attendances]))
     const closeMinutes = timeLimitMinutes(setting?.attendanceCloseTime ?? "08:00")
@@ -61,9 +64,11 @@ export async function GET(request: Request) {
     const recentActivity = recentDays.map((day) => { const edited = day.updatedAt.getTime() - day.submittedAt.getTime() > 1000; return { id: day.id, teacherId: day.submittedBy.id, teacher: day.submittedBy.name, className: day.schoolClass.name, action: edited ? "memperbarui absensi" : "menginput absensi", time: formatSchoolTime(day.updatedAt, timeZone), type: edited ? "edit" : "input" } })
     const [trendDays, holidays] = await Promise.all([
       prisma.attendanceDay.findMany({ where: { date: { lte: date }, schoolClass: classWhere }, select: { date: true, attendances: { select: { status: true } } }, orderBy: { date: "desc" } }),
-      prisma.schoolHoliday.findMany({ where: { date: { lte: date } }, select: { date: true } }),
+      readHolidayRules(),
     ])
-    const holidayDates = new Set(holidays.map((item) => fromPrismaDate(item.date)))
+    const holidayDates = new Set(
+      trendDays.filter((day) => resolveHoliday(fromPrismaDate(day.date), holidays).isHoliday).map((day) => fromPrismaDate(day.date)),
+    )
     const byDate = new Map<string, { date: ReturnType<typeof fromPrismaDate>; hadir: number; dispensasi: number; total: number }>()
     for (const day of trendDays) { const key = fromPrismaDate(day.date); if (holidayDates.has(key)) continue; const item = byDate.get(key) ?? { date: key, hadir: 0, dispensasi: 0, total: 0 }; item.hadir += day.attendances.filter((a) => a.status === "HADIR").length; item.dispensasi += day.attendances.filter((a) => a.status === "DISPENSASI").length; item.total += day.attendances.length; byDate.set(key, item) }
     const weeklyTrend = [...byDate.values()].filter((item) => item.total > 0).slice(0, 6).reverse().map((item) => ({ date: item.date, day: formatSchoolDate(item.date, { weekday: "short" }).replace(".", ""), hadir: item.hadir, dispensasi: item.dispensasi, total: item.total }))

@@ -59,7 +59,7 @@ export default function AbsensiInputPage() {
   const [requestedClass, setRequestedClass] = useState("")
   const [selectedClass, setSelectedClass] = useState("")
   const [classes, setClasses] = useState<ApiClass[]>([])
-  const [holiday, setHoliday] = useState<{ id: string; name: string } | null>(null)
+  const [holiday, setHoliday] = useState<{ name: string } | null>(null)
   const [statuses, setStatuses] = useState<Record<string, InputStatus>>({})
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [dirty, setDirty] = useState(false)

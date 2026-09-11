@@ -6,8 +6,10 @@ import {
   fromPrismaDate,
   prismaSchoolDateRange,
   type SchoolDate,
+  eachSchoolDate,
 } from "@/lib/school-date"
 import { sickStreakLengths } from "@/lib/sick-streak"
+import { readHolidayDates } from "@/lib/server-holidays"
 
 export type EuksVisitRow = {
   id: string
@@ -260,17 +262,16 @@ export async function readStudentMonitoring(studentId: string): Promise<StudentM
   const holidays =
     sickDates.length === 0
       ? []
-      : (
-          await prisma.schoolHoliday.findMany({
-            where: {
-              date: prismaSchoolDateRange(
+      : [
+          ...(
+            await readHolidayDates(
+              eachSchoolDate(
                 sickDates.reduce((a, b) => (compareSchoolDates(a, b) <= 0 ? a : b)),
                 sickDates.reduce((a, b) => (compareSchoolDates(a, b) >= 0 ? a : b)),
               ),
-            },
-            select: { date: true },
-          })
-        ).map((holiday) => fromPrismaDate(holiday.date))
+            )
+          ).keys(),
+        ]
 
   const streaks = sickStreakLengths(
     sickDates.map((date) => ({ date })),

@@ -13,7 +13,10 @@ Authenticated users use the dashboard (`/`), attendance input, school/class/stud
 - Class recap has daily, cumulative and calendar/matrix views. A requested period is inclusive and limited to 31 days. Holidays override attendance; missing row on a submitted partial day remains “Belum diinput”. XLSX export includes all students regardless of UI absence filtering.
 - Student recap lists daily student status and links to profiles.
 - WhatsApp output provides absent/unfilled students and incomplete-class summaries; `S/I/A/D/?` are the compact symbols. It produces copyable text only—there is no WhatsApp API integration.
-- CSV export types are students, teachers, homerooms, holidays, attendance-by-student and attendance-by-class. Master-data exports require ADMIN; attendance exports follow class scope. Delimiter is validated and output includes BOM, download-safe filenames, no-store caching and formula-injection protection.
+- CSV export types are students, teachers, homerooms, holidays,
+  attendance-by-student and attendance-by-class. The holiday export carries
+  `Tipe, Tanggal, Hari, Mulai, Sampai, Keterangan`; a year filter narrows dated
+  entries but always keeps recurring rules, which are not tied to one year. Master-data exports require ADMIN; attendance exports follow class scope. Delimiter is validated and output includes BOM, download-safe filenames, no-store caching and formula-injection protection.
 
 ## Settings and edge cases
 

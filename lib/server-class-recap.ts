@@ -3,6 +3,7 @@ import { buildClassRecap, localDateKey, parseClassRecapRange } from "@/lib/class
 import { prisma } from "@/lib/prisma"
 import { formatSchoolDate, fromPrismaDate } from "@/lib/school-date"
 import type { requireUser } from "@/lib/auth-guards"
+import { readHolidayDates } from "@/lib/server-holidays"
 
 type User = Awaited<ReturnType<typeof requireUser>>
 
@@ -23,12 +24,15 @@ export async function readClassPeriodRecap(user: User, classId: string, from: st
     },
   })
   if (!schoolClass) return { ok: false as const, status: 404, error: "Kelas tidak ditemukan atau tidak dapat diakses" }
-  const holidays = await prisma.schoolHoliday.findMany({
-    where: { date: { gte: range.from, lte: range.to } }, select: { date: true, name: true }, orderBy: { date: "asc" },
-  })
+  // Nama libur per tanggal, sudah memperhitungkan libur tetap dan hari masuk
+  // khusus; kuncinya SchoolDate agar cocok dengan `range.dates`.
+  const holidayNames = await readHolidayDates(range.dates.map((date) => fromPrismaDate(date)))
   const submittedDates = new Set(schoolClass.attendanceDays.map((day) => localDateKey(day.date)))
   const records = schoolClass.attendanceDays.flatMap((day) => day.attendances.map((record) => ({ studentId: record.studentId, date: day.date, status: record.status })))
-  const recap = buildClassRecap({ students: schoolClass.students, dates: range.dates, holidays: new Set(holidays.map((day) => localDateKey(day.date))), submittedDates, records })
+  const holidayKeys = new Set(
+    range.dates.filter((date) => holidayNames.has(fromPrismaDate(date))).map((date) => localDateKey(date)),
+  )
+  const recap = buildClassRecap({ students: schoolClass.students, dates: range.dates, holidays: holidayKeys, submittedDates, records })
   return {
     ok: true as const,
     data: {
@@ -36,7 +40,7 @@ export async function readClassPeriodRecap(user: User, classId: string, from: st
       from, to,
       dates: range.dates.map((date) => {
         const key = localDateKey(date)
-        const holiday = holidays.find((item) => localDateKey(item.date) === key)?.name ?? null
+        const holiday = holidayNames.get(fromPrismaDate(date)) ?? null
         return {
           value: String(key),
           day: Number(key.slice(8, 10)),

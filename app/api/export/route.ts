@@ -6,6 +6,7 @@ import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import { csvDownload, exportDelimiter, isExportType, type ExportType } from "@/lib/export-data"
 import { prisma } from "@/lib/prisma"
 import { getClassAccess } from "@/lib/class-access"
+import { HOLIDAY_KIND_LABELS, WEEKDAY_NAMES, isWeekdayIndex } from "@/lib/holiday-rules"
 
 type User = Awaited<ReturnType<typeof requireUser>>
 
@@ -84,14 +85,23 @@ async function exportHomerooms(params: URLSearchParams, delimiter: string, timeZ
 async function exportHolidays(params: URLSearchParams, delimiter: string) {
   const parsedYear = Number(params.get("year"))
   const year = Number.isInteger(parsedYear) && parsedYear >= 2000 && parsedYear <= 2100 ? parsedYear : undefined
+  // Entri berulang tidak terikat satu tanggal, sehingga penyaringan per tahun
+  // hanya berlaku bagi entri bertanggal; aturan berulang selalu disertakan.
   const holidays = await prisma.schoolHoliday.findMany({
-    where: year ? { date: schoolYearRange(year) } : {},
-    orderBy: { date: "asc" },
+    where: year ? { OR: [{ date: schoolYearRange(year) }, { date: null }] } : {},
+    orderBy: [{ kind: "asc" }, { date: "asc" }],
   })
 
   return csvDownload(`data-hari-libur${year ? `-${year}` : ""}.csv`, [
-    ["Tanggal", "Nama Hari Libur"],
-    ...holidays.map((holiday) => [fromPrismaDate(holiday.date), holiday.name]),
+    ["Tipe", "Tanggal", "Hari", "Mulai", "Sampai", "Keterangan"],
+    ...holidays.map((holiday) => [
+      HOLIDAY_KIND_LABELS[holiday.kind],
+      holiday.date ? fromPrismaDate(holiday.date) : "",
+      isWeekdayIndex(holiday.weekday) ? WEEKDAY_NAMES[holiday.weekday] : "",
+      holiday.startDate ? fromPrismaDate(holiday.startDate) : "",
+      holiday.endDate ? fromPrismaDate(holiday.endDate) : "",
+      holiday.name,
+    ]),
   ], delimiter)
 }
 

@@ -5,6 +5,10 @@ PostgreSQL is the only durable store. Prisma 7 uses `@prisma/adapter-pg`; `lib/d
 ## Domain ownership
 
 - Identity/school: `User`, `SchoolClass`, `SchoolSetting`, `SchoolHoliday`.
+  `SchoolHoliday.kind` (`HolidayKind`) selects how a row is read: `SINGLE` and
+  `SCHOOL_DAY` use `date`, `RECURRING` uses `weekday` plus `startDate`/`endDate`
+  with a null `endDate` meaning indefinitely. `date` is therefore nullable and
+  uniqueness is `(kind, date)` rather than `date` alone.
 - Attendance: `Student`, `AttendanceDay` (unique class/date), `Attendance` (unique day/student), `StudentViolationPoint`.
 - Teacher: `Subject`, `TeacherSubject`, `TeachingAssignment`, `AdditionalDuty`.
 - Workbook: `Workbook`, `WorkbookItem`, `TeacherWorkbook`, `TeacherWorkbookItemStatus`.

@@ -119,10 +119,12 @@ rows with status `SAKIT`. It owns three behaviours worth knowing:
 
 **Consecutive-day counting.** `lib/sick-streak.ts` counts a run of sick days
 treating school holidays as if they did not exist: sick on the 7th, 8th and
-10th with the 9th listed in `SchoolHoliday` counts as a 3-day run. Only dates
-recorded in `SchoolHoliday` are skipped. Weekends are *not* skipped on their
-own, because this school teaches on Saturday and an empty Sunday is an ordinary
-break between two separate illnesses. A gap wider than `MAX_HOLIDAY_GAP`
+10th with the 9th resolving to a holiday counts as a 3-day run. Holidays come
+from `lib/server-holidays.ts`, so all three calendar kinds apply — including a
+recurring Sunday rule and a `SCHOOL_DAY` override that turns a holiday back into
+a school day. Weekdays are not skipped on their own: this school teaches on
+Saturday, and if Sunday should bridge two illnesses it must be entered as a
+recurring holiday in Pengaturan rather than assumed here. A gap wider than `MAX_HOLIDAY_GAP`
 consecutive holidays never joins two runs, so a long school break cannot merge
 illnesses months apart. A one-day run is deliberately left unhighlighted;
 colour is reserved for runs that need attention, red from three days up.

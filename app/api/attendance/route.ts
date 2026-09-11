@@ -7,6 +7,7 @@ import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import { sortClasses } from "@/lib/class-order"
 import { canAccessClass, getClassAccess } from "@/lib/class-access"
 import { FILLED_WIRE_STATUSES, UNFILLED_WIRE_STATUS, planAttendanceWrite } from "@/lib/attendance-save"
+import { readHolidayFor } from "@/lib/server-holidays"
 
 const attendanceInput = z.object({
   classId: z.string().min(1),
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
       include: { students: { where: { active: true }, orderBy: { name: "asc" } }, homeroomUser: { select: { id: true, name: true } }, attendanceDays: { where: { date }, include: { attendances: true, submittedBy: { select: { id: true, name: true } } } } },
       orderBy: { name: "asc" },
     })
-    const holiday = await prisma.schoolHoliday.findUnique({ where: { date }, select: { id: true, name: true } })
+    const holiday = await readHolidayFor(fromPrismaDate(date))
     const serializedClasses = sortClasses(classes).map((schoolClass) => ({
       ...schoolClass,
       attendanceDays: schoolClass.attendanceDays.map((day) => ({ ...day, date: fromPrismaDate(day.date) })),
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
     if (!schoolDate) return NextResponse.json({ error: "Tanggal absensi tidak valid" }, { status: 400 })
     const date = toPrismaDate(schoolDate)
     if (schoolDate > todayInSchoolTimeZone(undefined, timeZone)) return NextResponse.json({ error: "Tanggal absensi tidak boleh di masa depan" }, { status: 400 })
-    const holiday = await prisma.schoolHoliday.findUnique({ where: { date }, select: { name: true } })
+    const holiday = await readHolidayFor(fromPrismaDate(date))
     if (holiday) return NextResponse.json({ error: `Tanggal ini ditandai sebagai hari libur: ${holiday.name}` }, { status: 400 })
     const plan = planAttendanceWrite(body.records)
     await prisma.$transaction(async (tx) => {
