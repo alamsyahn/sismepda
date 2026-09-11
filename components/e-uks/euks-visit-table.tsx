@@ -17,6 +17,7 @@ import type { EuksVisitRow } from "@/lib/server-euks"
 type Props = {
   visits: EuksVisitRow[]
   students: EuksStudentOption[]
+  complaintOptions?: string[]
   canEdit: boolean
 }
 
@@ -36,7 +37,7 @@ function toDraft(visit: EuksVisitRow): VisitDraft {
   }
 }
 
-export function EuksVisitTable({ visits, students, canEdit }: Props) {
+export function EuksVisitTable({ visits, students, complaintOptions = [], canEdit }: Props) {
   const { today } = useSchoolTimeZone()
   const router = useRouter()
   const [formOpen, setFormOpen] = useState(false)
@@ -204,6 +205,7 @@ export function EuksVisitTable({ visits, students, canEdit }: Props) {
           onOpenChange={setFormOpen}
           draft={draft}
           students={students}
+          complaintOptions={complaintOptions}
           onSaved={() => router.refresh()}
         />
       ) : null}

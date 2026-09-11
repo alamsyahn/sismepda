@@ -44,6 +44,65 @@ export async function readEuksVisits(): Promise<EuksVisitRow[]> {
   }))
 }
 
+/** Seluruh konten Pengaturan E-UKS untuk halaman admin dan Halaman Utama. */
+export async function readEuksSettings() {
+  const [profile, officers, facilities, complaintOptions] = await Promise.all([
+    prisma.euksProfile.findUnique({ where: { id: "default" } }),
+    prisma.euksOfficer.findMany({
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        role: true,
+        active: true,
+        sortOrder: true,
+        userId: true,
+        user: { select: { name: true, active: true } },
+      },
+    }),
+    prisma.euksFacility.findMany({
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, quantity: true, note: true, active: true, sortOrder: true },
+    }),
+    prisma.euksComplaintOption.findMany({
+      orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
+      select: { id: true, label: true, active: true, sortOrder: true },
+    }),
+  ])
+
+  return {
+    profile: {
+      name: profile?.name ?? null,
+      location: profile?.location ?? null,
+      description: profile?.description ?? null,
+    },
+    officers,
+    facilities,
+    complaintOptions,
+  }
+}
+
+export type EuksSettingsData = Awaited<ReturnType<typeof readEuksSettings>>
+
+/** Label keluhan baku yang aktif, untuk saran pada form kunjungan. */
+export async function readEuksComplaintOptions(): Promise<string[]> {
+  const options = await prisma.euksComplaintOption.findMany({
+    where: { active: true },
+    orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
+    select: { label: true },
+  })
+  return options.map((option) => option.label)
+}
+
+/** Guru yang dapat ditunjuk sebagai pengurus UKS. */
+export async function readAssignableTeachers() {
+  return prisma.user.findMany({
+    where: { active: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  })
+}
+
 /**
  * Kunjungan untuk agregasi tren Halaman Utama.
  *

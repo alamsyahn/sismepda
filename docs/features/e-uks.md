@@ -9,7 +9,7 @@ E-UKS is the school health unit (Unit Kesehatan Sekolah) module inside SISMEPDA.
 | `/e-uks` | Halaman Utama: visit totals plus complaint/treatment/monthly trends derived from visit history | `euks.view` |
 | `/e-uks/pantauan-kesehatan` | Per-student health monitoring: nutrition status, sick-absence history, UKS visit history, IMT and KMS charts | `euks.view` |
 | `/e-uks/riwayat-kunjungan` | UKS visit log — the write surface and source of truth for every E-UKS statistic | `euks.view`, writes require `euks.edit` |
-| `/e-uks/pengaturan` | Content configuration for the home page | ADMIN |
+| `/e-uks/pengaturan` | UKS identity, officers, facilities, and the standard complaint list | ADMIN |
 
 `lib/nav.ts` renders E-UKS as one collapsible group between Kurikulum and BOS; `match: "exact"` on `/e-uks` keeps the home item from staying active on sub-routes, and `activeNavGroupId` opens the group on every E-UKS route.
 
@@ -112,6 +112,38 @@ call it, so the bands on the chart and the z-score behind a category can never
 diverge. A point sitting between the median and -1 SD is exactly a point whose
 z-score is between 0 and -1.
 
+### Settings content
+
+`/e-uks/pengaturan` (ADMIN only) owns four pieces of content, all additive
+tables created by `20260911160000_add_euks_settings`:
+
+| Model | Shape | Notes |
+|---|---|---|
+| `EuksProfile` | Singleton, id `"default"` | Name, location, description. Follows the `BosSetting` pattern; all fields nullable until an admin fills them |
+| `EuksOfficer` | List | `userId` is nullable: officers may be a `User` (teacher) or a manually typed student/outsider. `onDelete: SetNull` plus a stored `name` keeps the roster readable after an account is removed |
+| `EuksFacility` | List, unique `slug` | An informational list for the home page, not stock control — inventory belongs to Sarpras |
+| `EuksComplaintOption` | List, unique `slug` | Standard complaint spellings offered on the visit form |
+
+Facilities and complaint options reuse the BOS category rules: a case or
+whitespace variant revives the existing row instead of creating a duplicate,
+rows are deactivated rather than deleted, and renames are rejected with 409
+when they would collide with another row.
+
+The officer display name prefers the linked account's current name, so
+renaming a teacher does not leave a stale roster; the stored `name` is only
+the fallback for manual entries and deleted accounts.
+
+Editing a complaint option never rewrites complaints on visits already
+recorded — history must keep showing what was actually written at the time.
+
+`EuksComplaintOption` is offered through a native `<datalist>` on the visit
+form, so it suggests standard spellings without blocking free text. An empty
+list changes nothing: the field behaves exactly as it did before.
+
+`euksSlug()` in `lib/euks-settings.ts` is the same normalisation the trend
+aggregation uses, and a test asserts the two stay identical. If they diverged,
+a complaint could pass as new on the form yet merge in the statistics.
+
 ### Trend grouping is textual, not clinical
 
 `EuksVisit.complaint` and `.treatment` are free text. `lib/euks-trends.ts`
@@ -124,12 +156,16 @@ The page states this limitation to the reader. If the school later wants
 consolidated categories, the correct fix is a curated complaint list on the
 input form, not fuzzy matching after the fact.
 
+Wireframe 02 also shows a photo carousel. It is deliberately not built: it
+needs an image storage model and an upload endpoint, and the school chose to
+defer it. Nothing else on the page depends on it.
+
 Two departures from wireframe 03, both forced by the free-text schema:
 
 - The monthly chart plots total visits per month, not columns stacked by
   treatment type — stacking needs a fixed set of categories that does not exist.
-- Wireframe 02's identity content (carousel, profile, pengurus, fasilitas) is
-  configuration, so it belongs to the Pengaturan phase and is not on this page yet.
+- Wireframe 02's identity content (profile, pengurus, fasilitas) is configuration
+  managed in Pengaturan; the home page renders whatever is active there.
 
 Empty months inside the range are kept at zero rather than skipped, so a quiet
 month reads as quiet instead of vanishing from the axis.

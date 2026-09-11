@@ -1,7 +1,14 @@
 import { redirect } from "next/navigation"
+
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
-import { Card, CardContent } from "@/components/ui/card"
+import { EuksComplaintOptionSettings } from "@/components/e-uks/euks-complaint-option-settings"
+import { EuksFacilitySettings } from "@/components/e-uks/euks-facility-settings"
+import { EuksOfficerSettings } from "@/components/e-uks/euks-officer-settings"
+import { EuksProfileSettings } from "@/components/e-uks/euks-profile-settings"
 import { EuksAccessError, requireEuksAdmin } from "@/lib/euks-access"
+import { readAssignableTeachers, readEuksSettings } from "@/lib/server-euks"
+
+export const dynamic = "force-dynamic"
 
 export default async function EuksPengaturanPage() {
   try {
@@ -11,17 +18,18 @@ export default async function EuksPengaturanPage() {
     throw error
   }
 
+  const [settings, teachers] = await Promise.all([readEuksSettings(), readAssignableTeachers()])
+
   return (
     <PageContainer>
       <PageHeading
         title="Pengaturan E-UKS"
-        description="Kelola identitas, carousel, pengurus, dan fasilitas yang tampil di halaman utama E-UKS"
+        description="Kelola identitas, pengurus, fasilitas, dan pilihan keluhan yang dipakai modul E-UKS"
       />
-      <Card>
-        <CardContent className="py-14 text-center text-sm text-muted-foreground">
-          Pengaturan konten E-UKS akan tersedia pada tahap berikutnya.
-        </CardContent>
-      </Card>
+      <EuksProfileSettings profile={settings.profile} />
+      <EuksOfficerSettings officers={settings.officers} teachers={teachers} />
+      <EuksFacilitySettings facilities={settings.facilities} />
+      <EuksComplaintOptionSettings options={settings.complaintOptions} />
     </PageContainer>
   )
 }

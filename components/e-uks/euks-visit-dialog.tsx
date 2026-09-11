@@ -43,6 +43,8 @@ type VisitDialogProps = {
   onOpenChange: (open: boolean) => void
   draft: VisitDraft
   students: EuksStudentOption[]
+  /** Label keluhan baku dari Pengaturan; kosong berarti isian bebas saja. */
+  complaintOptions?: string[]
   onSaved: () => void
 }
 
@@ -52,6 +54,7 @@ export function EuksVisitDialog({
   onOpenChange,
   draft,
   students,
+  complaintOptions = [],
   onSaved,
 }: VisitDialogProps) {
   const [form, setForm] = useState<VisitDraft>(draft)
@@ -137,14 +140,25 @@ export function EuksVisitDialog({
 
           <div className="space-y-1.5">
             <Label htmlFor="euks-complaint">Keluhan *</Label>
+            {/* datalist: menyarankan ejaan baku tanpa menutup isian bebas.
+                Keluhan di luar daftar tetap boleh diketik. */}
             <Input
               id="euks-complaint"
               value={form.complaint}
               placeholder="Misal: Pusing"
+              list={complaintOptions.length > 0 ? "euks-complaint-options" : undefined}
+              autoComplete="off"
               onChange={(event) =>
                 setForm((current) => ({ ...current, complaint: event.target.value }))
               }
             />
+            {complaintOptions.length > 0 ? (
+              <datalist id="euks-complaint-options">
+                {complaintOptions.map((option) => (
+                  <option key={option} value={option} />
+                ))}
+              </datalist>
+            ) : null}
           </div>
 
           <div className="space-y-1.5">

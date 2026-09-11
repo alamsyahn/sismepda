@@ -87,6 +87,7 @@ model User {
   canEditEuks Boolean @default(false)
   euksVisitsRecorded EuksVisit[] @relation("EuksVisitRecorder")
   healthMeasurementsRecorded StudentHealthMeasurement[] @relation("HealthMeasurementRecorder")
+  euksOfficerRoles EuksOfficer[] @relation("EuksOfficerUser")
 }
 
 model Subject {
@@ -215,6 +216,76 @@ model StudentHealthMeasurement {
 
   @@unique([studentId, measuredAt])
   @@index([studentId, measuredAt])
+}
+
+/// Identitas UKS untuk Halaman Utama. Singleton — satu baris, id "default",
+/// mengikuti pola BosSetting.
+model EuksProfile {
+  id String @id @default("default")
+  /// Nama unit; null selama admin belum mengisi.
+  name String?
+  /// Deskripsi singkat/visi-misi, teks bebas multi-baris.
+  description String?
+  /// Lokasi ruang UKS di lingkungan sekolah.
+  location String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Pengurus UKS. Boleh menunjuk User (guru) atau diisi manual untuk siswa
+/// dan pihak luar yang tidak punya akun — karena itu userId nullable dan
+/// name selalu tersimpan sebagai teks.
+model EuksOfficer {
+  id String @id @default(cuid())
+  /// Guru terkait, bila pengurus ini punya akun. SetNull agar menghapus akun
+  /// tidak ikut menghapus riwayat kepengurusan.
+  userId String?
+  /// Nama tampil. Untuk pengurus bertaut guru, disalin saat disimpan supaya
+  /// kartu tetap terbaca bila akunnya dinonaktifkan.
+  name String
+  /// Jabatan dalam struktur UKS, mis. "Pembina", "Ketua".
+  role String
+  sortOrder Int @default(0)
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User? @relation("EuksOfficerUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([active, sortOrder])
+}
+
+/// Fasilitas/perlengkapan UKS yang ditampilkan di Halaman Utama.
+/// Ini daftar informatif, bukan inventaris — stok barang adalah ranah Sarpras.
+model EuksFacility {
+  id String @id @default(cuid())
+  name String
+  /// Lowercase + spasi dirapikan; mencegah duplikat "Tandu"/"tandu"/" Tandu ".
+  slug String @unique
+  /// Jumlah unit bila relevan; null berarti tidak dihitung.
+  quantity Int?
+  note String?
+  sortOrder Int @default(0)
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, sortOrder])
+}
+
+/// Daftar keluhan siap-pilih untuk form kunjungan. Tujuannya menyeragamkan
+/// ejaan agar statistik Halaman Utama tidak terpecah; petugas tetap boleh
+/// mengetik keluhan di luar daftar ini.
+model EuksComplaintOption {
+  id String @id @default(cuid())
+  label String
+  /// Lowercase + spasi dirapikan; kunci yang sama dipakai agregasi tren.
+  slug String @unique
+  sortOrder Int @default(0)
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, sortOrder])
 }
 
 model AttendanceDay {

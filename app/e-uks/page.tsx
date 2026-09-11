@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import Link from "next/link"
+import { MapPin } from "lucide-react"
 
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,6 +11,7 @@ import { EuksAccessError, requireEuksViewer } from "@/lib/euks-access"
 import { monthlyVisitCounts, rankTerms, formatMonthLabel } from "@/lib/euks-trends"
 import {
   countDistinctVisitingStudents,
+  readEuksSettings,
   readEuksTrendVisits,
   readEuksVisitDateRange,
 } from "@/lib/server-euks"
@@ -27,6 +29,10 @@ export default async function EuksHomePage() {
     if (error instanceof EuksAccessError) redirect("/")
     throw error
   }
+
+  const settings = await readEuksSettings()
+  const activeOfficers = settings.officers.filter((officer) => officer.active)
+  const activeFacilities = settings.facilities.filter((facility) => facility.active)
 
   const range = await readEuksVisitDateRange()
   const visits = range ? await readEuksTrendVisits(range.first, range.last) : []
@@ -49,9 +55,63 @@ export default async function EuksHomePage() {
   return (
     <PageContainer>
       <PageHeading
-        title="E-UKS"
-        description="Tren keluhan dan tindakan Unit Kesehatan Sekolah, diturunkan dari riwayat kunjungan"
+        title={settings.profile.name ?? "E-UKS"}
+        description={
+          settings.profile.description ??
+          "Tren keluhan dan tindakan Unit Kesehatan Sekolah, diturunkan dari riwayat kunjungan"
+        }
       />
+
+      {settings.profile.location ? (
+        <p className="text-muted-foreground flex items-center gap-2 text-sm">
+          <MapPin className="size-4 shrink-0" />
+          {settings.profile.location}
+        </p>
+      ) : null}
+
+      {activeOfficers.length > 0 || activeFacilities.length > 0 ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          {activeOfficers.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Pengurus UKS</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2">
+                  {activeOfficers.map((officer) => (
+                    <li key={officer.id} className="flex items-baseline justify-between gap-3 text-sm">
+                      <span className="truncate font-medium">{officer.user?.name ?? officer.name}</span>
+                      <span className="text-muted-foreground shrink-0">{officer.role}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {activeFacilities.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Fasilitas UKS</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2">
+                  {activeFacilities.map((facility) => (
+                    <li key={facility.id} className="flex items-baseline justify-between gap-3 text-sm">
+                      <span className="truncate font-medium">{facility.name}</span>
+                      {facility.quantity !== null ? (
+                        <span className="text-muted-foreground shrink-0 tabular-nums">
+                          {facility.quantity} unit
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+      ) : null}
 
       {visits.length === 0 ? (
         <Card>
