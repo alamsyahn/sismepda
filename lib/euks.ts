@@ -222,6 +222,35 @@ export function toBmiSeries(measurements: HealthMeasurement[]): BmiPoint[] {
     .sort((a, b) => a.measuredAt.localeCompare(b.measuredAt))
 }
 
+/**
+ * Titik siswa pada grafik KMS: tinggi badan terhadap umur dalam bulan.
+ *
+ * Pengukuran tanpa tanggal lahir, atau yang jatuh di luar rentang tabel
+ * rujukan, sengaja dibuang — bukan digeser ke tepi tabel, karena itu akan
+ * menempatkan siswa pada pita yang salah.
+ */
+export type HeightPoint = {
+  id: string
+  measuredAt: string
+  ageMonths: number
+  heightCm: number
+}
+
+export function toHeightSeries(
+  measurements: HealthMeasurement[],
+  birthDate: string | null,
+): HeightPoint[] {
+  if (!birthDate) return []
+  return measurements
+    .map((item) => {
+      const ageMonths = ageInMonths(birthDate, item.measuredAt)
+      if (ageMonths === null || !(item.heightCm > 0)) return null
+      return { id: item.id, measuredAt: item.measuredAt, ageMonths, heightCm: item.heightCm }
+    })
+    .filter((point): point is HeightPoint => point !== null)
+    .sort((a, b) => a.ageMonths - b.ageMonths)
+}
+
 /** The most recent measurement drives the three "saat ini" summary cards. */
 export function latestMeasurement(measurements: HealthMeasurement[]): HealthMeasurement | null {
   if (measurements.length === 0) return null

@@ -89,6 +89,48 @@ Age comes from `ageInMonths()` at the measurement date, counted in full months
 so a birthday later in the month does not round up. Category colour is mapped
 once in `nutritionCategoryTone` so the card and any future table cannot disagree.
 
+## KMS chart (height-for-age)
+
+`/e-uks/pantauan-kesehatan` plots the student's height against the WHO
+height-for-age reference bands, matching wireframe 06.
+
+L/M/S values come from **WHO Growth reference 5-19 years, Height-for-age**
+(`lib/data/height-for-age-reference.json`), cross-checked against the computed
+SD columns shipped in the same WHO workbook — 2352 points, worst gap 0.0005 cm.
+`tests/height-for-age.test.ts` re-runs that comparison against
+`tests/fixtures/who-height-for-age.json` on every test run.
+
+Permenkes 2/2020 is **not** used here: its height-for-age tables (Tabel 3 and
+10) stop at 60 months, so they cannot cover secondary-school students. There is
+therefore no Permenkes category for this indicator, and the chart deliberately
+assigns **no status label** — it draws the reference bands and the student's
+points, nothing more. Judging growth is a clinician's call, not an attendance
+app's.
+
+`lib/lms.ts` holds the LMS formula once; both BMI-for-age and height-for-age
+call it, so the bands on the chart and the z-score behind a category can never
+diverge. A point sitting between the median and -1 SD is exactly a point whose
+z-score is between 0 and -1.
+
+### Why there is no weight-for-age chart
+
+Wireframe 06 shows two charts, hand-labelled "Tinggi Badan" and "Berat Badan".
+Only the height one is built. WHO states plainly that weight-for-age reference
+data **are not published beyond age 10**, because the indicator cannot separate
+height from body mass during the pubertal growth spurt — a tall 14-year-old
+would read as overweight. SISMEPDA's students are VII-IX (roughly 12-15), so
+every one of them falls in that excluded range.
+
+Weight is not lost: it is recorded in the measurement table and drives the
+BMI-for-age chart and the nutrition category, which is the indicator WHO and
+Permenkes both intend for this age group.
+
+`toHeightSeries()` drops measurements it cannot place — no birth date, or an
+age outside the 5-19 year table — rather than clamping them to the edge of the
+reference, which would put the student in the wrong band. The chart renders an
+explicit message for each case: missing sex, no plottable measurement, or an
+age outside the reference range.
+
 ## API
 
 `POST /api/e-uks/measurements` records one measurement (409 when that student already has one on that date); `DELETE /api/e-uks/measurements/[measurementId]` removes one. Both require `euks.edit` and write an `AuditLog` entry in the same transaction.

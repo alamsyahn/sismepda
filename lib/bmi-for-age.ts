@@ -10,7 +10,8 @@
  *   dasar hukum di Indonesia.
  *
  * Keduanya sudah divalidasi silang: 336 baris tabel Permenkes dihitung ulang
- * dari L/M/S WHO dan cocok seluruhnya (selisih < 0,15 IMT). Lihat
+ * dari L/M/S WHO dan cocok seluruhnya (selisih maksimum 0,051 IMT, yaitu
+ * setengah satuan pembulatan tabel cetak). Lihat
  * `tests/bmi-for-age.test.ts`, yang menguji ulang setiap baris terhadap
  * `tests/fixtures/permenkes-imt-u.json` yang diekstrak langsung dari PDF
  * Permenkes.
@@ -20,8 +21,9 @@
  */
 
 import reference from "@/lib/data/bmi-for-age-reference.json"
+import { lmsRow, zScoreFromLms, type Gender } from "@/lib/lms"
 
-export type Gender = "LAKI_LAKI" | "PEREMPUAN"
+export type { Gender }
 
 /** Kategori Permenkes 2/2020 untuk IMT/U anak 5-18 tahun. */
 export type NutritionCategory = "gizi_buruk" | "gizi_kurang" | "gizi_baik" | "gizi_lebih" | "obesitas"
@@ -46,9 +48,6 @@ export const nutritionCategoryTone: Record<NutritionCategory, "danger" | "warnin
   obesitas: "danger",
 }
 
-const REFERENCE_MIN_MONTHS = reference.ageMonths.min
-const REFERENCE_MAX_MONTHS = reference.ageMonths.max
-
 /**
  * Z-score IMT/U memakai rumus LMS WHO:
  *   z = ((IMT/M)^L - 1) / (L * S),  dan  z = ln(IMT/M) / S  bila L = 0.
@@ -57,18 +56,9 @@ const REFERENCE_MAX_MONTHS = reference.ageMonths.max
  * baik tidak memberi kategori daripada mengekstrapolasi di luar tabel.
  */
 export function bmiZScore(bmi: number, ageMonths: number, gender: Gender): number | null {
-  if (!Number.isFinite(bmi) || bmi <= 0) return null
-  if (ageMonths < REFERENCE_MIN_MONTHS || ageMonths > REFERENCE_MAX_MONTHS) return null
-
-  const table: Record<string, number[]> = reference.lms[gender]
-  const row = table[String(ageMonths)]
-  // Baris rujukan selalu [L, M, S]; kalau tidak, datanya rusak — jangan menebak.
-  if (!row || row.length !== 3) return null
-
-  const [l, m, s] = row
-  if (!Number.isFinite(l) || !Number.isFinite(m) || !Number.isFinite(s) || m <= 0 || s <= 0) return null
-  if (Math.abs(l) < 1e-9) return Math.log(bmi / m) / s
-  return (Math.pow(bmi / m, l) - 1) / (l * s)
+  const row = lmsRow(reference, ageMonths, gender)
+  if (!row) return null
+  return zScoreFromLms(bmi, row)
 }
 
 /**

@@ -2,7 +2,7 @@
 "source":{
 "lms":"WHO Growth reference 5-19 years, BMI-for-age (bmi-boys-z-who-2007-exp.xlsx / bmi-girls-z-who-2007-exp.xlsx), https://www.who.int/tools/growth-reference-data-for-5to19-years/indicators/bmi-for-age",
 "cutoffs":"Permenkes RI No. 2 Tahun 2020 tentang Standar Antropometri Anak, Tabel 15 (laki-laki) & Tabel 16 (perempuan), IMT/U 5-18 tahun",
-"note":"Nilai L/M/S dipakai menghitung z-score; ambang kategori mengikuti Permenkes 2/2020. Keduanya sudah divalidasi silang: 336 baris, selisih maksimum < 0,15 IMT."
+"note":"Nilai L/M/S dipakai menghitung z-score; ambang kategori mengikuti Permenkes 2/2020. Keduanya sudah divalidasi silang: 336 baris, selisih maksimum 0,051 IMT (setengah satuan pembulatan tabel cetak)."
 },
 "ageMonths":{
 "min":61,

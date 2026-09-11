@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { EuksStudentSelector } from "@/components/e-uks/euks-student-selector"
 import { EuksMeasurementTable } from "@/components/e-uks/euks-measurement-table"
 import { EuksBmiChart } from "@/components/e-uks/euks-bmi-chart"
+import { EuksKmsChart } from "@/components/e-uks/euks-kms-chart"
 import { EuksAccessError, requireEuksViewer } from "@/lib/euks-access"
 import {
   ageInYears,
@@ -16,6 +17,7 @@ import {
   nutritionStatusLabel,
   nutritionStatus,
   toBmiSeries,
+  toHeightSeries,
 } from "@/lib/euks"
 import { nutritionCategoryTone } from "@/lib/bmi-for-age"
 import { cn } from "@/lib/utils"
@@ -43,6 +45,9 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
   const monitoring = studentId ? await readStudentMonitoring(studentId) : null
 
   const series = monitoring ? toBmiSeries(monitoring.measurements) : []
+  const heightSeries = monitoring
+    ? toHeightSeries(monitoring.measurements, monitoring.student.birthDate)
+    : []
   const latest = monitoring ? latestMeasurement(monitoring.measurements) : null
   const latestBmi = series.length > 0 ? series[series.length - 1].bmi : null
   const status = monitoring
@@ -202,6 +207,21 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
                 points={series}
                 canEdit={capabilities.canEdit}
               />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Kartu Menuju Sehat (KMS)</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <EuksKmsChart points={heightSeries} gender={monitoring.student.gender} />
+              <p className="text-muted-foreground text-xs">
+                Tinggi badan menurut umur terhadap kurva rujukan WHO 5-19 tahun. Pita hijau
+                menandai rentang -2 s.d. +2 SD, kuning -3 s.d. -2 SD dan +2 s.d. +3 SD. Grafik ini
+                menyajikan data, bukan diagnosis; penilaian pertumbuhan adalah kewenangan tenaga
+                kesehatan.
+              </p>
             </CardContent>
           </Card>
         </>

@@ -16,6 +16,7 @@ import {
   nutritionStatus,
   nutritionStatusLabel,
   toBmiSeries,
+  toHeightSeries,
   visitTermLabel,
 } from "../lib/euks"
 
@@ -154,6 +155,27 @@ test("umur di luar rentang rujukan tidak dipaksakan", () => {
     gender: "LAKI_LAKI",
   })
   assert.deepEqual(status, { kind: "unknown", reason: "age_out_of_range" })
+})
+
+test("toHeightSeries membuang pengukuran yang tidak dapat dipetakan", () => {
+  const measurements = [
+    { id: "b", measuredAt: "2026-05-10", heightCm: 150, weightKg: 39, note: null },
+    { id: "a", measuredAt: "2025-05-10", heightCm: 145, weightKg: 36, note: null },
+    // Tinggi badan tidak sahih: tidak boleh digambar.
+    { id: "c", measuredAt: "2026-08-10", heightCm: 0, weightKg: 40, note: null },
+  ]
+
+  const series = toHeightSeries(measurements, "2014-05-10")
+  assert.deepEqual(
+    series.map((point) => point.id),
+    ["a", "b"],
+    "harus urut menaik menurut umur dan membuang tinggi tidak sahih",
+  )
+  assert.equal(series[0].ageMonths, 132)
+  assert.equal(series[1].ageMonths, 144)
+
+  // Tanpa tanggal lahir tidak ada sumbu umur, jadi tidak ada yang bisa digambar.
+  assert.deepEqual(toHeightSeries(measurements, null), [])
 })
 
 test("format z-score memakai tanda dan koma Indonesia", () => {
