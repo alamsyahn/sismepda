@@ -29,7 +29,7 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Evidence:** `prisma/schema.prisma` (`SchoolSetting`); `app/api/admin/settings/route.ts`; `app/api/attendance/route.ts`; `app/api/dashboard/route.ts`.
 - **Impact:** UI configuration can imply a restriction that the backend does not apply, allowing late/early edits contrary to operator expectations.
 - **Reason:** Settings and reporting were implemented without a matching mutation guard.
-- **Direction:** Decide the intended override policy, centralize Jakarta-time window evaluation, enforce it server-side, and expose actionable errors.
+- **Direction:** Decide the intended override policy, centralize configured-school-timezone window evaluation, enforce it server-side, and expose actionable errors.
 - **Exit criteria:** Contract tests cover before/open/close/after, auto-lock off, ADMIN override decision, holidays and edits; documentation/UI match enforcement.
 
 ## TD-004 — Critical integration behavior lacks automated coverage
@@ -101,3 +101,14 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Reason:** Restore is implemented as an on-demand web operation without an application maintenance state or restore-specific audit event.
 - **Direction:** Require a controlled maintenance mode, prevent concurrent writes, and record initiation/result with actor and backup metadata that does not expose secrets.
 - **Exit criteria:** Integration tests show writes are blocked during restore, success/failure is auditable, and transaction failure leaves prior data intact.
+
+## TD-011 — KMS growth charts have no official reference dataset
+
+- **Area / severity:** E-UKS health data — **High**
+- **Current condition:** The KMS section of `/e-uks/pantauan-kesehatan` is specified to plot a student's height and weight against standard growth bands, but the repository contains no reference dataset for those bands.
+- **Evidence:** `docs/design/e-uks/06-pantauan-kesehatan-kms.png` is a photograph of a printed KMS card and is not a usable data source; `docs/features/e-uks.md` records the requirement.
+- **Impact:** Without an authoritative source the curves cannot be implemented at all — invented, interpolated or screenshot-derived values would present fabricated medical guidance to teachers and parents.
+- **Reason:** The wireframe defines the intended UI, while the medical reference data was never specified.
+- **Direction:** Obtain an official LMS/standard-deviation dataset (WHO growth reference 5-19 years, or the Kemenkes tables) with a recorded citation, store it as versioned reference data, and select the curve by student sex once `Student` carries that attribute.
+- **Exit criteria:** Reference values are loaded from a cited dataset, unit tests verify known reference points against the published tables, and the chart renders an explicit empty state whenever the dataset is unavailable.
+

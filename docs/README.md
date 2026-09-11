@@ -22,8 +22,9 @@ This directory is the canonical description of the system as it works now. Start
 | Teacher links, 19-item review, weighted supervision dashboard and audit | [Workbook supervision](features/workbook-supervision.md) | `/supervisi-buku-kerja` |
 | Budget, categories, realization entries, document URLs and delegated rights | [BOS](features/bos.md) | `/bos` |
 | Location tree, item types, quantities/condition, photos, history and delegated rights | [Sarpras](features/sarpras.md) | `/sarpras` |
+| School health unit: visit log, student health monitoring, growth charts and UKS page content | [E-UKS](features/e-uks.md) | `/e-uks` |
 
-Cross-feature rules are linked rather than repeated. Attendance class scope affects student profiles and attendance exports; teacher/homeroom management defines that scope. Audit logging is shared by Workbook, BOS, and Sarpras.
+Cross-feature rules are linked rather than repeated. Attendance class scope affects student profiles and attendance exports; teacher/homeroom management defines that scope. Audit logging is shared by Workbook, BOS, Sarpras, and E-UKS.
 
 ## Operations
 

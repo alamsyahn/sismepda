@@ -76,6 +76,8 @@ model User {
   sarprasItemsCreated SarprasItem[] @relation("SarprasItemCreator")
   sarprasItemsUpdated SarprasItem[] @relation("SarprasItemUpdater")
   sarprasHistories SarprasHistory[] @relation("SarprasHistoryActor")
+  canViewEuks Boolean @default(false)
+  canEditEuks Boolean @default(false)
 }
 
 model Subject {

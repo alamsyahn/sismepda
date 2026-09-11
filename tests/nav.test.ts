@@ -94,16 +94,76 @@ test("BOS hanya terlihat oleh pemegang hak, bukan semua GURU", () => {
   assert.ok(hrefs(admin).includes("/bos"))
 })
 
-test("BOS adalah menu utama tepat di bawah Kurikulum", () => {
+test("BOS adalah menu utama tepat di bawah E-UKS", () => {
   const entries = visibleNavEntries(mainNav, admin)
   const ids = entries.map((entry) => (isNavGroup(entry) ? entry.id : entry.href))
   const bosIndex = ids.indexOf("/bos")
 
   assert.ok(bosIndex > -1, "BOS harus ada di navigasi utama")
-  assert.equal(ids[bosIndex - 1], "kurikulum", "BOS tepat di bawah Kurikulum")
+  assert.equal(ids[bosIndex - 1], "e-uks", "BOS tepat di bawah E-UKS")
 
   const bos = entries[bosIndex]
   assert.ok(!isNavGroup(bos), "BOS bukan group/submenu")
+})
+
+test("E-UKS adalah group di antara Kurikulum dan BOS", () => {
+  const entries = visibleNavEntries(mainNav, admin)
+  const ids = entries.map((entry) => (isNavGroup(entry) ? entry.id : entry.href))
+  const euksIndex = ids.indexOf("e-uks")
+
+  assert.ok(euksIndex > -1, "E-UKS harus ada di navigasi utama")
+  assert.equal(ids[euksIndex - 1], "kurikulum", "E-UKS tepat di bawah Kurikulum")
+  assert.equal(ids[euksIndex + 1], "/bos", "E-UKS tepat di atas BOS")
+
+  const euks = entries[euksIndex]
+  assert.ok(isNavGroup(euks), "E-UKS berupa group/submenu")
+  assert.deepEqual(euks.children.map((child) => child.href), [
+    "/e-uks",
+    "/e-uks/pantauan-kesehatan",
+    "/e-uks/riwayat-kunjungan",
+    "/e-uks/pengaturan",
+  ])
+})
+
+test("capability E-UKS mengikuti guard server", () => {
+  const hrefs = (viewer: Parameters<typeof visibleNavEntries>[1]) =>
+    flattenNav(visibleNavEntries(mainNav, viewer)).map((item) => item.href)
+
+  assert.ok(!hrefs(guru).includes("/e-uks"), "GURU polos tidak boleh melihat menu E-UKS")
+  assert.ok(hrefs({ role: "GURU", canViewEuks: true }).includes("/e-uks"))
+  // Hak kelola menyiratkan hak lihat, sehingga menu tetap muncul.
+  assert.ok(hrefs({ role: "GURU", canEditEuks: true }).includes("/e-uks"))
+  assert.ok(hrefs(admin).includes("/e-uks"))
+})
+
+test("Pengaturan E-UKS hanya untuk ADMIN", () => {
+  const hrefs = (viewer: Parameters<typeof visibleNavEntries>[1]) =>
+    flattenNav(visibleNavEntries(mainNav, viewer)).map((item) => item.href)
+
+  assert.ok(!hrefs({ role: "GURU", canEditEuks: true }).includes("/e-uks/pengaturan"))
+  assert.ok(hrefs(admin).includes("/e-uks/pengaturan"))
+})
+
+test("active state E-UKS bekerja untuk seluruh route modul", () => {
+  const entries = visibleNavEntries(mainNav, admin)
+  assert.equal(activeNavHref(entries, "/e-uks"), "/e-uks")
+  assert.equal(activeNavHref(entries, "/e-uks/pantauan-kesehatan"), "/e-uks/pantauan-kesehatan")
+  assert.equal(activeNavHref(entries, "/e-uks/riwayat-kunjungan"), "/e-uks/riwayat-kunjungan")
+  assert.equal(activeNavHref(entries, "/e-uks/pengaturan"), "/e-uks/pengaturan")
+  // Halaman utama dicocokkan persis agar tidak ikut aktif di sub-route.
+  assert.notEqual(activeNavHref(entries, "/e-uks/riwayat-kunjungan"), "/e-uks")
+})
+
+test("expanded state E-UKS terbuka untuk setiap sub-route", () => {
+  const entries = visibleNavEntries(mainNav, admin)
+  for (const path of [
+    "/e-uks",
+    "/e-uks/pantauan-kesehatan",
+    "/e-uks/riwayat-kunjungan",
+    "/e-uks/pengaturan",
+  ]) {
+    assert.equal(activeNavGroupId(entries, activeNavHref(entries, path)), "e-uks", path)
+  }
 })
 
 test("route BOS aktif termasuk sub-halaman akses", () => {

@@ -57,6 +57,8 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
       canManageBosAccess: session?.user.canManageBosAccess,
       canViewSarpras: session?.user.canViewSarpras,
       canEditSarpras: session?.user.canEditSarpras,
+      canViewEuks: session?.user.canViewEuks,
+      canEditEuks: session?.user.canEditEuks,
     }),
     [
       role,
@@ -69,6 +71,8 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
       session?.user.canManageBosAccess,
       session?.user.canViewSarpras,
       session?.user.canEditSarpras,
+      session?.user.canViewEuks,
+      session?.user.canEditEuks,
     ],
   )
 

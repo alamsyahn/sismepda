@@ -17,13 +17,19 @@ import {
   MessageCircleMore,
   Wallet,
   Boxes,
+  HeartPulse,
+  Home,
+  Stethoscope,
+  ClipboardPlus,
+  SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react"
 
 import { canViewBos } from "@/lib/bos"
+import { canViewEuks } from "@/lib/euks"
 import { canViewSarpras } from "@/lib/sarpras"
 
-export type NavCapability = "workbookSupervision" | "bos" | "sarpras"
+export type NavCapability = "workbookSupervision" | "bos" | "sarpras" | "euks"
 
 export type NavItem = {
   type?: "item"
@@ -60,6 +66,8 @@ export type NavViewer = {
   canManageBosAccess?: boolean
   canViewSarpras?: boolean
   canEditSarpras?: boolean
+  canViewEuks?: boolean
+  canEditEuks?: boolean
 }
 
 export function isNavGroup(entry: NavEntry): entry is NavGroup {
@@ -78,6 +86,7 @@ export function canSeeNavItem(item: NavItem, viewer: NavViewer): boolean {
   }
   if (item.capability === "bos") return canViewBos(viewer)
   if (item.capability === "sarpras") return canViewSarpras(viewer)
+  if (item.capability === "euks") return canViewEuks(viewer)
   return true
 }
 
@@ -247,6 +256,47 @@ export const mainNav: NavEntry[] = [
         description: "Pantau kelengkapan Buku Kerja seluruh guru",
         roles: ["ADMIN", "GURU"],
         capability: "workbookSupervision",
+      },
+    ],
+  },
+  {
+    type: "group",
+    id: "e-uks",
+    title: "E-UKS",
+    icon: HeartPulse,
+    children: [
+      {
+        title: "Halaman Utama",
+        href: "/e-uks",
+        icon: Home,
+        description: "Profil, pengurus, fasilitas, dan tren kesehatan UKS",
+        roles: ["ADMIN", "GURU"],
+        capability: "euks",
+        match: "exact",
+      },
+      {
+        title: "Pantauan Kesehatan Siswa",
+        href: "/e-uks/pantauan-kesehatan",
+        icon: Stethoscope,
+        description: "Status gizi, riwayat sakit, dan pertumbuhan per siswa",
+        roles: ["ADMIN", "GURU"],
+        capability: "euks",
+      },
+      {
+        title: "Riwayat Kunjungan UKS",
+        href: "/e-uks/riwayat-kunjungan",
+        icon: ClipboardPlus,
+        description: "Catatan keluhan, tindakan, dan tindak lanjut kunjungan UKS",
+        roles: ["ADMIN", "GURU"],
+        capability: "euks",
+      },
+      {
+        title: "Pengaturan E-UKS",
+        href: "/e-uks/pengaturan",
+        icon: SlidersHorizontal,
+        description: "Kelola identitas, carousel, pengurus, dan fasilitas UKS",
+        roles: ["ADMIN"],
+        capability: "euks",
       },
     ],
   },

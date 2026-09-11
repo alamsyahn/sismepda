@@ -14,6 +14,8 @@ declare module "next-auth" {
     canManageBosAccess?: boolean
     canViewSarpras?: boolean
     canEditSarpras?: boolean
+    canViewEuks?: boolean
+    canEditEuks?: boolean
   }
   interface Session {
     user: {
@@ -32,6 +34,8 @@ declare module "next-auth" {
       canManageBosAccess?: boolean
     canViewSarpras?: boolean
     canEditSarpras?: boolean
+    canViewEuks?: boolean
+    canEditEuks?: boolean
     }
   }
 }
@@ -49,5 +53,7 @@ declare module "next-auth/jwt" {
     canManageBosAccess?: boolean
     canViewSarpras?: boolean
     canEditSarpras?: boolean
+    canViewEuks?: boolean
+    canEditEuks?: boolean
   }
 }

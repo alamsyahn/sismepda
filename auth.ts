@@ -5,6 +5,7 @@ import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { canViewBos, hasBosPermission } from "@/lib/bos"
 import { canViewSarpras } from "@/lib/sarpras"
+import { canViewEuks } from "@/lib/euks"
 import { clearLoginFailures, consumeLoginAttempt } from "@/lib/login-rate-limit"
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -41,6 +42,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             canManageBosAccess: true,
             canViewSarpras: true,
             canEditSarpras: true,
+            canViewEuks: true,
+            canEditEuks: true,
           },
         })
         if (!user || !(await compare(parsed.data.password, user.passwordHash))) return null
@@ -60,6 +63,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           canManageBosAccess: user.canManageBosAccess,
           canViewSarpras: user.canViewSarpras,
           canEditSarpras: user.canEditSarpras,
+          canViewEuks: user.canViewEuks,
+          canEditEuks: user.canEditEuks,
           image: user.photoUpdatedAt ? `/api/profile/photo?v=${user.photoUpdatedAt.getTime()}` : null,
         }
       },
@@ -80,6 +85,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.canManageBosAccess = user.canManageBosAccess
         token.canViewSarpras = user.canViewSarpras
         token.canEditSarpras = user.canEditSarpras
+        token.canViewEuks = user.canViewEuks
+        token.canEditEuks = user.canEditEuks
         token.picture = user.image
       }
       if (trigger === "update" && token.id) {
@@ -101,6 +108,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             canManageBosAccess: true,
             canViewSarpras: true,
             canEditSarpras: true,
+            canViewEuks: true,
+            canEditEuks: true,
           },
         })
         if (current?.active) {
@@ -117,6 +126,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.canManageBosAccess = current.canManageBosAccess
           token.canViewSarpras = current.canViewSarpras
           token.canEditSarpras = current.canEditSarpras
+          token.canViewEuks = current.canViewEuks
+          token.canEditEuks = current.canEditEuks
           token.picture = current.photoUpdatedAt ? `/api/profile/photo?v=${current.photoUpdatedAt.getTime()}` : null
         }
       }
@@ -135,6 +146,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.canManageBosAccess = token.canManageBosAccess === true
       session.user.canViewSarpras = token.canViewSarpras === true
       session.user.canEditSarpras = token.canEditSarpras === true
+      session.user.canViewEuks = token.canViewEuks === true
+      session.user.canEditEuks = token.canEditEuks === true
       Object.assign(session.user, {
         name: token.name ?? null,
         email: token.email ?? null,
@@ -181,6 +194,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           auth!.user.role !== "ADMIN"
         ) {
           return Response.redirect(new URL("/sarpras", request.nextUrl))
+        }
+      }
+      // Modul E-UKS: tapis awal berbasis sesi. Guard sebenarnya tetap di
+      // requireEuksPermission() pada halaman dan setiap route handler.
+      if (path === "/e-uks" || path.startsWith("/e-uks/")) {
+        if (!canViewEuks(auth!.user)) return Response.redirect(new URL("/", request.nextUrl))
+        if (
+          (path === "/e-uks/pengaturan" || path.startsWith("/e-uks/pengaturan/")) &&
+          auth!.user.role !== "ADMIN"
+        ) {
+          return Response.redirect(new URL("/e-uks", request.nextUrl))
         }
       }
       return true
