@@ -12,10 +12,24 @@ import {
 
 const PRESET_DELIMITERS = [",", ";", "\t", "|"] as const
 
+const CUSTOM = "custom"
+
+/**
+ * Label per delimiter. Dipakai bersama oleh daftar dan trigger supaya
+ * keduanya tidak bisa berbeda.
+ */
+const DELIMITER_LABELS: Record<string, string> = {
+  ",": "Koma (,)",
+  ";": "Titik koma (;)",
+  "\t": "Tab",
+  "|": "Pipa (|)",
+  [CUSTOM]: "Karakter lain",
+}
+
 function delimiterMode(delimiter: string): string {
   return PRESET_DELIMITERS.includes(delimiter as (typeof PRESET_DELIMITERS)[number])
     ? delimiter
-    : "custom"
+    : CUSTOM
 }
 
 export function CsvDelimiterField({
@@ -37,22 +51,24 @@ export function CsvDelimiterField({
         <Label htmlFor="csv-delimiter">Pemisah kolom (delimiter)</Label>
         <Select
           value={mode}
-          onValueChange={(nextValue) => onChange(nextValue === "custom" ? ":" : String(nextValue))}
+          onValueChange={(nextValue) => onChange(nextValue === CUSTOM ? ":" : String(nextValue))}
           disabled={disabled}
         >
           <SelectTrigger id="csv-delimiter" className="w-full sm:w-52">
-            <SelectValue />
+            <SelectValue>
+              {(selected: string) => DELIMITER_LABELS[selected] ?? DELIMITER_LABELS[CUSTOM]}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value=",">Koma (,)</SelectItem>
-            <SelectItem value=";">Titik koma (;)</SelectItem>
-            <SelectItem value="\t">Tab</SelectItem>
-            <SelectItem value="|">Pipa (|)</SelectItem>
-            <SelectItem value="custom">Karakter lain</SelectItem>
+            {[...PRESET_DELIMITERS, CUSTOM].map((option) => (
+              <SelectItem key={option} value={option}>
+                {DELIMITER_LABELS[option]}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
-      {mode === "custom" ? (
+      {mode === CUSTOM ? (
         <div className="space-y-1.5">
           <Label htmlFor="csv-custom-delimiter">Karakter delimiter</Label>
           <Input
