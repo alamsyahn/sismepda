@@ -56,23 +56,38 @@ so a corrected height or weight can never leave a stale IMT behind. It returns
 The relational content collections for carousel/pengurus/fasilitas are introduced
 by the following phases and documented here as they land.
 
-## Nutrition status is intentionally unresolved
+## Nutrition status (BMI-for-age)
 
-Classifying a school-age child requires **BMI-for-age** against a WHO/Permenkes
-LMS reference, which needs the student's **age and sex**. Adult BMI cut-offs
-(18.5/25/30) are clinically wrong for children and are deliberately not used.
+Classifying a school-age child uses **BMI-for-age (IMT/U)**, never the adult BMI
+cut-offs (18.5/25/30), which are clinically wrong for children.
 
-Age and sex are now available: `Student.birthDate` and `Student.gender` are
-optional columns filled from the student screens (see [Students](students.md)),
-and `ageInMonths()` computes age at the measurement date — full months, so a
-birthday later in the month does not round up.
+Two official sources, both stored in `lib/data/bmi-for-age-reference.json`:
 
-What is still missing is the LMS reference table itself (TD-011). Rather than a
-single "unknown", `nutritionStatus()` reports which input is absent —
-`no_measurement`, `no_birth_date`, `no_gender`, or `no_reference_data` — so the
-card tells the operator exactly what to fix for that student instead of hiding
-the cause behind a dash. The card also shows the student's age at the last
-measurement once a birth date exists.
+| Part | Source |
+| --- | --- |
+| L/M/S values (z-score) | WHO Growth reference 5-19 years, BMI-for-age |
+| Category cut-offs | Permenkes RI No. 2/2020, Tabel 15 (boys) & 16 (girls) |
+
+The two agree: all 336 rows of the Permenkes tables were recomputed from the WHO
+L/M/S values and matched within 0.051 BMI — half the 0.1 rounding unit of the
+printed table. `tests/bmi-for-age.test.ts` re-checks every row on each run
+against `tests/fixtures/permenkes-imt-u.json`, extracted straight from the
+Permenkes PDF, so a corrupted dataset fails the suite rather than silently
+shifting a category.
+
+Cut-offs per Permenkes 2/2020 for ages 5-18: `< -3 SD` gizi buruk, `-3..< -2 SD`
+gizi kurang, `-2..+1 SD` gizi baik, `> +1..+2 SD` gizi lebih, `> +2 SD`
+obesitas. Boundary values sit in the *upper* band (exactly -2 SD is gizi baik).
+
+`nutritionStatus()` returns a discriminated union — `{ kind: "known", category,
+z, ageMonths }` or `{ kind: "unknown", reason }` — so a caller cannot forget the
+unresolved case. The reasons are specific (`no_measurement`, `no_birth_date`,
+`no_gender`, `age_out_of_range`) so the card names the missing input instead of
+showing a dash. Age outside 5-19 years is never extrapolated.
+
+Age comes from `ageInMonths()` at the measurement date, counted in full months
+so a birthday later in the month does not round up. Category colour is mapped
+once in `nutritionCategoryTone` so the card and any future table cannot disagree.
 
 ## API
 

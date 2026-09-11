@@ -8,7 +8,17 @@ import { EuksStudentSelector } from "@/components/e-uks/euks-student-selector"
 import { EuksMeasurementTable } from "@/components/e-uks/euks-measurement-table"
 import { EuksBmiChart } from "@/components/e-uks/euks-bmi-chart"
 import { EuksAccessError, requireEuksViewer } from "@/lib/euks-access"
-import { ageInYears, formatBmi, latestMeasurement, nutritionStatusLabel, nutritionStatus, toBmiSeries } from "@/lib/euks"
+import {
+  ageInYears,
+  formatBmi,
+  formatZScore,
+  latestMeasurement,
+  nutritionStatusLabel,
+  nutritionStatus,
+  toBmiSeries,
+} from "@/lib/euks"
+import { nutritionCategoryTone } from "@/lib/bmi-for-age"
+import { cn } from "@/lib/utils"
 import { readEuksClassOptions, readEuksStudentOptions, readStudentMonitoring } from "@/lib/server-euks"
 import { fromPrismaDate } from "@/lib/school-date"
 
@@ -37,7 +47,8 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
   const latestBmi = series.length > 0 ? series[series.length - 1].bmi : null
   const status = monitoring
     ? nutritionStatus({
-        hasMeasurement: latest !== null,
+        bmi: latestBmi,
+        measuredAt: latest?.measuredAt ?? null,
         birthDate: monitoring.student.birthDate,
         gender: monitoring.student.gender,
       })
@@ -66,7 +77,12 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
           <SummaryCard
             title="Status Gizi (berdasarkan IMT)"
             value={status ? nutritionStatusLabel(status) : "-"}
-            hint={age !== null ? `Umur ${age} tahun saat pengukuran terakhir` : undefined}
+            tone={status?.kind === "known" ? nutritionCategoryTone[status.category] : undefined}
+            hint={
+              status?.kind === "known"
+                ? `IMT/U ${formatZScore(status.z)}${age !== null ? ` · umur ${age} tahun` : ""}`
+                : undefined
+            }
           />
           <SummaryCard title="Tinggi Badan Saat ini" value={latest ? `${latest.heightCm} cm` : "-"} />
           <SummaryCard title="Berat Badan Saat ini" value={latest ? `${latest.weightKg} kg` : "-"} />
@@ -194,14 +210,32 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
   )
 }
 
-function SummaryCard({ title, value, hint }: { title: string; value: string; hint?: string }) {
+function SummaryCard({
+  title,
+  value,
+  hint,
+  tone,
+}: {
+  title: string
+  value: string
+  hint?: string
+  tone?: "danger" | "warning" | "ok"
+}) {
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-muted-foreground text-sm font-medium">{title}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-1">
-        <p className="text-2xl font-semibold">{value}</p>
+        <p
+          className={cn(
+            "text-2xl font-semibold",
+            tone === "danger" && "text-destructive",
+            tone === "warning" && "text-amber-600 dark:text-amber-500",
+          )}
+        >
+          {value}
+        </p>
         {hint ? <p className="text-muted-foreground text-xs">{hint}</p> : null}
       </CardContent>
     </Card>

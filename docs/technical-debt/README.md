@@ -102,23 +102,12 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Direction:** Require a controlled maintenance mode, prevent concurrent writes, and record initiation/result with actor and backup metadata that does not expose secrets.
 - **Exit criteria:** Integration tests show writes are blocked during restore, success/failure is auditable, and transaction failure leaves prior data intact.
 
-## TD-011 — KMS growth charts have no official reference dataset
+## TD-011 — Student demographics are not filled in yet
 
-- **Area / severity:** E-UKS health data — **High**
-- **Current condition:** The KMS section of `/e-uks/pantauan-kesehatan` is specified to plot a student's height and weight against standard growth bands, but the repository contains no reference dataset for those bands.
-- **Evidence:** `docs/design/e-uks/06-pantauan-kesehatan-kms.png` is a photograph of a printed KMS card and is not a usable data source; `docs/features/e-uks.md` records the requirement.
-- **Impact:** Without an authoritative source the curves cannot be implemented at all — invented, interpolated or screenshot-derived values would present fabricated medical guidance to teachers and parents.
-- **Reason:** The wireframe defines the intended UI, while the medical reference data was never specified.
-- **Direction:** Obtain an official LMS/standard-deviation dataset (WHO growth reference 5-19 years, or the Kemenkes tables) with a recorded citation, store it as versioned reference data, and select the curve by student sex, which `Student` now carries (see TD-012).
-- **Exit criteria:** Reference values are loaded from a cited dataset, unit tests verify known reference points against the published tables, and the chart renders an explicit empty state whenever the dataset is unavailable.
-
-
-## TD-012 — Student has no birth date or sex, blocking BMI-for-age
-
-- **Area / severity:** E-UKS health data — **High**
+- **Area / severity:** E-UKS health data — **Medium**
 - **Current condition:** The schema columns and all three input surfaces now exist, but no student has been filled in yet, so `nutritionStatus()` still returns a reason rather than a category.
 - **Evidence:** `birthDate`/`gender` exist on `model Student` and are writable from `/siswa/input` (manual + CSV) and the `/siswa` edit dialog; a database check reports 840 students with 0 carrying demographics.
-- **Impact:** Nutritional status stays unresolved until the roster is filled in AND the TD-011 reference dataset lands. BMI-for-age needs age in months, sex, and LMS tables; adult cut-offs (18.5/25/30) are clinically invalid for school-age children.
-- **Reason:** SISMEPDA was built for attendance, where student demographics were never required. Backfilling 840 students is operator work that follows the E-UKS build.
-- **Direction:** Fill the demographics through the existing student screens, then classify once TD-011 provides the reference tables. `nutritionStatus()` already distinguishes `no_birth_date` / `no_gender` / `no_reference_data` so the remaining gap is visible per student.
-- **Exit criteria:** Active students carry both fields, `nutritionStatus()` classifies against the TD-011 reference dataset, and students still missing the data render an explicit empty state rather than a wrong category.
+- **Impact:** Nutritional status stays unresolved for every student until the roster is filled in. The reference dataset and the classifier are in place, so this is now the only remaining blocker — and it is operator data entry, not engineering work.
+- **Reason:** SISMEPDA was built for attendance, where student demographics were never required. Filling 840 students is operator work that follows the E-UKS build.
+- **Direction:** Fill the demographics through the existing student screens — CSV import is the practical route for 840 rows, using the optional `tanggal_lahir` and `jenis_kelamin` columns. `nutritionStatus()` already distinguishes `no_birth_date` from `no_gender`, so the missing input is visible per student.
+- **Exit criteria:** Active students carry both fields and `/e-uks/pantauan-kesehatan` shows a real category for them; students still missing the data keep rendering an explicit reason rather than a wrong category.

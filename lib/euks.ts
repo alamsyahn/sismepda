@@ -1,5 +1,12 @@
 /** Pure E-UKS logic — no Prisma imports so it stays unit-testable. */
 
+import {
+  bmiZScore,
+  categorizeZScore,
+  nutritionCategoryLabels,
+  type NutritionCategory,
+} from "@/lib/bmi-for-age"
+
 /** The two E-UKS rights. Each maps to one boolean column on User. */
 export type EuksPermission = "euks.view" | "euks.edit"
 
@@ -134,14 +141,24 @@ export function ageInYears(birthDate: string, measuredAt: string): number | null
  * Alasan status gizi tidak dapat ditentukan. Dibedakan agar antarmuka dapat
  * memberi tahu operator persis data apa yang kurang, bukan sekadar "-".
  */
-export type NutritionStatus =
+export type NutritionUnknownReason =
   | "no_measurement"
   | "no_birth_date"
   | "no_gender"
-  | "no_reference_data"
+  | "age_out_of_range"
+
+/**
+ * Hasil penilaian status gizi: entah terklasifikasi, atau tidak — dengan
+ * alasan yang eksplisit. Bentuk union ini membuat pemanggil tidak bisa
+ * lupa menangani kasus "belum bisa dinilai".
+ */
+export type NutritionStatus =
+  | { kind: "known"; category: NutritionCategory; z: number; ageMonths: number }
+  | { kind: "unknown"; reason: NutritionUnknownReason }
 
 export type NutritionInput = {
-  hasMeasurement: boolean
+  bmi: number | null
+  measuredAt: string | null
   birthDate: string | null
   gender: "LAKI_LAKI" | "PEREMPUAN" | null
 }
@@ -151,25 +168,42 @@ export type NutritionInput = {
  * menuntut umur DAN jenis kelamin DAN tabel rujukan LMS (WHO/Permenkes).
  * Ambang IMT dewasa (18.5/25/30) tidak sahih untuk anak sehingga tidak dipakai.
  *
- * Umur dan jenis kelamin kini tersedia; tabel rujukannya belum ada (TD-011),
- * jadi fungsi ini melaporkan penyebabnya alih-alih menebak kategori.
+ * Mengembalikan discriminated union: pemanggil tidak bisa lupa menangani kasus
+ * "belum bisa ditentukan", dan alasannya spesifik supaya kartu dapat menyebut
+ * data mana yang kurang alih-alih menampilkan tanda strip.
  */
 export function nutritionStatus(input: NutritionInput): NutritionStatus {
-  if (!input.hasMeasurement) return "no_measurement"
-  if (!input.birthDate) return "no_birth_date"
-  if (!input.gender) return "no_gender"
-  return "no_reference_data"
+  if (input.bmi === null || !input.measuredAt) return { kind: "unknown", reason: "no_measurement" }
+  if (!input.birthDate) return { kind: "unknown", reason: "no_birth_date" }
+  if (!input.gender) return { kind: "unknown", reason: "no_gender" }
+
+  const ageMonths = ageInMonths(input.birthDate, input.measuredAt)
+  if (ageMonths === null) return { kind: "unknown", reason: "no_birth_date" }
+
+  const z = bmiZScore(input.bmi, ageMonths, input.gender)
+  // Di luar 5-19 tahun tabel rujukan tidak berlaku; ekstrapolasi tidak sahih.
+  if (z === null) return { kind: "unknown", reason: "age_out_of_range" }
+
+  return { kind: "known", category: categorizeZScore(z), z, ageMonths }
 }
 
-const nutritionStatusLabels: Record<NutritionStatus, string> = {
+const unknownReasonLabels: Record<NutritionUnknownReason, string> = {
   no_measurement: "Belum ada pengukuran",
   no_birth_date: "Tanggal lahir belum diisi",
   no_gender: "Jenis kelamin belum diisi",
-  no_reference_data: "Menunggu tabel rujukan IMT/U",
+  age_out_of_range: "Umur di luar rentang rujukan (5-19 tahun)",
 }
 
 export function nutritionStatusLabel(status: NutritionStatus): string {
-  return nutritionStatusLabels[status]
+  return status.kind === "known"
+    ? nutritionCategoryLabels[status.category]
+    : unknownReasonLabels[status.reason]
+}
+
+/** Z-score untuk ditampilkan, mis. "+1,3 SD" — satu desimal, koma Indonesia. */
+export function formatZScore(z: number): string {
+  const rounded = z.toFixed(1).replace(".", ",")
+  return `${z >= 0 ? "+" : ""}${rounded} SD`
 }
 
 /** A measurement plus its derived IMT, newest first, for chart and table. */

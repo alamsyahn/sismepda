@@ -9,6 +9,7 @@ import {
   countVisitTerms,
   euksCapabilities,
   formatBmi,
+  formatZScore,
   hasEuksPermission,
   latestMeasurement,
   normalizeVisitTerm,
@@ -102,14 +103,65 @@ test("formatBmi menampilkan satu desimal dan strip untuk null", () => {
 })
 
 test("status gizi melaporkan data spesifik yang masih kurang", () => {
-  const base = { hasMeasurement: true, birthDate: "2014-05-10", gender: "LAKI_LAKI" as const }
+  const base = {
+    bmi: 17.5,
+    measuredAt: "2026-05-10",
+    birthDate: "2014-05-10",
+    gender: "LAKI_LAKI" as const,
+  }
 
-  assert.equal(nutritionStatus({ ...base, hasMeasurement: false }), "no_measurement")
-  assert.equal(nutritionStatus({ ...base, birthDate: null }), "no_birth_date")
-  assert.equal(nutritionStatus({ ...base, gender: null }), "no_gender")
-  // Umur dan jenis kelamin lengkap, tetapi tabel rujukan LMS belum ada (TD-011).
-  assert.equal(nutritionStatus(base), "no_reference_data")
-  assert.equal(nutritionStatusLabel(nutritionStatus(base)), "Menunggu tabel rujukan IMT/U")
+  assert.deepEqual(nutritionStatus({ ...base, bmi: null }), { kind: "unknown", reason: "no_measurement" })
+  assert.deepEqual(nutritionStatus({ ...base, birthDate: null }), { kind: "unknown", reason: "no_birth_date" })
+  assert.deepEqual(nutritionStatus({ ...base, gender: null }), { kind: "unknown", reason: "no_gender" })
+  assert.equal(
+    nutritionStatusLabel({ kind: "unknown", reason: "no_gender" }),
+    "Jenis kelamin belum diisi",
+  )
+})
+
+test("status gizi terklasifikasi ketika data lengkap", () => {
+  // Laki-laki tepat 12 tahun (144 bulan); median tabel Permenkes = 17,5.
+  const status = nutritionStatus({
+    bmi: 17.5,
+    measuredAt: "2026-05-10",
+    birthDate: "2014-05-10",
+    gender: "LAKI_LAKI",
+  })
+  assert.equal(status.kind, "known")
+  if (status.kind !== "known") return
+  assert.equal(status.category, "gizi_baik")
+  assert.equal(status.ageMonths, 144)
+  assert.ok(Math.abs(status.z) < 0.05, `z pada median seharusnya ~0, dapat ${status.z}`)
+  assert.equal(nutritionStatusLabel(status), "Gizi baik")
+})
+
+test("jenis kelamin mengubah kategori pada IMT dan umur yang sama", () => {
+  const input = { bmi: 25.5, measuredAt: "2026-05-10", birthDate: "2014-05-10" }
+  const l = nutritionStatus({ ...input, gender: "LAKI_LAKI" })
+  const p = nutritionStatus({ ...input, gender: "PEREMPUAN" })
+  assert.equal(l.kind, "known")
+  assert.equal(p.kind, "known")
+  if (l.kind !== "known" || p.kind !== "known") return
+  // Kurva perempuan lebih tinggi pada umur ini, sehingga z-nya lebih rendah.
+  assert.ok(l.z > p.z, `harusnya z laki-laki > perempuan, dapat ${l.z} vs ${p.z}`)
+})
+
+test("umur di luar rentang rujukan tidak dipaksakan", () => {
+  const status = nutritionStatus({
+    bmi: 17.5,
+    measuredAt: "2026-05-10",
+    birthDate: "2022-05-10", // 4 tahun, di bawah tabel 5-19 tahun
+    gender: "LAKI_LAKI",
+  })
+  assert.deepEqual(status, { kind: "unknown", reason: "age_out_of_range" })
+})
+
+test("format z-score memakai tanda dan koma Indonesia", () => {
+  assert.equal(formatZScore(1.34), "+1,3 SD")
+  assert.equal(formatZScore(-2.16), "-2,2 SD")
+  assert.equal(formatZScore(0), "+0,0 SD")
+  // Hanya untuk tampilan — kategori selalu dihitung dari z penuh, bukan teks ini.
+  assert.equal(formatZScore(0.96), "+1,0 SD")
 })
 
 test("umur dihitung dalam bulan penuh pada tanggal pengukuran", () => {
