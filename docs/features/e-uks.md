@@ -6,7 +6,7 @@ E-UKS is the school health unit (Unit Kesehatan Sekolah) module inside SISMEPDA.
 
 | Route | Purpose | Access |
 |---|---|---|
-| `/e-uks` | Halaman Utama: UKS identity, carousel, profile, pengurus, fasilitas, plus disease/action trends derived from visit history | `euks.view` |
+| `/e-uks` | Halaman Utama: visit totals plus complaint/treatment/monthly trends derived from visit history | `euks.view` |
 | `/e-uks/pantauan-kesehatan` | Per-student health monitoring: nutrition status, sick-absence history, UKS visit history, IMT and KMS charts | `euks.view` |
 | `/e-uks/riwayat-kunjungan` | UKS visit log — the write surface and source of truth for every E-UKS statistic | `euks.view`, writes require `euks.edit` |
 | `/e-uks/pengaturan` | Content configuration for the home page | ADMIN |
@@ -111,6 +111,28 @@ app's.
 call it, so the bands on the chart and the z-score behind a category can never
 diverge. A point sitting between the median and -1 SD is exactly a point whose
 z-score is between 0 and -1.
+
+### Trend grouping is textual, not clinical
+
+`EuksVisit.complaint` and `.treatment` are free text. `lib/euks-trends.ts`
+groups them by normalised text (trimmed, case-folded) and labels each group
+with the spelling operators used most often. It deliberately does no stemming,
+synonym mapping, or medical grouping: deciding that "ISPA" and "batuk pilek"
+are the same condition is a clinical judgement this app has no authority to
+make, and a wrong mapping would silently distort every statistic on the page.
+The page states this limitation to the reader. If the school later wants
+consolidated categories, the correct fix is a curated complaint list on the
+input form, not fuzzy matching after the fact.
+
+Two departures from wireframe 03, both forced by the free-text schema:
+
+- The monthly chart plots total visits per month, not columns stacked by
+  treatment type — stacking needs a fixed set of categories that does not exist.
+- Wireframe 02's identity content (carousel, profile, pengurus, fasilitas) is
+  configuration, so it belongs to the Pengaturan phase and is not on this page yet.
+
+Empty months inside the range are kept at zero rather than skipped, so a quiet
+month reads as quiet instead of vanishing from the axis.
 
 ### Why there is no weight-for-age chart
 

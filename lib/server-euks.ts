@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import type { EuksStudentOption, HealthMeasurement } from "@/lib/euks"
-import { fromPrismaDate } from "@/lib/school-date"
+import type { TrendVisit } from "@/lib/euks-trends"
+import { fromPrismaDate, prismaSchoolDateRange, type SchoolDate } from "@/lib/school-date"
 
 export type EuksVisitRow = {
   id: string
@@ -41,6 +42,46 @@ export async function readEuksVisits(): Promise<EuksVisitRow[]> {
     followUp: visit.followUp,
     recordedByName: visit.recordedBy?.name ?? null,
   }))
+}
+
+/**
+ * Kunjungan untuk agregasi tren Halaman Utama.
+ *
+ * Hanya kolom yang dipakai agregasi yang diambil, dan penyaringan rentang
+ * dilakukan di database — bukan memuat seluruh log lalu membuangnya di memori.
+ */
+export async function readEuksTrendVisits(from: SchoolDate, to: SchoolDate): Promise<TrendVisit[]> {
+  const visits = await prisma.euksVisit.findMany({
+    where: { occurredAt: prismaSchoolDateRange(from, to) },
+    select: { occurredAt: true, complaint: true, treatment: true },
+    orderBy: { occurredAt: "asc" },
+  })
+
+  return visits.map((visit) => ({
+    occurredAt: fromPrismaDate(visit.occurredAt),
+    complaint: visit.complaint,
+    treatment: visit.treatment,
+  }))
+}
+
+/** Tanggal kunjungan paling awal dan paling akhir, untuk menentukan rentang. */
+export async function readEuksVisitDateRange(): Promise<{ first: SchoolDate; last: SchoolDate } | null> {
+  const [first, last] = await Promise.all([
+    prisma.euksVisit.findFirst({ select: { occurredAt: true }, orderBy: { occurredAt: "asc" } }),
+    prisma.euksVisit.findFirst({ select: { occurredAt: true }, orderBy: { occurredAt: "desc" } }),
+  ])
+  if (!first || !last) return null
+  return { first: fromPrismaDate(first.occurredAt), last: fromPrismaDate(last.occurredAt) }
+}
+
+/** Jumlah siswa berbeda yang pernah berkunjung pada rentang. */
+export async function countDistinctVisitingStudents(from: SchoolDate, to: SchoolDate): Promise<number> {
+  const rows = await prisma.euksVisit.findMany({
+    where: { occurredAt: prismaSchoolDateRange(from, to) },
+    select: { studentId: true },
+    distinct: ["studentId"],
+  })
+  return rows.length
 }
 
 /** Active students for the visit form and selector, grouped by class name. */
