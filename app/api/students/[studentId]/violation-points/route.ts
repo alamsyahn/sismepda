@@ -3,6 +3,7 @@ import { z } from "zod"
 import { requireUser } from "@/lib/auth-guards"
 import { getClassAccess } from "@/lib/class-access"
 import { prisma } from "@/lib/prisma"
+import { parseSchoolDate, toPrismaDate } from "@/lib/school-date"
 
 const payload = z.object({
   category: z.string().trim().min(2).max(100),
@@ -11,22 +12,15 @@ const payload = z.object({
   occurredAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 })
 
-function strictDate(value: string) {
-  const [year, month, day] = value.split("-").map(Number)
-  const date = new Date(year, month - 1, day)
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null
-  date.setHours(0, 0, 0, 0)
-  return date
-}
-
 export async function POST(request: Request, { params }: { params: Promise<{ studentId: string }> }) {
   try {
     const user = await requireUser()
     const access = await getClassAccess(user)
     const { studentId } = await params
     const input = payload.parse(await request.json())
-    const occurredAt = strictDate(input.occurredAt)
-    if (!occurredAt) return NextResponse.json({ error: "Tanggal pelanggaran tidak valid" }, { status: 400 })
+    const schoolDate = parseSchoolDate(input.occurredAt)
+    if (!schoolDate) return NextResponse.json({ error: "Tanggal pelanggaran tidak valid" }, { status: 400 })
+    const occurredAt = toPrismaDate(schoolDate)
     const student = await prisma.student.findFirst({ where: { id: studentId, schoolClass: access.where }, select: { id: true } })
     if (!student) return NextResponse.json({ error: "Siswa tidak ditemukan atau tidak dapat diakses" }, { status: 404 })
     const created = await prisma.studentViolationPoint.create({

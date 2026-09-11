@@ -9,6 +9,8 @@ import { AppBrandingProvider } from "@/components/layout/app-branding-provider"
 import { defaultSiteBranding, readSiteBranding } from "@/lib/server-site-branding"
 import { readAttendanceStatusColors } from "@/lib/server-attendance-status-colors"
 import { DEFAULT_STATUS_COLORS } from "@/lib/attendance-status-colors"
+import { SchoolTimeZoneProvider } from "@/components/school-time-zone-provider"
+import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import "./globals.css"
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -43,6 +45,7 @@ export default async function RootLayout({
   children: React.ReactNode
 }>) {
   const statusColors = await readAttendanceStatusColors()
+  const timeZone = await readSchoolTimeZone()
   let branding = defaultSiteBranding
   try {
     branding = await readSiteBranding()
@@ -60,21 +63,23 @@ export default async function RootLayout({
   return (
     <html lang="id" className="light" style={statusColorStyle}>
       <body className="bg-background font-sans antialiased">
-        <SiteBranding />
-        <SessionProvider>
-          <AppBrandingProvider
-            branding={{
-              appName: branding.appName,
-              appFullName: branding.appFullName,
-              appLogoUrl: branding.appLogoUrl,
-              hasAppLogo: branding.hasAppLogo,
-            }}
-          >
-            <AppShell>{children}</AppShell>
-          </AppBrandingProvider>
-        </SessionProvider>
-        <Toaster position="top-center" />
-        {process.env.NODE_ENV === "production" && <Analytics />}
+        <SchoolTimeZoneProvider timeZone={timeZone}>
+          <SiteBranding />
+          <SessionProvider>
+            <AppBrandingProvider
+              branding={{
+                appName: branding.appName,
+                appFullName: branding.appFullName,
+                appLogoUrl: branding.appLogoUrl,
+                hasAppLogo: branding.hasAppLogo,
+              }}
+            >
+              <AppShell>{children}</AppShell>
+            </AppBrandingProvider>
+          </SessionProvider>
+          <Toaster position="top-center" />
+          {process.env.NODE_ENV === "production" && <Analytics />}
+        </SchoolTimeZoneProvider>
       </body>
     </html>
   )

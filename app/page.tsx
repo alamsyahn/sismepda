@@ -20,7 +20,7 @@ import { RecentActivity } from "@/components/dashboard/recent-activity"
 import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton"
 import { OperationalBrief } from "@/components/dashboard/operational-brief"
 import { PageContainer } from "@/components/layout/page-container"
-import { localDateValue } from "@/lib/date"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 import {
   computeSummary,
   type ClassRecord,
@@ -29,9 +29,10 @@ import {
 } from "@/lib/dashboard-data"
 
 export default function DashboardPage() {
+  const { today } = useSchoolTimeZone()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
-  const [date, setDate] = useState(localDateValue())
+  const [date, setDate] = useState<string>(() => today())
   const [selectedClass, setSelectedClass] = useState("all")
   const [classes, setClasses] = useState<ClassRecord[]>([])
   const [absentStudents, setAbsentStudents] = useState<AbsentStudent[]>([])

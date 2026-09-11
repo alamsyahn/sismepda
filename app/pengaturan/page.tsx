@@ -24,6 +24,7 @@ import {
   MAX_FAVICON_BYTES,
 } from "@/lib/site-branding"
 import { DEFAULT_STATUS_COLORS, parseStatusColors, type AttendanceStatusColors } from "@/lib/attendance-status-colors"
+import { DEFAULT_SCHOOL_TIME_ZONE } from "@/lib/school-date"
 
 export default function PengaturanPage() {
   const [websiteTitle, setWebsiteTitle] = useState("SISMEPDA — Dashboard Absensi Sekolah")
@@ -36,6 +37,7 @@ export default function PengaturanPage() {
   const [npsn, setNpsn] = useState("20200123")
   const [academicYear, setAcademicYear] = useState("2025/2026")
   const [semester, setSemester] = useState("Ganjil")
+  const [timeZone, setTimeZone] = useState(DEFAULT_SCHOOL_TIME_ZONE)
   const [openTime, setOpenTime] = useState("06:30")
   const [closeTime, setCloseTime] = useState("08:00")
   const [saving, setSaving] = useState(false)
@@ -51,7 +53,7 @@ export default function PengaturanPage() {
   const faviconInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
-  useEffect(() => { fetch("/api/admin/settings").then((r) => r.json()).then((s) => { setWebsiteTitle(s.websiteTitle); setSchoolName(s.schoolName); setNpsn(s.npsn ?? ""); setAcademicYear(s.academicYear); setSemester(s.semester); setOpenTime(s.attendanceOpenTime); setCloseTime(s.attendanceCloseTime); setAutoLock(s.autoLock); setAllowTeachersAccessAllClasses(s.allowTeachersAccessAllClasses ?? false); setFaviconUrl(s.faviconUrl ?? "/favicon.ico"); setAppName(s.appName ?? DEFAULT_APP_NAME); setAppFullName(s.appFullName ?? DEFAULT_APP_FULL_NAME); setAppLogoUrl(s.appLogoUrl ?? DEFAULT_APP_LOGO_URL); setHasAppLogo(Boolean(s.hasAppLogo)); setStatusColors(parseStatusColors(JSON.stringify(s.attendanceStatusColors ?? DEFAULT_STATUS_COLORS))) }) }, [])
+  useEffect(() => { fetch("/api/admin/settings").then((r) => r.json()).then((s) => { setWebsiteTitle(s.websiteTitle); setSchoolName(s.schoolName); setNpsn(s.npsn ?? ""); setAcademicYear(s.academicYear); setSemester(s.semester); setTimeZone(s.timeZone ?? DEFAULT_SCHOOL_TIME_ZONE); setOpenTime(s.attendanceOpenTime); setCloseTime(s.attendanceCloseTime); setAutoLock(s.autoLock); setAllowTeachersAccessAllClasses(s.allowTeachersAccessAllClasses ?? false); setFaviconUrl(s.faviconUrl ?? "/favicon.ico"); setAppName(s.appName ?? DEFAULT_APP_NAME); setAppFullName(s.appFullName ?? DEFAULT_APP_FULL_NAME); setAppLogoUrl(s.appLogoUrl ?? DEFAULT_APP_LOGO_URL); setHasAppLogo(Boolean(s.hasAppLogo)); setStatusColors(parseStatusColors(JSON.stringify(s.attendanceStatusColors ?? DEFAULT_STATUS_COLORS))) }) }, [])
   useEffect(() => () => { if (faviconPreview) URL.revokeObjectURL(faviconPreview) }, [faviconPreview])
 
   async function save() {
@@ -59,7 +61,7 @@ export default function PengaturanPage() {
     if (!appName.trim()) { toast.error("Nama aplikasi wajib diisi"); return }
     if (!appFullName.trim()) { toast.error("Nama lengkap aplikasi wajib diisi"); return }
     setSaving(true)
-    const response = await fetch("/api/admin/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ websiteTitle, appName, appFullName, schoolName, npsn, academicYear, semester, attendanceOpenTime: openTime, attendanceCloseTime: closeTime, autoLock, allowTeachersAccessAllClasses, attendanceStatusColors: statusColors }) })
+    const response = await fetch("/api/admin/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ websiteTitle, appName, appFullName, schoolName, npsn, academicYear, semester, timeZone, attendanceOpenTime: openTime, attendanceCloseTime: closeTime, autoLock, allowTeachersAccessAllClasses, attendanceStatusColors: statusColors }) })
     setSaving(false)
     if (response.ok) {
       document.title = websiteTitle.trim()
@@ -189,6 +191,11 @@ export default function PengaturanPage() {
             <div className="space-y-2">
               <Label htmlFor="semester">Semester</Label>
               <Input id="semester" value={semester} onChange={(e) => setSemester(e.target.value)} className="bg-card" />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="time-zone">Zona Waktu Sekolah</Label>
+              <Input id="time-zone" value={timeZone} onChange={(e) => setTimeZone(e.target.value)} className="bg-card" placeholder="Asia/Jakarta" />
+              <p className="text-xs text-muted-foreground">Gunakan nama zona waktu IANA, misalnya Asia/Jakarta, Asia/Makassar, atau Asia/Jayapura.</p>
             </div>
           </div>
         </CardContent>

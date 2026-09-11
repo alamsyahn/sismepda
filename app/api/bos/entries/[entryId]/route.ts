@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
 import { bosErrorResponse, requireBosPermission } from "@/lib/bos-access"
 import { normalizeDocumentUrl } from "@/lib/bos"
+import { fromPrismaDate, parseSchoolDate, toPrismaDate } from "@/lib/school-date"
 
 const documentSchema = z.object({
   url: z.string().trim().min(1).max(2000),
@@ -19,14 +20,6 @@ const payload = z.object({
   /** When present, replaces the whole documentation list for the entry. */
   documents: z.array(documentSchema).max(20).optional(),
 })
-
-function strictDate(value: string) {
-  const [year, month, day] = value.split("-").map(Number)
-  const date = new Date(year, month - 1, day)
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null
-  date.setHours(0, 0, 0, 0)
-  return date
-}
 
 function normalizeDocuments(documents: Array<{ url: string; label: string | null }>) {
   const normalized: Array<{ url: string; label: string | null }> = []
@@ -65,9 +58,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ en
 
     let occurredAt: Date | undefined
     if (body.occurredAt !== undefined) {
-      const parsed = strictDate(body.occurredAt)
+      const parsed = parseSchoolDate(body.occurredAt)
       if (!parsed) return NextResponse.json({ error: "Tanggal tidak valid" }, { status: 400 })
-      occurredAt = parsed
+      occurredAt = toPrismaDate(parsed)
     }
 
     let categoryName = entry.category.name
@@ -125,14 +118,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ en
           before: {
             category: entry.category.name,
             description: entry.description,
-            occurredAt: entry.occurredAt.toISOString().slice(0, 10),
+            occurredAt: fromPrismaDate(entry.occurredAt),
             amount: previousAmount,
             documentCount: entry.documents.length,
           },
           after: {
             category: categoryName,
             description: body.description ?? entry.description,
-            occurredAt: body.occurredAt ?? entry.occurredAt.toISOString().slice(0, 10),
+            occurredAt: body.occurredAt ?? fromPrismaDate(entry.occurredAt),
             amount: body.amount ?? previousAmount,
             documentCount: documents === null ? entry.documents.length : documents.length,
           },

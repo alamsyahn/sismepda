@@ -17,6 +17,6 @@ Authenticated users use the dashboard (`/`), attendance input, school/class/stud
 
 ## Settings and edge cases
 
-`SchoolSetting` stores academic year, semester, input open/close times, auto-lock and colors. Current code uses close time for “on time” dashboard status and exposes the time/auto-lock settings, but attendance POST does not enforce open/close or auto-lock. Status color similarity is a non-blocking warning. Calendar logic is Jakarta-based; use existing strict date helpers.
+`SchoolSetting` stores academic year, semester, IANA `timeZone`, input open/close times, auto-lock and colors. The timezone defaults to `Asia/Jakarta` but may be set to `Asia/Makassar`, `Asia/Jayapura`, or another valid IANA zone. It applies only when deriving “today” or displaying/comparing real timestamps; date-only attendance and holiday values remain canonical `YYYY-MM-DD` and PostgreSQL `DATE` regardless of host, database-session, browser, Docker, or VPS timezone. Server code reads and passes the setting per request; client code consumes `SchoolTimeZoneProvider`. Current code uses close time for “on time” dashboard status and exposes the time/auto-lock settings, but attendance POST does not enforce open/close or auto-lock. Status color similarity is a non-blocking warning.
 
 Primary code: `app/api/attendance*`, `app/api/dashboard`, `app/api/class-recap*`, `app/api/recap-students`, `app/api/export`, `lib/server-{dashboard,class-recap,attendance-trend,whatsapp-report}.ts`, and associated feature components.

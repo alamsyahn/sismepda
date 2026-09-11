@@ -1,38 +1,26 @@
+import { eachSchoolDate, fromPrismaDate, parseSchoolDate, toPrismaDate } from "@/lib/school-date"
+
 export type MatrixStatus = "HADIR" | "SAKIT" | "IZIN" | "ALFA" | "DISPENSASI" | "NOT_SUBMITTED" | "HOLIDAY"
 export type AttendanceRecord = { studentId: string; date: Date; status: Exclude<MatrixStatus, "NOT_SUBMITTED" | "HOLIDAY"> }
 export type ClassRecapStudent = { id: string; nis: string | null; nisn: string | null; name: string }
 
-function strictDate(value: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
-  const [year, month, day] = value.split("-").map(Number)
-  const check = new Date(Date.UTC(year, month - 1, day))
-  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return null
-  const date = new Date(Date.UTC(year, month - 1, day) - 7 * 60 * 60 * 1000)
-  return date
-}
-
-const jakartaDateParts = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit",
-})
-
 export function localDateKey(date: Date) {
-  const parts = Object.fromEntries(jakartaDateParts.formatToParts(date).map((part) => [part.type, part.value]))
-  return `${parts.year}-${parts.month}-${parts.day}`
+  return fromPrismaDate(date)
 }
 
 export function parseClassRecapRange(fromValue: string, toValue: string):
   | { ok: true; from: Date; to: Date; dates: Date[] }
   | { ok: false; error: string } {
-  const from = strictDate(fromValue)
-  const to = strictDate(toValue)
-  if (!from || !to) return { ok: false, error: "Tanggal tidak valid" }
-  if (from > to) return { ok: false, error: "Tanggal mulai tidak boleh setelah tanggal akhir" }
-  const days = Math.floor((to.getTime() - from.getTime()) / 86_400_000) + 1
-  if (days > 31) return { ok: false, error: "Rentang maksimal 31 hari" }
-  const dates = Array.from({ length: days }, (_, index) => {
-    return new Date(from.getTime() + index * 86_400_000)
-  })
-  return { ok: true, from, to, dates }
+  const fromValueParsed = parseSchoolDate(fromValue)
+  const toValueParsed = parseSchoolDate(toValue)
+  if (!fromValueParsed || !toValueParsed) return { ok: false, error: "Tanggal tidak valid" }
+  if (fromValueParsed > toValueParsed) return { ok: false, error: "Tanggal mulai tidak boleh setelah tanggal akhir" }
+  let values
+  try { values = eachSchoolDate(fromValueParsed, toValueParsed, { maxDays: 31 }) }
+  catch { return { ok: false, error: "Rentang maksimal 31 hari" } }
+  const from = toPrismaDate(fromValueParsed)
+  const to = toPrismaDate(toValueParsed)
+  return { ok: true, from, to, dates: values.map(toPrismaDate) }
 }
 
 export function statusCode(status: MatrixStatus) {

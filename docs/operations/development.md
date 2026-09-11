@@ -19,6 +19,6 @@ npm run build          # Next production build and TypeScript
 npx prisma validate
 ```
 
-The current suite has unit/contract coverage for domain helpers and selected authorization behavior, not end-to-end browser/database coverage. When changing calendar logic, run under the deployment timezone (`TZ=Asia/Jakarta` where the shell supports it) and preserve Jakarta-local semantics. After stopping Next development on Windows, verify no child process still owns port 3000.
+The current suite has unit/contract coverage for domain helpers and selected authorization behavior, not end-to-end browser/database coverage. Calendar tests must prove canonical date-only behavior under multiple host `TZ` values and explicitly test configured school zones such as `Asia/Jakarta`, `Asia/Makassar`, and `Asia/Jayapura`; host, browser, Docker, database-session, and VPS timezone must not change a business `YYYY-MM-DD`. Before a timestamp-to-`DATE` migration, audit every target column for non-midnight legacy values and key collisions; abort rather than infer ambiguous dates. After stopping Next development on Windows, verify no child process still owns port 3000.
 
 Follow `.hermes.md`: documentation is read first and reviewed after every task; source inspection is targeted unless the user explicitly requests a full audit.

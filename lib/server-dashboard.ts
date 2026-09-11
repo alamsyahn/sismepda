@@ -5,13 +5,15 @@ import type { AbsenceRankingRow } from "@/components/dashboard/absence-ranking"
 import { sortClasses } from "@/lib/class-order"
 import { getClassAccess } from "@/lib/class-access"
 import { isClassRecapComplete } from "@/lib/attendance-save"
+import { formatSchoolTime, fromPrismaDate, toPrismaDate } from "@/lib/school-date"
 
-export async function getClassRecords(date: Date): Promise<ClassRecord[]> {
+export async function getClassRecords(date: Date, timeZone: string): Promise<ClassRecord[]> {
+  const prismaDate = toPrismaDate(fromPrismaDate(date))
   const user = await requireUser()
   const access = await getClassAccess(user)
   const rows = await prisma.schoolClass.findMany({
     where: access.where,
-    include: { students: { where: { active: true } }, homeroomUser: true, attendanceDays: { where: { date }, include: { attendances: true } } },
+    include: { students: { where: { active: true } }, homeroomUser: true, attendanceDays: { where: { date: prismaDate }, include: { attendances: true } } },
     orderBy: { name: "asc" },
   })
   return sortClasses(rows).map((c) => {
@@ -20,7 +22,7 @@ export async function getClassRecords(date: Date): Promise<ClassRecord[]> {
     return {
       id: c.id, name: c.name, grade: c.grade as ClassRecord["grade"],
       homeroom: c.homeroomUser?.name ?? "Belum ditentukan", homeroomId: c.homeroomUser?.id ?? null, totalStudents: c.students.length,
-      submitted: isClassRecapComplete({ totalStudents: c.students.length, recorded: day?.attendances.length ?? 0 }), submittedAt: day ? new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit" }).format(day.submittedAt).replace(".", ":") : null,
+      submitted: isClassRecapComplete({ totalStudents: c.students.length, recorded: day?.attendances.length ?? 0 }), submittedAt: day ? formatSchoolTime(day.submittedAt, timeZone) : null,
       onTime: null, previousHadir: 0, previousTotal: 0,
       hadir: count("HADIR"), sakit: count("SAKIT"), izin: count("IZIN"), alfa: count("ALFA"), dispensasi: count("DISPENSASI"),
     }
@@ -68,5 +70,5 @@ export async function getAbsenceRanking(): Promise<AbsenceRankingRow[]> {
 }
 
 export async function getHoliday(date: Date) {
-  return prisma.schoolHoliday.findUnique({ where: { date }, select: { id: true, name: true } })
+  return prisma.schoolHoliday.findUnique({ where: { date: toPrismaDate(fromPrismaDate(date)) }, select: { id: true, name: true } })
 }

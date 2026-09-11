@@ -29,9 +29,9 @@ test("calculates current present streak and latest alfa", () => {
   assert.equal(result.currentMonthAbsences, 1)
 })
 
-test("groups local-midnight attendance in the correct local month", () => {
-  const localRecord = [{ date: new Date(2026, 7, 1), status: "SAKIT" as const }]
-  const result = summarizeStudentAttendance(localRecord, new Date(2026, 7, 26, 12))
+test("groups canonical Prisma DATE attendance in the correct school month", () => {
+  const localRecord = [{ date: new Date("2026-08-01T00:00:00.000Z"), status: "SAKIT" as const }]
+  const result = summarizeStudentAttendance(localRecord, new Date("2026-08-26T12:00:00.000Z"))
   assert.deepEqual(result.monthlyTrend, [
     { key: "2026-08", label: "Agu", hadir: 0, tidakHadir: 1 },
   ])

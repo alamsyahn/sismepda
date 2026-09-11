@@ -18,7 +18,11 @@ Classes and students are retained by restrictive foreign keys where attendance h
 
 Workbook child data cascades with workbook/user/item deletion; reviewer deletion sets reviewer to null. BOS category references restrict category removal (the UI deactivates categories); documents cascade with entries, and creator/updater deletion sets null. Sarpras location/item-type references restrict deletion while used; item photos/history cascade; actor/creator/updater deletion sets null. Sarpras enforces nonnegative quantities and condition-total equality in both domain validation and a database check constraint. A partial unique index enforces unique root location slugs because PostgreSQL treats nullable composite keys specially.
 
-Binary bytes are stored directly for user photos, favicon, app logo, and Sarpras photos. BOS monetary values are `Decimal(14,2)`. Dates representing school calendar days depend on Jakarta-local conversion conventions; do not replace these with UTC string slicing.
+Binary bytes are stored directly for user photos, favicon, app logo, and Sarpras photos. BOS monetary values are `Decimal(14,2)`.
+
+Business calendar fields—including `AttendanceDay.date`, `SchoolHoliday.date`, `User.teachingSince`, `AdditionalDuty.startDate`, `Student.birthDate`, `StudentViolationPoint.occurredAt`, `EuksVisit.occurredAt`, `StudentHealthMeasurement.measuredAt`, `BosEntry.occurredAt`, and `SarprasItem.acquisitionDate`—are PostgreSQL `DATE` via Prisma `@db.Date`. Their domain representation is canonical `YYYY-MM-DD`; `lib/school-date.ts` is the only parsing, arithmetic, formatting, query-range, and Prisma codec boundary. Prisma represents `DATE` as a JavaScript `Date`, so adapters encode/decode UTC midnight only; that UTC representation is an implementation codec, not an instant or school-local midnight.
+
+Real instants such as `createdAt`, `updatedAt`, `submittedAt`, and `reviewedAt` remain timestamps. Project them only with the configured `SchoolSetting.timeZone` IANA zone. Migration `20260909100000_use_date_for_business_dates` aborts on any non-midnight legacy value or unique-key collapse instead of guessing its intended calendar date; audit such values before deployment.
 
 ## Migrations and seed
 

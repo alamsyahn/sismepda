@@ -16,7 +16,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { BosCategoryCombobox } from "@/components/bos/bos-category-combobox"
-import { localDateValue } from "@/lib/date"
+import type { SchoolDate } from "@/lib/school-date"
 import { normalizeDocumentUrl, type BosCategoryOption } from "@/lib/bos"
 
 export type EntryDraft = {
@@ -28,11 +28,11 @@ export type EntryDraft = {
   documents: Array<{ label: string; url: string }>
 }
 
-export function emptyDraft(): EntryDraft {
+export function emptyDraft(today: SchoolDate): EntryDraft {
   return {
     categoryId: "",
     description: "",
-    occurredAt: localDateValue(),
+    occurredAt: today,
     amount: "",
     documents: [],
   }

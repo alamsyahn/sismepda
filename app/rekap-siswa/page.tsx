@@ -22,7 +22,8 @@ import {
 } from "@/components/ui/table"
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { DateFilter } from "@/components/date-filter"
-import { formatLongDate, localDateValue } from "@/lib/date"
+import { formatSchoolDate, parseSchoolDate } from "@/lib/school-date"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 import { StatusPill } from "@/components/dashboard/status-pill"
 import type { StudentRow } from "@/lib/dashboard-data"
 import { ExportButton } from "@/components/export/export-button"
@@ -31,10 +32,11 @@ import { tableRowNumber } from "@/lib/table-row-number"
 const PAGE_SIZE = 15
 
 export default function RekapSiswaPage() {
+  const { today } = useSchoolTimeZone()
   const [students, setStudents] = useState<StudentRow[]>([])
   const [classes, setClasses] = useState<string[]>([])
   const [holiday, setHoliday] = useState<{ id: string; name: string } | null>(null)
-  const [date, setDate] = useState(localDateValue())
+  const [date, setDate] = useState<string>(() => today())
   const [cls, setCls] = useState("all")
   const [query, setQuery] = useState("")
   const [visible, setVisible] = useState(PAGE_SIZE)
@@ -63,7 +65,7 @@ export default function RekapSiswaPage() {
     <PageContainer>
       <PageHeading
         title="Rekap Siswa"
-        description={`Rekap kehadiran kumulatif beserta status pada ${formatLongDate(date)}.`}
+        description={`Rekap kehadiran kumulatif beserta status pada ${formatSchoolDate(parseSchoolDate(date) ?? today())}.`}
         action={<><DateFilter value={date} onChange={setDate} ariaLabel="Tanggal status siswa" /><ExportButton type="attendance_students" params={{ date, class: cls, query }} /></>}
       />
 

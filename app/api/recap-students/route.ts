@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server"
 import { requireUser } from "@/lib/auth-guards"
 import { prisma } from "@/lib/prisma"
-import { parseDateValue } from "@/lib/date"
+import { parseSchoolDate, todayInSchoolTimeZone, toPrismaDate } from "@/lib/school-date"
+import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import { sortClasses } from "@/lib/class-order"
 import { getClassAccess } from "@/lib/class-access"
 
 export async function GET(request: Request) {
   try {
-    const user = await requireUser(); const today = parseDateValue(new URL(request.url).searchParams.get("date"))
+    const timeZone = await readSchoolTimeZone()
+    const user = await requireUser()
+    const dateParam = new URL(request.url).searchParams.get("date")
+    const schoolDate = dateParam === null ? todayInSchoolTimeZone(undefined, timeZone) : parseSchoolDate(dateParam)
+    if (!schoolDate) return NextResponse.json({ error: "Tanggal tidak valid" }, { status: 400 })
+    const today = toPrismaDate(schoolDate)
     const classWhere = (await getClassAccess(user)).where
     const [students, classes, holiday] = await Promise.all([
       prisma.student.findMany({ where: { active: true, schoolClass: classWhere }, include: { schoolClass: true, attendances: { include: { attendanceDay: true } } }, orderBy: { name: "asc" } }),

@@ -5,6 +5,16 @@
  * dipakai ulang oleh route handler maupun komponen klien.
  */
 
+import {
+  addSchoolDays,
+  differenceInSchoolDays,
+  formatSchoolDate,
+  parseSchoolDate,
+  schoolDateFromInstant,
+  startOfSchoolWeek,
+  toPrismaDate,
+} from "@/lib/school-date"
+
 /** Status ketidakhadiran yang boleh tampil sebagai seri grafik (tanpa Hadir). */
 export const TREND_STATUSES = ["sakit", "izin", "alfa", "dispensasi"] as const
 export type TrendStatus = (typeof TREND_STATUSES)[number]
@@ -56,45 +66,20 @@ export type TrendResponse = {
   comparison: { from: string; to: string; buckets: TrendBucket[]; available: boolean } | null
 }
 
-const JAKARTA = "Asia/Jakarta"
-const DAY_MS = 86_400_000
-
-const DATE_VALUE = /^\d{4}-\d{2}-\d{2}$/
-
-/** Ubah "YYYY-MM-DD" (tanggal lokal Jakarta) menjadi instant UTC-nya. */
+/** Compatibility adapter for callers that still consume Prisma's Date shape. */
 export function jakartaDate(value: string): Date | null {
-  if (!DATE_VALUE.test(value)) return null
-  const [year, month, day] = value.split("-").map(Number)
-  const check = new Date(Date.UTC(year, month - 1, day))
-  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) {
-    return null
-  }
-  return new Date(check.getTime() - 7 * 60 * 60 * 1000)
+  const parsed = parseSchoolDate(value)
+  return parsed ? toPrismaDate(parsed) : null
 }
 
-const jakartaParts = new Intl.DateTimeFormat("en-CA", {
-  timeZone: JAKARTA,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-})
-
-/** "YYYY-MM-DD" untuk sebuah instant, dievaluasi di zona waktu Jakarta. */
+/** Project an instant to its configured school-calendar date. */
 export function jakartaDateValue(date: Date): string {
-  const parts = Object.fromEntries(jakartaParts.formatToParts(date).map((part) => [part.type, part.value]))
-  return `${parts.year}-${parts.month}-${parts.day}`
-}
-
-/** Akhir hari Jakarta (23:59:59.999) supaya range `lte` inklusif. */
-export function jakartaEndOfDay(value: string): Date | null {
-  const start = jakartaDate(value)
-  return start ? new Date(start.getTime() + DAY_MS - 1) : null
+  return schoolDateFromInstant(date)
 }
 
 function addDaysValue(value: string, days: number): string {
-  const date = jakartaDate(value)
-  if (!date) return value
-  return jakartaDateValue(new Date(date.getTime() + days * DAY_MS))
+  const date = parseSchoolDate(value)
+  return date ? addSchoolDays(date, days) : value
 }
 
 /**
@@ -124,47 +109,33 @@ export function semesterStartValue(setting: { academicYear: string; semester: st
   return null
 }
 
-const longDate = new Intl.DateTimeFormat("id-ID", {
-  timeZone: JAKARTA,
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-})
-const shortDate = new Intl.DateTimeFormat("id-ID", { timeZone: JAKARTA, day: "numeric", month: "short" })
-const dayMonth = new Intl.DateTimeFormat("id-ID", { timeZone: JAKARTA, day: "numeric", month: "long" })
-const dayOnly = new Intl.DateTimeFormat("id-ID", { timeZone: JAKARTA, day: "numeric" })
-const monthYear = new Intl.DateTimeFormat("id-ID", { timeZone: JAKARTA, month: "long", year: "numeric" })
-const monthShort = new Intl.DateTimeFormat("id-ID", { timeZone: JAKARTA, month: "short", year: "2-digit" })
-
 /**
  * Rentang tanggal satu minggu, mis. "24–30 Agustus 2026" atau
  * "29 September–5 Oktober 2026" — tanggal nyata, bukan "Minggu 1".
  */
 export function weekRangeLabel(startValue: string): string {
-  const start = jakartaDate(startValue)
+  const start = parseSchoolDate(startValue)
   if (!start) return startValue
-  const end = new Date(start.getTime() + 6 * DAY_MS)
-  const sameMonth = jakartaDateValue(start).slice(0, 7) === jakartaDateValue(end).slice(0, 7)
+  const end = addSchoolDays(start, 6)
+  const sameMonth = start.slice(0, 7) === end.slice(0, 7)
   return sameMonth
-    ? `${dayOnly.format(start)}–${dayMonth.format(end)} ${jakartaDateValue(end).slice(0, 4)}`
-    : `${dayMonth.format(start)}–${dayMonth.format(end)} ${jakartaDateValue(end).slice(0, 4)}`
+    ? `${formatSchoolDate(start, { day: "numeric" })}–${formatSchoolDate(end, { day: "numeric", month: "long" })} ${end.slice(0, 4)}`
+    : `${formatSchoolDate(start, { day: "numeric", month: "long" })}–${formatSchoolDate(end, { day: "numeric", month: "long" })} ${end.slice(0, 4)}`
 }
 
 /** Label sumbu X + tooltip untuk sebuah bucket. */
 export function bucketLabels(granularity: TrendGranularity, key: string): { label: string; tooltipLabel: string } {
-  const date = jakartaDate(key)
+  const date = parseSchoolDate(key)
   if (!date) return { label: key, tooltipLabel: key }
 
   if (granularity === "bulanan") {
-    return { label: monthShort.format(date), tooltipLabel: monthYear.format(date) }
+    return { label: formatSchoolDate(date, { month: "short", year: "2-digit" }), tooltipLabel: formatSchoolDate(date, { month: "long", year: "numeric" }) }
   }
   if (granularity === "mingguan") {
     const range = weekRangeLabel(key)
-    return { label: shortDate.format(date), tooltipLabel: range }
+    return { label: formatSchoolDate(date, { day: "numeric", month: "short" }), tooltipLabel: range }
   }
-  // Harian dan "sejak awal semester" sama-sama satu bar per tanggal.
-  return { label: shortDate.format(date), tooltipLabel: longDate.format(date) }
+  return { label: formatSchoolDate(date, { day: "numeric", month: "short" }), tooltipLabel: formatSchoolDate(date) }
 }
 
 /**
@@ -292,15 +263,10 @@ export function defaultRange(
   return { from: `${fromYear}-${String(normalized).padStart(2, "0")}-01`, to: today }
 }
 
-/** Senin pada minggu yang memuat `value` (ISO week, sesuai date_trunc Postgres). */
+/** Senin pada minggu yang memuat `value` (ISO week). */
 export function startOfWeekValue(value: string): string {
-  const date = jakartaDate(value)
-  if (!date) return value
-  // getUTCDay() aman: `date` adalah tengah malam Jakarta, dan kita hanya
-  // memakainya untuk menghitung offset hari.
-  const jakartaMidnightUtc = new Date(date.getTime() + 7 * 60 * 60 * 1000)
-  const weekday = (jakartaMidnightUtc.getUTCDay() + 6) % 7 // 0 = Senin
-  return addDaysValue(value, -weekday)
+  const date = parseSchoolDate(value)
+  return date ? startOfSchoolWeek(date) : value
 }
 
 /** Granularity yang benar-benar dipakai untuk mengelompokkan record. */
@@ -435,10 +401,10 @@ export function buildClassifiedBuckets(input: {
 }
 
 export function previousRange(from: string, to: string): { from: string; to: string } | null {
-  const fromDate = jakartaDate(from)
-  const toDate = jakartaDate(to)
+  const fromDate = parseSchoolDate(from)
+  const toDate = parseSchoolDate(to)
   if (!fromDate || !toDate || fromDate > toDate) return null
-  const days = Math.round((toDate.getTime() - fromDate.getTime()) / DAY_MS) + 1
+  const days = differenceInSchoolDays(fromDate, toDate) + 1
   return { from: addDaysValue(from, -days), to: addDaysValue(from, -1) }
 }
 
@@ -456,8 +422,9 @@ export function comparisonChange(current: number, previous: number, measure: Tre
 /** Deret kunci bucket berurutan yang menutupi seluruh rentang. */
 export function bucketKeys(granularity: TrendGranularity, from: string, to: string): string[] {
   const mode = bucketGranularity(granularity)
-  const end = jakartaDate(to)
-  if (!end) return []
+  const start = parseSchoolDate(from)
+  const end = parseSchoolDate(to)
+  if (!start || !end || start > end) return []
   const keys: string[] = []
 
   if (mode === "bulanan") {

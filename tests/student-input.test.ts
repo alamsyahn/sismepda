@@ -70,11 +70,12 @@ test("baris dengan demografi tidak valid ditandai, bukan diam-diam dibuang", () 
   assert.equal(rows[1].status, "jenis_kelamin_tidak_valid")
 })
 
-test("input manual menolak tanggal lahir di masa depan", () => {
-  const besok = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+test("input manual menolak tanggal lahir setelah tanggal sekolah", () => {
   const errors = validateManual(
-    { nis: "1234567", nisn: "1234567890", nama: "Budi", kelas: "7A", tanggalLahir: besok, jenisKelamin: "" },
+    { nis: "1234567", nisn: "1234567890", nama: "Budi", kelas: "7A", tanggalLahir: "2026-09-08", jenisKelamin: "" },
     classOptions,
+    undefined,
+    "2026-09-07",
   )
   assert.ok(errors.tanggalLahir)
 })

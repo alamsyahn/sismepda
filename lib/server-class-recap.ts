@@ -1,6 +1,7 @@
 import { getClassAccess } from "@/lib/class-access"
 import { buildClassRecap, localDateKey, parseClassRecapRange } from "@/lib/class-recap-period"
 import { prisma } from "@/lib/prisma"
+import { formatSchoolDate, fromPrismaDate } from "@/lib/school-date"
 import type { requireUser } from "@/lib/auth-guards"
 
 type User = Awaited<ReturnType<typeof requireUser>>
@@ -37,9 +38,9 @@ export async function readClassPeriodRecap(user: User, classId: string, from: st
         const key = localDateKey(date)
         const holiday = holidays.find((item) => localDateKey(item.date) === key)?.name ?? null
         return {
-          value: key,
+          value: String(key),
           day: Number(key.slice(8, 10)),
-          weekday: new Intl.DateTimeFormat("id-ID", { weekday: "short", timeZone: "Asia/Jakarta" }).format(date),
+          weekday: formatSchoolDate(fromPrismaDate(date), { weekday: "short" }),
           holiday,
           submitted: !holiday && submittedDates.has(key),
         }

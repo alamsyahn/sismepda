@@ -2,9 +2,11 @@ import { requireUser } from "@/lib/auth-guards"
 import { sortClasses } from "@/lib/class-order"
 import { prisma } from "@/lib/prisma"
 import type { WhatsAppReportClass, WhatsAppReportStudent } from "@/lib/whatsapp-report"
+import { fromPrismaDate, toPrismaDate } from "@/lib/school-date"
 
 export async function getWhatsAppReportClasses(date: Date): Promise<WhatsAppReportClass[]> {
   await requireUser()
+  const prismaDate = toPrismaDate(fromPrismaDate(date))
 
   const rows = await prisma.schoolClass.findMany({
     select: {
@@ -17,7 +19,7 @@ export async function getWhatsAppReportClasses(date: Date): Promise<WhatsAppRepo
         orderBy: { name: "asc" },
       },
       attendanceDays: {
-        where: { date },
+        where: { date: prismaDate },
         take: 1,
         select: {
           attendances: {

@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatPeriodRange } from "@/lib/teacher-profile"
+import { formatSchoolDate, fromPrismaDate } from "@/lib/school-date"
 
 type ScheduleGroup = { day: number; label: string; items: Array<{ id: string; periodStart: number; periodEnd: number; schoolClass: { name: string }; subject: { name: string } }> }
 type Duty = { id: string; title: string; note: string | null; startDate: Date | null }
@@ -121,7 +122,7 @@ export function TeacherScheduleManager({
                 <div className="min-w-0">
                   <p className="font-medium">{duty.title}</p>
                   {duty.note ? <p className="mt-0.5 text-sm text-muted-foreground">{duty.note}</p> : null}
-                  {duty.startDate ? <Badge variant="secondary" className="mt-2">Sejak {new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Jakarta" }).format(duty.startDate)}</Badge> : null}
+                  {duty.startDate ? <Badge variant="secondary" className="mt-2">Sejak {formatSchoolDate(fromPrismaDate(duty.startDate), { day: "numeric", month: "short", year: "numeric" })}</Badge> : null}
                 </div>
                 {canManage ? (
                   <Button variant="ghost" size="icon-sm" aria-label={`Hapus tugas ${duty.title}`} disabled={saving}

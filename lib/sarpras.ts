@@ -407,16 +407,6 @@ export function locationPath(locations: FlatLocation[], id: string): string {
 /* Formatting                                                                 */
 /* -------------------------------------------------------------------------- */
 
-/** Consistent date rendering across the module, matching the BOS module. */
-export function formatSarprasDate(date: Date): string {
-  return new Intl.DateTimeFormat("id-ID", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "Asia/Jakarta",
-  }).format(date)
-}
-
 /** "3 barang" / "Belum ada barang" for tree rows. */
 export function itemCountLabel(count: number): string {
   return count > 0 ? `${count} barang` : "Belum ada barang"

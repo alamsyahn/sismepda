@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { requireTeacherManager, teacherErrorResponse } from "@/lib/teacher-access"
+import { parseSchoolDate, toPrismaDate } from "@/lib/school-date"
 
 const optionalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal(""))
 
@@ -13,15 +14,6 @@ const profileUpdate = z.object({
   subjectNames: z.array(z.string().trim().min(1).max(80)).max(30).optional(),
 })
 
-function strictDate(value?: string) {
-  if (!value) return null
-  const [year, month, day] = value.split("-").map(Number)
-  const date = new Date(year, month - 1, day)
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return undefined
-  date.setHours(0, 0, 0, 0)
-  return date
-}
-
 export async function PATCH(request: Request, { params }: { params: Promise<{ teacherId: string }> }) {
   try {
     await requireTeacherManager()
@@ -30,8 +22,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ te
     const teacher = await prisma.user.findFirst({ where: { id: teacherId, role: { in: ["ADMIN", "GURU"] } }, select: { id: true } })
     if (!teacher) return NextResponse.json({ error: "Guru tidak ditemukan" }, { status: 404 })
 
-    const teachingSince = strictDate(body.teachingSince || undefined)
-    if (teachingSince === undefined) return NextResponse.json({ error: "Tanggal TMT tidak valid" }, { status: 400 })
+    const teachingSinceValue = body.teachingSince ? parseSchoolDate(body.teachingSince) : null
+    if (body.teachingSince && !teachingSinceValue) return NextResponse.json({ error: "Tanggal TMT tidak valid" }, { status: 400 })
+
+    const teachingSince = teachingSinceValue ? toPrismaDate(teachingSinceValue) : null
 
     await prisma.$transaction(async (tx) => {
       await tx.user.update({

@@ -1,8 +1,12 @@
+"use client"
+
 import { ListChecks, Clock } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import type { ClassRecord } from "@/lib/dashboard-data"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
 export function ClassProgress({ records }: { records: ClassRecord[] }) {
+  const { timeZoneLabel } = useSchoolTimeZone()
   const groups = (["VII", "VIII", "IX"] as const)
     .map((grade) => ({ grade, records: records.filter((record) => record.grade === grade) }))
     .filter((group) => group.records.length > 0)
@@ -32,7 +36,7 @@ export function ClassProgress({ records }: { records: ClassRecord[] }) {
                       <div className="flex items-center justify-between gap-2 text-sm">
                         <span className="font-medium text-foreground">{c.name}</span>
                         <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                          {c.submitted ? <span className="tabular-nums">{c.submittedAt} WIB</span> : <span className="flex items-center gap-1 font-medium text-[var(--chart-5)]"><Clock className="size-3" />Menunggu</span>}
+                          {c.submitted ? <span className="tabular-nums">{c.submittedAt} {timeZoneLabel}</span> : <span className="flex items-center gap-1 font-medium text-[var(--chart-5)]"><Clock className="size-3" />Menunggu</span>}
                           <span className="font-semibold text-foreground tabular-nums">{pct}%</span>
                         </span>
                       </div>

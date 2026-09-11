@@ -11,7 +11,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { DateFilter } from "@/components/date-filter"
-import { formatLongDate } from "@/lib/date"
+import { formatSchoolDate, parseSchoolDate } from "@/lib/school-date"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
 type DashboardHeaderProps = {
   selectedClass: string
@@ -22,6 +23,7 @@ type DashboardHeaderProps = {
 }
 
 export function DashboardHeader({ selectedClass, onClassChange, classes, date, onDateChange }: DashboardHeaderProps) {
+  const { today } = useSchoolTimeZone()
   const classOptions = [{ value: "all", label: "Semua Kelas" }, ...classes.map((c) => ({ value: c.id, label: c.name }))]
   const attendanceHref = selectedClass === "all"
     ? `/absensi/input?date=${encodeURIComponent(date)}`
@@ -38,7 +40,7 @@ export function DashboardHeader({ selectedClass, onClassChange, classes, date, o
           </h1>
           <p className="text-sm text-muted-foreground text-pretty">
             Absensi dan pekerjaan yang perlu ditindaklanjuti pada{" "}
-            <span className="font-semibold text-foreground">{formatLongDate(date)}</span>
+            <span className="font-semibold text-foreground">{formatSchoolDate(parseSchoolDate(date) ?? today())}</span>
           </p>
         </div>
       </div>

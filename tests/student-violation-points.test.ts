@@ -2,6 +2,9 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import { pointLevel, summarizeViolationPoints } from "../lib/student-violation-points"
+import { requireSchoolDate, toPrismaDate } from "../lib/school-date"
+
+const prismaDate = (value: string) => toPrismaDate(requireSchoolDate(value))
 
 test("assigns progressively stronger levels based on total points", () => {
   assert.equal(pointLevel(0).key, "safe")
@@ -13,11 +16,11 @@ test("assigns progressively stronger levels based on total points", () => {
 
 test("summarizes total points and current-month points", () => {
   const records = [
-    { points: 10, occurredAt: new Date(2026, 7, 1) },
-    { points: 15, occurredAt: new Date(2026, 7, 20) },
-    { points: 5, occurredAt: new Date(2026, 6, 20) },
+    { points: 10, occurredAt: prismaDate("2026-08-01") },
+    { points: 15, occurredAt: prismaDate("2026-08-20") },
+    { points: 5, occurredAt: prismaDate("2026-07-20") },
   ]
-  const result = summarizeViolationPoints(records, new Date(2026, 7, 26))
+  const result = summarizeViolationPoints(records, new Date("2026-08-26T00:00:00.000Z"))
   assert.equal(result.totalPoints, 30)
   assert.equal(result.currentMonthPoints, 25)
   assert.equal(result.recordCount, 3)
@@ -25,5 +28,11 @@ test("summarizes total points and current-month points", () => {
 })
 
 test("caps the circle progress at one hundred percent", () => {
-  assert.equal(summarizeViolationPoints([{ points: 130, occurredAt: new Date() }]).progress, 100)
+  assert.equal(summarizeViolationPoints([{ points: 130, occurredAt: prismaDate("2026-08-01") }]).progress, 100)
+})
+
+test("uses Prisma DATE month while current month follows Jakarta", () => {
+  const records = [{ points: 10, occurredAt: prismaDate("2026-08-01") }]
+  const result = summarizeViolationPoints(records, new Date("2026-07-31T17:00:00.000Z"))
+  assert.equal(result.currentMonthPoints, 10)
 })

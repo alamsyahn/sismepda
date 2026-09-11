@@ -3,14 +3,10 @@ import test from "node:test"
 
 import { clampProfilePage, parseProfileDateRange } from "../lib/student-profile-query"
 
-test("parses valid calendar dates with local date semantics", () => {
+test("parses valid calendar dates as canonical Prisma DATE values", () => {
   const result = parseProfileDateRange("2026-08-26", "2026-08-31")
-  assert.equal(result.from?.getFullYear(), 2026)
-  assert.equal(result.from?.getMonth(), 7)
-  assert.equal(result.from?.getDate(), 26)
-  assert.equal(result.from?.getHours(), 0)
-  assert.equal(result.to?.getDate(), 31)
-  assert.equal(result.to?.getHours(), 23)
+  assert.equal(result.from?.toISOString(), "2026-08-26T00:00:00.000Z")
+  assert.equal(result.to?.toISOString(), "2026-08-31T00:00:00.000Z")
 })
 
 test("rejects impossible and reversed calendar ranges", () => {

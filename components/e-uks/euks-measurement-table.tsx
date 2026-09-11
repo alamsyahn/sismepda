@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatBmi, type BmiPoint } from "@/lib/euks"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
 type Props = {
   studentId: string
@@ -28,6 +29,7 @@ type Props = {
 
 /** History of measurements plus the form that appends a new one. */
 export function EuksMeasurementTable({ studentId, points, canEdit }: Props) {
+  const { today } = useSchoolTimeZone()
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -110,6 +112,7 @@ export function EuksMeasurementTable({ studentId, points, canEdit }: Props) {
                       id="measuredAt"
                       type="date"
                       required
+                      max={today()}
                       value={measuredAt}
                       onChange={(event) => setMeasuredAt(event.target.value)}
                     />

@@ -1,3 +1,5 @@
+import { formatSchoolDate, fromPrismaDate, schoolDateFromInstant, schoolMonthOf } from "@/lib/school-date"
+
 export type StudentAttendanceStatus = "HADIR" | "SAKIT" | "IZIN" | "ALFA" | "DISPENSASI"
 
 export type StudentAttendancePoint = {
@@ -5,13 +7,7 @@ export type StudentAttendancePoint = {
   status: StudentAttendanceStatus
 }
 
-const monthFormatter = new Intl.DateTimeFormat("id-ID", { month: "short" })
-
-function localMonthKey(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
-}
-
-export function summarizeStudentAttendance(records: StudentAttendancePoint[], now = new Date()) {
+export function summarizeStudentAttendance(records: StudentAttendancePoint[], now = new Date(), timeZone?: string) {
   const sorted = [...records].sort((a, b) => a.date.getTime() - b.date.getTime())
   const counts = { hadir: 0, sakit: 0, izin: 0, dispensasi: 0, alfa: 0 }
   const months = new Map<string, { key: string; label: string; hadir: number; tidakHadir: number }>()
@@ -19,10 +15,11 @@ export function summarizeStudentAttendance(records: StudentAttendancePoint[], no
   for (const record of sorted) {
     const status = record.status.toLowerCase() as keyof typeof counts
     counts[status] += 1
-    const key = localMonthKey(record.date)
+    const schoolDate = fromPrismaDate(record.date)
+    const key = schoolMonthOf(schoolDate)
     const month = months.get(key) ?? {
       key,
-      label: monthFormatter.format(record.date).replace(".", ""),
+      label: formatSchoolDate(schoolDate, { month: "short" }).replace(".", ""),
       hadir: 0,
       tidakHadir: 0,
     }
@@ -38,9 +35,9 @@ export function summarizeStudentAttendance(records: StudentAttendancePoint[], no
   }
 
   const lastAlfaDate = [...sorted].reverse().find((record) => record.status === "ALFA")?.date ?? null
-  const currentMonth = localMonthKey(now)
+  const currentMonth = schoolMonthOf(schoolDateFromInstant(now, timeZone))
   const currentMonthAbsences = sorted.filter(
-    (record) => localMonthKey(record.date) === currentMonth && record.status !== "HADIR",
+    (record) => schoolMonthOf(fromPrismaDate(record.date)) === currentMonth && record.status !== "HADIR",
   ).length
   const total = sorted.length
 

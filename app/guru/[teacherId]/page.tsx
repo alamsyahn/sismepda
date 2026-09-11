@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { TeacherEmploymentEditor } from "@/components/guru/teacher-employment-editor"
 import { TeacherScheduleManager } from "@/components/guru/teacher-schedule-manager"
+import { formatSchoolDate, fromPrismaDate } from "@/lib/school-date"
 
 const employmentLabels: Record<string, string> = { PNS: "PNS", PPPK: "PPPK", HONORER: "Honorer" }
 
@@ -67,7 +68,7 @@ export default async function TeacherProfilePage({ params }: { params: Promise<{
                   initial={{
                     employmentStatus: teacher.employmentStatus,
                     position: teacher.position,
-                    teachingSince: teacher.teachingSince ? teacher.teachingSince.toISOString().slice(0, 10) : "",
+                    teachingSince: teacher.teachingSince ? fromPrismaDate(teacher.teachingSince) : "",
                     belajarId: teacher.belajarId,
                     subjects: teacher.subjects.map((item) => item.name),
                   }}
@@ -81,7 +82,7 @@ export default async function TeacherProfilePage({ params }: { params: Promise<{
           <Metric title="Jam Mengajar / Minggu" value={String(load.totalPeriods)} detail={`Tersebar pada ${load.dayCount} hari`} icon={<CalendarClock />} />
           <Metric title="Kelas Diampu" value={String(load.classCount)} detail="Jumlah kelas dalam jadwal" icon={<Layers />} />
           <Metric title="Mata Pelajaran" value={String(load.subjectCount || teacher.subjects.length)} detail="Berdasarkan jadwal dan data guru" icon={<BookOpen />} />
-          <Metric title="TMT Mengajar" value={teacher.teachingSince ? formatDate(teacher.teachingSince) : "-"} detail="Terhitung mulai tanggal" icon={<ShieldCheck />} />
+          <Metric title="TMT Mengajar" value={teacher.teachingSince ? formatSchoolDate(fromPrismaDate(teacher.teachingSince), { day: "numeric", month: "short", year: "numeric" }) : "-"} detail="Terhitung mulai tanggal" icon={<ShieldCheck />} />
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
@@ -143,8 +144,4 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-right font-medium">{value}</span>
     </div>
   )
-}
-
-function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Jakarta" }).format(date)
 }

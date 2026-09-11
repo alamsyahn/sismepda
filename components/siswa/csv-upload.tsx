@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { changeCsvDelimiter } from "@/lib/csv"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 import {
   CSV_TEMPLATE,
   buildRegisteredStudentIdentifiers,
@@ -84,6 +85,7 @@ function toneBadge(tone: "valid" | "update" | "skip" | "error") {
 }
 
 export function CsvUpload() {
+  const { formatTime } = useSchoolTimeZone()
   const [delimiter, setDelimiter] = useState(",")
   const [behavior, setBehavior] = useState<CsvImportBehavior>("skip")
   const [fileText, setFileText] = useState<string | null>(null)
@@ -177,10 +179,7 @@ export function CsvUpload() {
       setFileInfo({
         name: file.name,
         size: file.size,
-        pickedAt: new Intl.DateTimeFormat("id-ID", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }).format(new Date()),
+        pickedAt: formatTime(new Date()),
       })
       setParseResult(result)
       setFileText(text)
@@ -188,7 +187,7 @@ export function CsvUpload() {
       void rowCount
     }
     reader.readAsText(file)
-  }, [behavior, classOptions, delimiter, registered])
+  }, [behavior, classOptions, delimiter, formatTime, registered])
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {

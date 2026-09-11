@@ -6,6 +6,7 @@ import {
   nutritionCategoryLabels,
   type NutritionCategory,
 } from "@/lib/bmi-for-age"
+import { parseSchoolDate, toPrismaDate } from "@/lib/school-date"
 
 /** The two E-UKS rights. Each maps to one boolean column on User. */
 export type EuksPermission = "euks.view" | "euks.edit"
@@ -118,9 +119,11 @@ export function formatBmi(bmi: number | null): string {
  * pengukuran terjadi sebelum kelahiran (data tidak konsisten).
  */
 export function ageInMonths(birthDate: string, measuredAt: string): number | null {
-  const birth = new Date(`${birthDate}T00:00:00Z`)
-  const measured = new Date(`${measuredAt}T00:00:00Z`)
-  if (Number.isNaN(birth.getTime()) || Number.isNaN(measured.getTime())) return null
+  const parsedBirth = parseSchoolDate(birthDate)
+  const parsedMeasured = parseSchoolDate(measuredAt)
+  if (!parsedBirth || !parsedMeasured) return null
+  const birth = toPrismaDate(parsedBirth)
+  const measured = toPrismaDate(parsedMeasured)
   if (measured < birth) return null
 
   let months =

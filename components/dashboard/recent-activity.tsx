@@ -1,8 +1,11 @@
+"use client"
+
 import { PencilLine, PlusCircle, Bell, History } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import type { ActivityItem } from "@/lib/dashboard-data"
 import { ProfileNameLink } from "@/components/profile/profile-name-link"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
 const typeMeta = {
   input: { icon: PlusCircle, className: "bg-[var(--chart-1)]/12 text-[var(--chart-1)]" },
@@ -11,6 +14,7 @@ const typeMeta = {
 }
 
 export function RecentActivity({ items }: { items: ActivityItem[] }) {
+  const { timeZoneLabel } = useSchoolTimeZone()
   return (
     <Card className="border-border/60 shadow-sm">
       <CardHeader>
@@ -44,7 +48,7 @@ export function RecentActivity({ items }: { items: ActivityItem[] }) {
                     <span className="font-medium text-primary">{item.className}</span>
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
-                    {item.time} WIB
+                    {item.time} {timeZoneLabel}
                   </p>
                 </div>
               </li>

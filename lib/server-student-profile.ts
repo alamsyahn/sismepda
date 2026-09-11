@@ -16,7 +16,7 @@ export type StudentHistoryFilter = {
 
 const allowedStatuses = new Set<AttendanceStatus>(["HADIR", "SAKIT", "IZIN", "ALFA", "DISPENSASI"])
 
-export async function readStudentProfile(user: UserIdentity, studentId: string, filter: StudentHistoryFilter) {
+export async function readStudentProfile(user: UserIdentity, studentId: string, filter: StudentHistoryFilter, timeZone: string) {
   const access = await getClassAccess(user)
   const student = await prisma.student.findFirst({
     where: { id: studentId, schoolClass: access.where },
@@ -71,8 +71,10 @@ export async function readStudentProfile(user: UserIdentity, studentId: string, 
 
   const summary = summarizeStudentAttendance(
     allRecords.map((record) => ({ date: record.attendanceDay.date, status: record.status })),
+    undefined,
+    timeZone,
   )
-  const pointSummary = summarizeViolationPoints(violationPoints)
+  const pointSummary = summarizeViolationPoints(violationPoints, undefined, timeZone)
 
   return {
     student,

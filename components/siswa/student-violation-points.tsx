@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation"
 import { AlertTriangle, Loader2, Plus, ShieldAlert } from "lucide-react"
 import { toast } from "sonner"
 import type { PointLevel } from "@/lib/student-violation-points"
-import { localDateValue } from "@/lib/date"
+import { formatSchoolDate, fromPrismaDate } from "@/lib/school-date"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -24,12 +25,13 @@ const categories = [
 type PointRecord = { id: string; category: string; points: number; note: string | null; occurredAt: Date; recordedBy: { id: string; name: string } }
 
 export function StudentViolationPoints({ studentId, summary, records }: { studentId: string; summary: { totalPoints: number; currentMonthPoints: number; recordCount: number; progress: number; level: PointLevel }; records: PointRecord[] }) {
+  const { today } = useSchoolTimeZone()
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [category, setCategory] = useState(categories[0][0])
   const [points, setPoints] = useState(String(categories[0][1]))
-  const [occurredAt, setOccurredAt] = useState(localDateValue())
+  const [occurredAt, setOccurredAt] = useState<string>(() => today())
   const [note, setNote] = useState("")
   const circumference = 2 * Math.PI * 50
   const dashOffset = circumference * (1 - summary.progress / 100)
@@ -52,4 +54,4 @@ export function StudentViolationPoints({ studentId, summary, records }: { studen
   </Card>
 }
 
-function formatDate(date: Date) { return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Jakarta" }).format(date) }
+function formatDate(date: Date) { return formatSchoolDate(fromPrismaDate(date), { day: "numeric", month: "short", year: "numeric" }) }

@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppLogo } from "@/components/layout/app-logo";
 import { useAppBranding } from "@/components/layout/app-branding-provider";
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider";
 import {
   Eye,
   EyeOff,
@@ -18,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { signIn } from "next-auth/react";
 
 export default function LoginPage() {
+  const { today } = useSchoolTimeZone();
   const router = useRouter();
   const branding = useAppBranding();
 
@@ -193,7 +195,7 @@ export default function LoginPage() {
           </div>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            &copy; {new Date().getFullYear()} {branding.appName}.{" "}
+            &copy; {today().slice(0, 4)} {branding.appName}.{" "}
             {branding.appFullName}.
           </p>
         </div>

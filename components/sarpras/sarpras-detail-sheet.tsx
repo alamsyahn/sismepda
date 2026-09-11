@@ -18,12 +18,13 @@ import { SarprasStatusBadge } from "@/components/sarpras/sarpras-status-badge"
 import type { SarprasItemRow } from "@/lib/server-sarpras"
 import {
   availabilityLabel,
-  formatSarprasDate,
   sarprasPriorityLabels,
   sarprasStatusColors,
   sarprasStatusLabels,
 } from "@/lib/sarpras"
 import { MAX_SARPRAS_PHOTO_BYTES, sarprasPhotoUrl } from "@/lib/sarpras-constants"
+import { formatSchoolDate, fromPrismaDate } from "@/lib/school-date"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
 type HistoryEntry = {
   id: string
@@ -54,6 +55,7 @@ export function SarprasDetailSheet({
   onPreviewPhoto,
   onChanged,
 }: Props) {
+  const { dateFromInstant, formatTime } = useSchoolTimeZone()
   const [history, setHistory] = useState<HistoryEntry[] | null>(null)
   const [uploading, setUploading] = useState(false)
 
@@ -159,7 +161,7 @@ export function SarprasDetailSheet({
                 ) : null}
                 <Metric
                   label="Pengadaan"
-                  value={item.acquisitionDate ? formatSarprasDate(item.acquisitionDate) : "—"}
+                  value={item.acquisitionDate ? formatSchoolDate(fromPrismaDate(item.acquisitionDate), { day: "numeric", month: "short", year: "numeric" }) : "—"}
                 />
                 <Metric label="Kode Inventaris" value={item.inventoryCode || "—"} />
               </div>
@@ -282,7 +284,7 @@ export function SarprasDetailSheet({
                       <li key={entry.id} className="border-l-2 border-border pl-3">
                         <p className="text-sm text-foreground">{entry.summary}</p>
                         <p className="text-xs text-muted-foreground">
-                          {formatSarprasDate(new Date(entry.createdAt))}
+                          {formatSchoolDate(dateFromInstant(new Date(entry.createdAt)), { day: "numeric", month: "short", year: "numeric" })}, {formatTime(new Date(entry.createdAt))}
                           {entry.actor ? ` · ${entry.actor.name}` : ""}
                         </p>
                       </li>

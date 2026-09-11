@@ -16,8 +16,10 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { BosEntryDialog, emptyDraft, type EntryDraft } from "@/components/bos/bos-entry-dialog"
 import { tableRowNumber } from "@/lib/table-row-number"
-import { formatBosDate, formatRupiah, type BosCategoryOption } from "@/lib/bos"
+import { formatRupiah, type BosCategoryOption } from "@/lib/bos"
+import { formatSchoolDate, fromPrismaDate } from "@/lib/school-date"
 import type { BosEntryRow } from "@/lib/server-bos"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
 type Props = {
   entries: BosEntryRow[]
@@ -26,37 +28,30 @@ type Props = {
   canEdit: boolean
 }
 
-/** yyyy-mm-dd for the date input, from a Date the server sent. */
-function dateInputValue(date: Date): string {
-  const value = new Date(date)
-  const month = String(value.getMonth() + 1).padStart(2, "0")
-  const day = String(value.getDate()).padStart(2, "0")
-  return `${value.getFullYear()}-${month}-${day}`
-}
-
 function toDraft(entry: BosEntryRow): EntryDraft {
   return {
     id: entry.id,
     categoryId: entry.categoryId,
     description: entry.description,
-    occurredAt: dateInputValue(entry.occurredAt),
+    occurredAt: fromPrismaDate(entry.occurredAt),
     amount: entry.amount ? String(entry.amount).replace(/\B(?=(\d{3})+(?!\d))/g, ".") : "",
     documents: entry.documents.map((doc) => ({ label: doc.label ?? "", url: doc.url })),
   }
 }
 
 export function BosEntryTable({ entries, categories, canCreate, canEdit }: Props) {
+  const { today } = useSchoolTimeZone()
   const router = useRouter()
   const [options, setOptions] = useState(categories)
   const [formOpen, setFormOpen] = useState(false)
-  const [draft, setDraft] = useState<EntryDraft>(emptyDraft)
+  const [draft, setDraft] = useState<EntryDraft>(() => emptyDraft(today()))
   const [documentsFor, setDocumentsFor] = useState<BosEntryRow | null>(null)
 
   const hasEntries = entries.length > 0
   const sorted = useMemo(() => entries, [entries])
 
   function openCreate() {
-    setDraft(emptyDraft())
+    setDraft(emptyDraft(today()))
     setFormOpen(true)
   }
 
@@ -161,7 +156,7 @@ export function BosEntryTable({ entries, categories, canCreate, canEdit }: Props
                         </span>
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {formatBosDate(entry.occurredAt)}
+                        {formatSchoolDate(fromPrismaDate(entry.occurredAt), { day: "numeric", month: "short", year: "numeric" })}
                       </TableCell>
                       <TableCell className="text-right font-medium tabular-nums text-foreground">
                         {formatRupiah(entry.amount)}

@@ -42,8 +42,9 @@ import {
   formatJam,
   type InputStatus,
 } from "@/lib/attendance-input"
-import { formatLongDate, localDateValue, parseDateValue } from "@/lib/date"
+import { formatSchoolDate, parseSchoolDate } from "@/lib/school-date"
 import { ProfileNameLink } from "@/components/profile/profile-name-link"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
 type ApiClass = { id: string; name: string; homeroomUser: { id: string; name: string } | null; students: Array<{ id: string; nis: string | null; nisn: string | null; name: string }>; attendanceDays: Array<{ submittedAt: string; updatedAt: string; submittedBy: { id: string; name: string }; attendances: Array<{ studentId: string; status: string; note: string | null }> }> }
 
@@ -52,7 +53,8 @@ function emptyCounts(): Record<InputStatus, number> {
 }
 
 export default function AbsensiInputPage() {
-  const [date, setDate] = useState(localDateValue())
+  const { timeZone, today } = useSchoolTimeZone()
+  const [date, setDate] = useState<string>(() => today())
   const [dateReady, setDateReady] = useState(false)
   const [requestedClass, setRequestedClass] = useState("")
   const [selectedClass, setSelectedClass] = useState("")
@@ -76,11 +78,11 @@ export default function AbsensiInputPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const requestedDate = params.get("date")
-    if (requestedDate) setDate(localDateValue(parseDateValue(requestedDate)))
+    if (requestedDate) setDate(parseSchoolDate(requestedDate) ?? today())
     setRequestedClass(params.get("classId") ?? "")
     setDateReady(true)
-  }, [])
-  const dateLabel = formatLongDate(date)
+  }, [today])
+  const dateLabel = formatSchoolDate(parseSchoolDate(date) ?? today())
   useEffect(() => {
     if (!dateReady) return
     fetch(`/api/attendance?date=${date}`)
@@ -104,11 +106,11 @@ export default function AbsensiInputPage() {
         setNotes(nextNotes)
         setHasSaved(Boolean(requested?.attendanceDays.length))
         setLastSaved(requested?.attendanceDays[0]?.updatedAt
-          ? { time: formatJam(requested.attendanceDays[0].updatedAt), by: requested.attendanceDays[0].submittedBy }
+          ? { time: formatJam(requested.attendanceDays[0].updatedAt, timeZone), by: requested.attendanceDays[0].submittedBy }
           : null)
       })
       .catch(() => toast.error("Gagal memuat kelas"))
-  }, [date, dateReady, requestedClass])
+  }, [date, dateReady, requestedClass, timeZone])
   const selected = classes.find((c) => c.id === selectedClass)
   const classOption = useMemo(
     () => selected ? { id: selected.id, name: selected.name, total: selected.students.length, homeroom: selected.homeroomUser?.name ?? "Admin", submitted: selected.attendanceDays.length > 0, submittedAt: selected.attendanceDays[0]?.updatedAt ?? null } : undefined,
@@ -156,12 +158,12 @@ export default function AbsensiInputPage() {
     setDirty(false)
     if (option?.submitted && option.submittedAt) {
       setHasSaved(true)
-      setLastSaved({ time: formatJam(option.submittedAt), by: option.submittedBy })
+      setLastSaved({ time: formatJam(option.submittedAt, timeZone), by: option.submittedBy })
     } else {
       setHasSaved(false)
       setLastSaved(null)
     }
-  }, [classes])
+  }, [classes, timeZone])
 
   const handleClassChange = useCallback(
     (id: string) => {
@@ -216,7 +218,7 @@ export default function AbsensiInputPage() {
       const response = await fetch("/api/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ classId: selectedClass, date, records: roster.map((s) => ({ studentId: s.id, status: (statuses[s.id] ?? "belum").toUpperCase(), note: notes[s.id] })) }) })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? "Absensi gagal disimpan")
-      const time = currentJam()
+      const time = currentJam(timeZone)
       setSaving(false)
       setSaveOpen(false)
       setSavedAt(time)
@@ -228,7 +230,7 @@ export default function AbsensiInputPage() {
         description: `${classOption?.name ?? ""} • pukul ${time}`,
       })
     } catch (error) { setSaving(false); toast.error(error instanceof Error ? error.message : "Absensi gagal disimpan") }
-  }, [classOption, selectedClass, date, roster, statuses, notes])
+  }, [classOption, selectedClass, date, roster, statuses, notes, timeZone])
 
   const confirmLeave = useCallback(() => {
     setUnsavedOpen(false)

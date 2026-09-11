@@ -28,7 +28,7 @@ import {
   type TooltipPlacement,
 } from "@/lib/attendance-trend"
 import { statusMeta } from "@/lib/dashboard-data"
-import { indonesiaDateValue } from "@/lib/date"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 import { cn } from "@/lib/utils"
 
 const periodOptions: Array<{ value: TrendGranularity; label: string }> = [
@@ -61,8 +61,9 @@ type ChartState = {
 }
 
 export function AttendanceTrendChart({ classes }: { classes: ClassOption[] }) {
-  const today = indonesiaDateValue()
-  const initialRange = defaultRange("harian", today, null)
+  const { today } = useSchoolTimeZone()
+  const schoolToday = today()
+  const initialRange = defaultRange("harian", schoolToday, null)
   const [granularity, setGranularity] = useState<TrendGranularity>("harian")
   const [measure, setMeasure] = useState<TrendMeasure>("jumlah")
   const [from, setFrom] = useState(initialRange.from)
@@ -115,7 +116,7 @@ export function AttendanceTrendChart({ classes }: { classes: ClassOption[] }) {
   const changeGranularity = (next: TrendGranularity) => {
     setGranularity(next)
     if (next !== "semester") {
-      const range = defaultRange(next, today, null)
+      const range = defaultRange(next, schoolToday, null)
       setFrom(range.from)
       setTo(range.to)
     }
@@ -208,11 +209,11 @@ export function AttendanceTrendChart({ classes }: { classes: ClassOption[] }) {
           ) : <div />}
           <div className="space-y-1.5">
             <Label htmlFor="trend-from">Tanggal mulai</Label>
-            <Input id="trend-from" type="date" value={from} max={to || today} disabled={granularity === "semester"} onChange={(event) => setFrom(event.target.value)} />
+            <Input id="trend-from" type="date" value={from} max={to || schoolToday} disabled={granularity === "semester"} onChange={(event) => setFrom(event.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="trend-to">Tanggal akhir</Label>
-            <Input id="trend-to" type="date" value={to} min={from} max={today} disabled={granularity === "semester"} onChange={(event) => setTo(event.target.value)} />
+            <Input id="trend-to" type="date" value={to} min={from} max={schoolToday} disabled={granularity === "semester"} onChange={(event) => setTo(event.target.value)} />
           </div>
           <p className="pb-1 text-xs text-muted-foreground lg:max-w-48">
             {granularity === "semester" ? "Rentang mengikuti semester aktif." : "Rentang tanggal dapat disesuaikan."}

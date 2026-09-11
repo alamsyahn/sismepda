@@ -1,4 +1,5 @@
 import type { AttendanceStatus } from "@/lib/dashboard-data"
+import { formatSchoolTime } from "@/lib/school-date"
 
 export type InputStatus = "belum" | AttendanceStatus
 
@@ -87,15 +88,12 @@ export const inputStatusConfig: Record<InputStatus, StatusConfig> = {
 }
 
 // Format "07:24" -> "07.24" (konvensi jam Indonesia)
-export function formatJam(time: string): string {
+export function formatJam(time: string, timeZone: string): string {
   const parsed = new Date(time)
-  if (!Number.isNaN(parsed.getTime())) return new Intl.DateTimeFormat("id-ID", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit", hour12: false }).format(parsed).replace(".", ":")
+  if (!Number.isNaN(parsed.getTime())) return formatSchoolTime(parsed, timeZone)
   return time.replace(".", ":")
 }
 
-export function currentJam(): string {
-  const d = new Date()
-  const h = String(d.getHours()).padStart(2, "0")
-  const m = String(d.getMinutes()).padStart(2, "0")
-  return `${h}.${m}`
+export function currentJam(timeZone: string, now = new Date()): string {
+  return formatSchoolTime(now, timeZone).replace(":", ".")
 }

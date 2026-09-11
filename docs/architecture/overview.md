@@ -18,7 +18,7 @@ Production: Internet → shared edge Caddy → app:3000 → shared internal DB n
 - `prisma/schema.prisma` and `prisma/migrations/`: current model and forward history; generated client is written to `app/generated/prisma/` and ignored.
 - `tests/`: Node test-runner unit/contract tests for pure domain logic and selected permission behavior. No browser E2E suite exists.
 
-`lib/nav.ts` is the canonical navigation tree, but navigation visibility never grants access. Auth proxy and server-side guards enforce it. All user-visible calendar behavior is intended to use `Asia/Jakarta`; date helpers and feature-specific strict parsers are important boundaries.
+`lib/nav.ts` is the canonical navigation tree, but navigation visibility never grants access. Auth proxy and server-side guards enforce it. `SchoolSetting.timeZone` is the canonical IANA timezone for projecting real timestamps and deriving “today”; it defaults to `Asia/Jakarta` and is passed explicitly on the server or exposed through `SchoolTimeZoneProvider` on the client. Business date-only values never depend on that timezone and use `lib/school-date.ts`.
 
 ## Major modules
 

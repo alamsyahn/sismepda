@@ -27,7 +27,7 @@ import {
   emptyLocationDraft,
   type LocationDraft,
 } from "@/components/sarpras/sarpras-location-dialog"
-import { localDateValue } from "@/lib/date"
+import { fromPrismaDate } from "@/lib/school-date"
 import type { SarprasStatus } from "@/lib/sarpras"
 import type { SarprasItemRow, SarprasLocationRow, SarprasOverview } from "@/lib/server-sarpras"
 import { sarprasPhotoUrl } from "@/lib/sarpras-constants"
@@ -40,7 +40,7 @@ type Props = {
 /** yyyy-mm-dd for the date input, from a Date the server sent. */
 function dateInputValue(date: Date | null): string {
   if (!date) return ""
-  return localDateValue(new Date(date))
+  return fromPrismaDate(date)
 }
 
 function toItemDraft(item: SarprasItemRow): ItemDraft {

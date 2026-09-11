@@ -1,4 +1,5 @@
 import { parseDelimitedText } from "@/lib/csv"
+import { parseSchoolDate } from "@/lib/school-date"
 
 const NISN_PATTERN = /^\d{10}$/
 const NIS_PATTERN = /^\d+$/
@@ -65,13 +66,9 @@ export function parseBirthDate(value: string): string | null | undefined {
     return undefined
   }
 
-  const date = new Date(Date.UTC(year, month - 1, day))
-  const valid =
-    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
-  if (!valid) return undefined
-
   const pad = (input: number) => String(input).padStart(2, "0")
-  return `${year}-${pad(month)}-${pad(day)}`
+  const canonical = `${year}-${pad(month)}-${pad(day)}`
+  return parseSchoolDate(canonical) ?? undefined
 }
 
 // ---------- Validasi form manual ----------
@@ -92,7 +89,7 @@ export function validateManual(values: {
   kelas: string
   tanggalLahir?: string
   jenisKelamin?: string
-}, classOptions: string[] = [], registered: RegisteredStudentIdentifiers = EMPTY_REGISTERED_STUDENT): ManualErrors {
+}, classOptions: string[] = [], registered: RegisteredStudentIdentifiers = EMPTY_REGISTERED_STUDENT, today?: string): ManualErrors {
   const errors: ManualErrors = {}
   const nis = values.nis.trim()
   const nisn = values.nisn.trim()
@@ -128,7 +125,7 @@ export function validateManual(values: {
     const parsed = parseBirthDate(values.tanggalLahir)
     if (parsed === undefined) {
       errors.tanggalLahir = "Tanggal lahir tidak valid"
-    } else if (parsed !== null && parsed > new Date().toISOString().slice(0, 10)) {
+    } else if (parsed !== null && today && parsed > today) {
       errors.tanggalLahir = "Tanggal lahir tidak boleh di masa depan"
     }
   }

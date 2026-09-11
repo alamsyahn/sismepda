@@ -33,10 +33,12 @@ import {
   type ManualErrors,
   type RegisteredStudentIdentifiers,
 } from "@/lib/student-input"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
 type SavedInfo = { nama: string; kelas: string }
 
 export function ManualInputForm() {
+  const { today } = useSchoolTimeZone()
   const [nis, setNis] = useState("")
   const [nisn, setNisn] = useState("")
   const [nama, setNama] = useState("")
@@ -58,7 +60,7 @@ export function ManualInputForm() {
 
   const nisRef = useRef<HTMLInputElement>(null)
 
-  const liveErrors = touched ? validateManual({ nis, nisn, nama, kelas, tanggalLahir, jenisKelamin }, classOptions, registered) : {}
+  const liveErrors = touched ? validateManual({ nis, nisn, nama, kelas, tanggalLahir, jenisKelamin }, classOptions, registered, today()) : {}
 
   function handleNisChange(value: string) {
     setNis(value.replace(/\D/g, "").slice(0, 30))
@@ -72,7 +74,7 @@ export function ManualInputForm() {
 
   async function runSave(mode: "single" | "again") {
     setTouched(true)
-    const validation = validateManual({ nis, nisn, nama, kelas, tanggalLahir, jenisKelamin }, classOptions, registered)
+    const validation = validateManual({ nis, nisn, nama, kelas, tanggalLahir, jenisKelamin }, classOptions, registered, today())
     setErrors(validation)
 
     if (validation.nis === "NIS sudah terdaftar pada siswa lain") {
@@ -257,7 +259,7 @@ export function ManualInputForm() {
                   id="tanggal-lahir"
                   type="date"
                   value={tanggalLahir}
-                  max={new Date().toISOString().slice(0, 10)}
+                  max={today()}
                   onChange={(e) => setTanggalLahir(e.target.value)}
                   onBlur={() => setTouched(true)}
                   aria-invalid={Boolean(tanggalLahirError)}

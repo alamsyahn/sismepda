@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { tableRowNumber } from "@/lib/table-row-number"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
 export type DirectoryEntry = {
   id: string
@@ -34,6 +35,7 @@ function csvCell(value: string) {
 }
 
 export function TeacherDirectory({ teachers }: { teachers: DirectoryEntry[] }) {
+  const { today } = useSchoolTimeZone()
   const [query, setQuery] = useState("")
   const [status, setStatus] = useState("all")
 
@@ -63,7 +65,7 @@ export function TeacherDirectory({ teachers }: { teachers: DirectoryEntry[] }) {
     const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }))
     const link = document.createElement("a")
     link.href = url
-    link.download = `direktori-guru-${new Date().toISOString().slice(0, 10)}.csv`
+    link.download = `direktori-guru-${today()}.csv`
     link.click()
     URL.revokeObjectURL(url)
   }

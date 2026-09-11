@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
 import { bosErrorResponse, requireBosPermission } from "@/lib/bos-access"
 import { formatRupiah, normalizeDocumentUrl } from "@/lib/bos"
+import { parseSchoolDate, toPrismaDate } from "@/lib/school-date"
 
 const documentSchema = z.object({
   url: z.string().trim().min(1).max(2000),
@@ -17,15 +18,6 @@ const payload = z.object({
   amount: z.coerce.number().min(0).max(999_999_999_999),
   documents: z.array(documentSchema).max(20).optional(),
 })
-
-/** Reject impossible calendar dates (2026-02-31) the regex lets through. */
-function strictDate(value: string) {
-  const [year, month, day] = value.split("-").map(Number)
-  const date = new Date(year, month - 1, day)
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null
-  date.setHours(0, 0, 0, 0)
-  return date
-}
 
 /** Validate every documentation URL up front; reject the whole entry on a bad one. */
 function normalizeDocuments(documents: Array<{ url: string; label: string | null }> | undefined) {
@@ -45,8 +37,10 @@ export async function POST(request: Request) {
     const viewer = await requireBosPermission("bos.create")
     const body = payload.parse(await request.json())
 
-    const occurredAt = strictDate(body.occurredAt)
-    if (!occurredAt) return NextResponse.json({ error: "Tanggal tidak valid" }, { status: 400 })
+    const schoolDate = parseSchoolDate(body.occurredAt)
+    if (!schoolDate) return NextResponse.json({ error: "Tanggal tidak valid" }, { status: 400 })
+
+    const occurredAt = toPrismaDate(schoolDate)
 
     const documents = normalizeDocuments(body.documents)
     if (!documents) {

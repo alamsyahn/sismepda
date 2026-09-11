@@ -109,16 +109,6 @@ function trimZero(value: number): string {
     : rounded.toFixed(1).replace(".", ",")
 }
 
-/** Consistent date rendering across the module. */
-export function formatBosDate(date: Date): string {
-  return new Intl.DateTimeFormat("id-ID", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "Asia/Jakarta",
-  }).format(date)
-}
-
 export type BosSummary = {
   initialBudget: number | null
   totalRealisasi: number

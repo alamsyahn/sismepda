@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { localDateValue } from "@/lib/date"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
 type Role = "ADMIN" | "GURU"
 type Option = { name: string; grade: string }
@@ -60,13 +60,15 @@ function ExportCard({
 }
 
 export function ExportCenter({ role, classes }: { role: Role; classes: Option[] }) {
+  const { today } = useSchoolTimeZone()
+  const schoolToday = today()
   const [delimiter, setDelimiter] = useState(",")
   const [studentClass, setStudentClass] = useState("all")
   const [studentStatus, setStudentStatus] = useState("all")
   const [teacherStatus, setTeacherStatus] = useState("all")
   const [assignment, setAssignment] = useState("all")
-  const [year, setYear] = useState(String(new Date().getFullYear()))
-  const [recapDate, setRecapDate] = useState(localDateValue())
+  const [year, setYear] = useState(() => schoolToday.slice(0, 4))
+  const [recapDate, setRecapDate] = useState<string>(schoolToday)
   const [recapClass, setRecapClass] = useState("all")
   const [grade, setGrade] = useState("all")
   const classOptions = [{ value: "all", label: "Semua kelas" }, ...classes.map((item) => ({ value: item.name, label: item.name }))]

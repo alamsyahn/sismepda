@@ -12,7 +12,6 @@ import {
   isTrendGranularity,
   jakartaDate,
   jakartaDateValue,
-  jakartaEndOfDay,
   missingPercentage,
   niceTrendMaximum,
   previousRange,
@@ -26,22 +25,13 @@ import {
   weekRangeLabel,
 } from "../lib/attendance-trend"
 
-test("tanggal diurai sebagai tengah malam waktu Jakarta", () => {
+test("tanggal diurai sebagai nilai Prisma DATE pada tengah malam UTC", () => {
   const date = jakartaDate("2026-08-31")
   assert.ok(date)
-  // 00:00 Jakarta = 17:00 UTC hari sebelumnya.
-  assert.equal(date.toISOString(), "2026-08-30T17:00:00.000Z")
-  // Bolak-balik harus stabil, bukan bergeser satu hari.
+  assert.equal(date.toISOString(), "2026-08-31T00:00:00.000Z")
   assert.equal(jakartaDateValue(date), "2026-08-31")
 })
 
-test("akhir hari Jakarta menutup rentang secara inklusif", () => {
-  const end = jakartaEndOfDay("2026-08-31")
-  assert.ok(end)
-  assert.equal(end.toISOString(), "2026-08-31T16:59:59.999Z")
-  // Absensi yang disimpan pada tanggal itu tetap masuk rentang.
-  assert.ok(jakartaDate("2026-08-31")! <= end)
-})
 
 test("tanggal tidak valid ditolak", () => {
   assert.equal(jakartaDate("2026-02-30"), null)

@@ -4,7 +4,7 @@ import type { Prisma } from "@/app/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
 import { requireSarprasEditor, sarprasErrorResponse } from "@/lib/sarpras-access"
-import { parseDateValue } from "@/lib/date"
+import { parseSchoolDate, toPrismaDate } from "@/lib/school-date"
 import { quantityError, type SarprasQuantities } from "@/lib/sarpras"
 
 const quantityFields = z.object({
@@ -58,6 +58,8 @@ export async function POST(request: Request) {
   try {
     const viewer = await requireSarprasEditor()
     const body = createPayload.parse(await request.json())
+    const acquisitionDateValue = body.acquisitionDate ? parseSchoolDate(body.acquisitionDate) : null
+    if (body.acquisitionDate && !acquisitionDateValue) return NextResponse.json({ error: "Tanggal perolehan tidak valid" }, { status: 400 })
 
     // The accounting identity is enforced on the server, not just in the form.
     const invalid = quantityError(body)
@@ -91,7 +93,7 @@ export async function POST(request: Request) {
           goodQuantity: body.goodQuantity,
           moderateQuantity: body.moderateQuantity,
           repairQuantity: body.repairQuantity,
-          acquisitionDate: body.acquisitionDate ? parseDateValue(body.acquisitionDate) : null,
+          acquisitionDate: acquisitionDateValue ? toPrismaDate(acquisitionDateValue) : null,
           inventoryCode: nullableText(body.inventoryCode) ?? null,
           description: nullableText(body.description) ?? null,
           priority: body.priority ?? null,
@@ -136,6 +138,8 @@ export async function PATCH(request: Request) {
   try {
     const viewer = await requireSarprasEditor()
     const body = updatePayload.parse(await request.json())
+    const acquisitionDateValue = body.acquisitionDate ? parseSchoolDate(body.acquisitionDate) : null
+    if (body.acquisitionDate && !acquisitionDateValue) return NextResponse.json({ error: "Tanggal perolehan tidak valid" }, { status: 400 })
 
     const item = await prisma.sarprasItem.findUnique({
       where: { id: body.id },
@@ -202,7 +206,7 @@ export async function PATCH(request: Request) {
           ...next,
           ...(body.acquisitionDate === undefined
             ? {}
-            : { acquisitionDate: body.acquisitionDate ? parseDateValue(body.acquisitionDate) : null }),
+            : { acquisitionDate: acquisitionDateValue ? toPrismaDate(acquisitionDateValue) : null }),
           ...(body.inventoryCode === undefined ? {} : { inventoryCode: nullableText(body.inventoryCode) }),
           ...(body.description === undefined ? {} : { description: nullableText(body.description) }),
           ...(body.priority === undefined ? {} : { priority: body.priority }),

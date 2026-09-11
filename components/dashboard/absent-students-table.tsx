@@ -25,7 +25,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { formatLongDate } from "@/lib/date"
+import { formatSchoolDate, parseSchoolDate } from "@/lib/school-date"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 import { statusMeta, type AbsentStudent } from "@/lib/dashboard-data"
 import {
   filterAbsenteesByStatuses,
@@ -52,6 +53,7 @@ const PER_PAGE_OPTIONS = [10, 25, 50] as const
 const HISTORY_KEYS: AbsentStatus[] = ["sakit", "izin", "alfa", "dispensasi"]
 
 export function AbsentStudentsTable({ students, date }: { students: AbsentStudent[]; date: string }) {
+  const { today } = useSchoolTimeZone()
   const [activeStatuses, setActiveStatuses] = useState<Set<AbsentStatus>>(
     () => new Set(HISTORY_KEYS),
   )
@@ -161,7 +163,7 @@ export function AbsentStudentsTable({ students, date }: { students: AbsentStuden
             </CardTitle>
             <CardDescription className="flex items-center gap-1.5 font-medium text-foreground/80">
               <CalendarDays className="size-3.5 text-primary" />
-              {formatLongDate(date)}
+              {formatSchoolDate(parseSchoolDate(date) ?? today())}
             </CardDescription>
             <p className="text-sm text-muted-foreground">
               Daftar siswa dengan status sakit, izin, dispensasi, atau alfa

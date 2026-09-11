@@ -12,15 +12,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 import { tableRowNumber } from "@/lib/table-row-number"
+import { startOfSchoolMonth } from "@/lib/school-date"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
 type Row = { id:string; nis:string|null; nisn:string|null; name:string; codes:string[]; statuses:string[]; counts:{hadir:number;sakit:number;izin:number;dispensasi:number;alfa:number}; totalAbsent:number }
 type Recap = { schoolClass:{id:string;name:string;homeroom:string}; from:string; to:string; dates:Array<{value:string;day:number;weekday:string;holiday:string|null;submitted:boolean}>; rows:Row[]; cumulativeRows:Row[]; schoolDayCount:number; submittedDayCount:number }
 const codeTone:Record<string,string>={A:"bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300",S:"bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",I:"bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300",D:"bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300","—":"text-muted-foreground","·":"bg-muted text-muted-foreground",L:"bg-primary/10 text-primary"}
 
 export function ClassPeriodRecap({ mode, classes, initialClassId, onClassChange }:{mode:"cumulative"|"matrix";classes:Array<{id:string;name:string}>;initialClassId?:string|null;onClassChange?:(classId:string)=>void}) {
-  const jakartaToday=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Jakarta",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())
-  const [year,month]=jakartaToday.split("-")
-  const [classId,setClassId]=useState(initialClassId??classes[0]?.id??""); const [from,setFrom]=useState(`${year}-${month}-01`); const [to,setTo]=useState(jakartaToday)
+  const { today } = useSchoolTimeZone()
+  const schoolToday = today()
+  const [classId,setClassId]=useState(initialClassId??classes[0]?.id??""); const [from,setFrom]=useState<string>(startOfSchoolMonth(schoolToday)); const [to,setTo]=useState<string>(schoolToday)
   const [query,setQuery]=useState(""); const [onlyAbsent,setOnlyAbsent]=useState(false); const [data,setData]=useState<Recap|null>(null); const [error,setError]=useState(""); const [loading,setLoading]=useState(false)
   const requestSequence=useRef(0)
   // Kelas dari URL menang: menekan "back"/"forward" harus mengembalikan kelas yang dulu dibuka.

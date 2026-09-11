@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { DateFilter } from "@/components/date-filter"
-import { formatLongDate, localDateValue } from "@/lib/date"
+import { formatSchoolDate, parseSchoolDate } from "@/lib/school-date"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 import { grades_list, type AbsentStudent, type ClassRecord } from "@/lib/dashboard-data"
 import { ExportButton } from "@/components/export/export-button"
 import { ClassPeriodRecap } from "@/components/rekap/class-period-recap"
@@ -37,6 +38,7 @@ export default function RekapKelasPage() {
 }
 
 function RekapKelasView() {
+  const { today } = useSchoolTimeZone()
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const view = readRecapView(searchParams)
@@ -45,7 +47,7 @@ function RekapKelasView() {
   const [classes, setClasses] = useState<ClassRecord[]>([])
   const [absentStudents, setAbsentStudents] = useState<AbsentStudent[]>([])
   const [holiday, setHoliday] = useState<{ id: string; name: string } | null>(null)
-  const [date, setDate] = useState(localDateValue())
+  const [date, setDate] = useState<string>(() => today())
   const [grade, setGrade] = useState("all")
   const [query, setQuery] = useState("")
 
@@ -94,7 +96,7 @@ function RekapKelasView() {
   const absenteesByClass = useMemo(() => indexAbsenteesByClass(absentStudents), [absentStudents])
 
   return <PageContainer>
-    <PageHeading title="Rekap Kelas" description={mode === "daily" ? `Rincian kehadiran dan status input pada ${formatLongDate(date)}.` : "Rekap ketidakhadiran siswa berdasarkan kelas dan rentang tanggal."}
+    <PageHeading title="Rekap Kelas" description={mode === "daily" ? `Rincian kehadiran dan status input pada ${formatSchoolDate(parseSchoolDate(date) ?? today())}.` : "Rekap ketidakhadiran siswa berdasarkan kelas dan rentang tanggal."}
       action={mode === "daily" ? <><DateFilter value={date} onChange={setDate} ariaLabel="Tanggal rekap kelas"/><ExportButton type="attendance_classes" params={{ date, grade, query }}/></> : undefined}/>
     <div className="mb-5 flex w-fit flex-wrap rounded-xl bg-muted p-1">
       <ModeButton active={mode === "daily"} onClick={() => applyView({ mode: "daily", classId: null })} icon={<CalendarDays/>}>Ringkasan Harian</ModeButton>

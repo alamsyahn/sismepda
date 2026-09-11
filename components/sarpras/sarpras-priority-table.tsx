@@ -11,10 +11,10 @@ import { cn } from "@/lib/utils"
 import { tableRowNumber } from "@/lib/table-row-number"
 import type { SarprasItemRow } from "@/lib/server-sarpras"
 import { sarprasPhotoUrl } from "@/lib/sarpras-constants"
+import { formatSchoolDate, fromPrismaDate } from "@/lib/school-date"
 import {
   availabilityLabel,
   availabilityText,
-  formatSarprasDate,
   sarprasPriorityLabels,
   sarprasStatusLabels,
   sarprasStatusOrder,
@@ -197,7 +197,7 @@ export function SarprasPriorityTable({
                         {availabilityLabel(item)}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {item.acquisitionDate ? formatSarprasDate(item.acquisitionDate) : "—"}
+                        {item.acquisitionDate ? formatSchoolDate(fromPrismaDate(item.acquisitionDate), { day: "numeric", month: "short", year: "numeric" }) : "—"}
                       </TableCell>
                       <TableCell className="max-w-64">
                         {item.description ? (

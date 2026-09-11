@@ -6,9 +6,6 @@ import {
   buildClassifiedBuckets,
   defaultRange,
   isTrendGranularity,
-  jakartaDate,
-  jakartaDateValue,
-  jakartaEndOfDay,
   previousRange,
   semesterStartValue,
   type TrendGranularity,
@@ -16,6 +13,7 @@ import {
   type ValidAttendanceStatus,
 } from "@/lib/attendance-trend"
 import type { requireUser } from "@/lib/auth-guards"
+import { differenceInSchoolDays, fromPrismaDate, parseSchoolDate, todayInSchoolTimeZone, toPrismaDate } from "@/lib/school-date"
 
 type User = Awaited<ReturnType<typeof requireUser>>
 const MAX_RANGE_DAYS = 800
@@ -29,6 +27,7 @@ function qualifiedTable(table: string) {
 export async function readAttendanceTrend(
   user: User,
   params: { granularity?: string | null; from?: string | null; to?: string | null; classId?: string | null },
+  timeZone: string,
 ): Promise<{ ok: true; data: TrendResponse } | { ok: false; status: number; error: string }> {
   const granularity: TrendGranularity = isTrendGranularity(params.granularity) ? params.granularity : "harian"
   const setting = await prisma.schoolSetting.findUnique({
@@ -39,15 +38,15 @@ export async function readAttendanceTrend(
     return { ok: false, status: 409, error: "Tahun ajaran pada Pengaturan belum valid, sehingga awal semester tidak dapat ditentukan" }
   }
 
-  const today = jakartaDateValue(new Date())
+  const today = todayInSchoolTimeZone(undefined, timeZone)
   const fallback = defaultRange(granularity, today, semesterStart)
   const from = granularity === "semester" ? fallback.from : (params.from?.trim() || fallback.from)
   const to = granularity === "semester" ? fallback.to : (params.to?.trim() || fallback.to)
-  const fromDate = jakartaDate(from)
-  const toDate = jakartaEndOfDay(to)
-  if (!fromDate || !toDate) return { ok: false, status: 400, error: "Tanggal tidak valid" }
-  if (fromDate > toDate) return { ok: false, status: 400, error: "Tanggal mulai tidak boleh setelah tanggal akhir" }
-  if ((toDate.getTime() - fromDate.getTime()) / 86_400_000 > MAX_RANGE_DAYS) {
+  const fromSchoolDate = parseSchoolDate(from)
+  const toSchoolDate = parseSchoolDate(to)
+  if (!fromSchoolDate || !toSchoolDate) return { ok: false, status: 400, error: "Tanggal tidak valid" }
+  if (fromSchoolDate > toSchoolDate) return { ok: false, status: 400, error: "Tanggal mulai tidak boleh setelah tanggal akhir" }
+  if (differenceInSchoolDays(fromSchoolDate, toSchoolDate) > MAX_RANGE_DAYS) {
     return { ok: false, status: 400, error: "Rentang tanggal terlalu panjang" }
   }
 
@@ -73,13 +72,14 @@ export async function readAttendanceTrend(
   if (classIds.length === 0) return { ok: true, data: emptyData() }
 
   const comparisonRange = previousRange(from, to)
-  const queryFrom = comparisonRange ? jakartaDate(comparisonRange.from)! : fromDate
+  const queryFrom = toPrismaDate(comparisonRange ? parseSchoolDate(comparisonRange.from)! : fromSchoolDate)
+  const toDate = toPrismaDate(toSchoolDate)
   const attendanceTable = qualifiedTable("Attendance")
   const attendanceDayTable = qualifiedTable("AttendanceDay")
   const [rows, submittedDays, holidays] = await Promise.all([
-    prisma.$queryRaw<Array<{ date: Date; classId: string; status: ValidAttendanceStatus; total: bigint }>>`
+    prisma.$queryRaw<Array<{ date: string; classId: string; status: ValidAttendanceStatus; total: bigint }>>`
       SELECT
-        date_trunc('day', d."date" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Jakarta') AS date,
+        d."date"::text AS date,
         d."classId" AS "classId",
         a."status"::text AS status,
         COUNT(*) AS total
@@ -101,10 +101,10 @@ export async function readAttendanceTrend(
   ])
 
   const normalizedRows = rows.map((row) => ({
-    date: row.date.toISOString().slice(0, 10), classId: row.classId, status: row.status, total: Number(row.total),
+    date: row.date, classId: row.classId, status: row.status, total: Number(row.total),
   }))
-  const normalizedDays = submittedDays.map((day) => ({ date: jakartaDateValue(day.date), classId: day.classId }))
-  const normalizedHolidays = holidays.map((holiday) => ({ date: jakartaDateValue(holiday.date), name: holiday.name }))
+  const normalizedDays = submittedDays.map((day) => ({ date: fromPrismaDate(day.date), classId: day.classId }))
+  const normalizedHolidays = holidays.map((holiday) => ({ date: fromPrismaDate(holiday.date), name: holiday.name }))
   const buildRange = (rangeFrom: string, rangeTo: string) => buildClassifiedBuckets({
     granularity, from: rangeFrom, to: rangeTo, today, expectedByClass,
     submittedDays: normalizedDays, rows: normalizedRows, holidays: normalizedHolidays,

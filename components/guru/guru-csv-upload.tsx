@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { changeCsvDelimiter } from "@/lib/csv"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 import {
   GURU_CSV_TEMPLATE,
   guruCsvStatusMeta,
@@ -79,6 +80,7 @@ function toneBadge(tone: "valid" | "skip" | "error") {
 }
 
 export function GuruCsvUpload() {
+  const { formatTime } = useSchoolTimeZone()
   const [delimiter, setDelimiter] = useState(",")
   const [fileText, setFileText] = useState<string | null>(null)
   const [registered, setRegistered] = useState<RegisteredGuruIdentifiers>({ nip: {}, email: {} })
@@ -160,17 +162,14 @@ export function GuruCsvUpload() {
       setFileInfo({
         name: file.name,
         size: file.size,
-        pickedAt: new Intl.DateTimeFormat("id-ID", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }).format(new Date()),
+        pickedAt: formatTime(new Date()),
       })
       setParseResult(result)
       setFileText(text)
       setReading(false)
     }
     reader.readAsText(file)
-  }, [delimiter, registered])
+  }, [delimiter, formatTime, registered])
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {

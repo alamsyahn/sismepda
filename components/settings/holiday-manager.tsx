@@ -8,13 +8,15 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { formatLongDate, localDateValue } from "@/lib/date"
+import { formatSchoolDate, requireSchoolDate } from "@/lib/school-date"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
 type Holiday = { id: string; date: string; name: string }
 
 export function HolidayManager() {
+  const { today } = useSchoolTimeZone()
   const [holidays, setHolidays] = useState<Holiday[]>([])
-  const [date, setDate] = useState(localDateValue())
+  const [date, setDate] = useState<string>(() => today())
   const [name, setName] = useState("")
   const [saving, setSaving] = useState(false)
 
@@ -29,7 +31,7 @@ export function HolidayManager() {
       const response = await fetch("/api/admin/holidays", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ date, name }) })
       if (!response.ok) throw new Error()
       const saved = await response.json()
-      setHolidays((current) => [...current.filter((item) => item.id !== saved.id && item.date.slice(0, 10) !== saved.date.slice(0, 10)), saved].sort((a, b) => a.date.localeCompare(b.date)))
+      setHolidays((current) => [...current.filter((item) => item.id !== saved.id && item.date !== saved.date), saved].sort((a, b) => a.date.localeCompare(b.date)))
       setName("")
       toast.success("Hari libur disimpan")
     } catch { toast.error("Hari libur gagal disimpan") }
@@ -60,7 +62,7 @@ export function HolidayManager() {
             <p className="rounded-lg bg-muted/50 px-4 py-6 text-center text-sm text-muted-foreground">Belum ada hari libur yang ditandai.</p>
           ) : holidays.map((holiday) => (
             <div key={holiday.id} className="flex items-center justify-between gap-3 rounded-lg border border-border/70 px-4 py-3">
-              <div><p className="font-medium">{holiday.name}</p><p className="text-sm text-muted-foreground">{formatLongDate(holiday.date.slice(0, 10))}</p></div>
+              <div><p className="font-medium">{holiday.name}</p><p className="text-sm text-muted-foreground">{formatSchoolDate(requireSchoolDate(holiday.date))}</p></div>
               <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" onClick={() => removeHoliday(holiday.id)} aria-label={`Hapus ${holiday.name}`}><Trash2 className="size-4" /></Button>
             </div>
           ))}

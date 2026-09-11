@@ -16,6 +16,7 @@ import {
   parseStatusColors,
   serializeStatusColors,
 } from "@/lib/attendance-status-colors"
+import { isIanaTimeZone } from "@/lib/school-date"
 
 const hexColor = z.string().transform((value, ctx) => {
   const normalized = normalizeHexColor(value)
@@ -34,6 +35,7 @@ const settingInput = z.object({
   npsn: z.string().trim().max(30).transform((value) => value || null),
   academicYear: z.string().trim().min(1).max(20),
   semester: z.string().trim().min(1).max(30),
+  timeZone: z.string().trim().refine(isIanaTimeZone, "Zona waktu harus berupa nama IANA yang valid"),
   attendanceOpenTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   attendanceCloseTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   autoLock: z.boolean(),
@@ -57,6 +59,7 @@ const settingSelect = {
   npsn: true,
   academicYear: true,
   semester: true,
+  timeZone: true,
   attendanceOpenTime: true,
   attendanceCloseTime: true,
   autoLock: true,
@@ -75,6 +78,7 @@ function settingResponse(setting: {
   npsn: string | null
   academicYear: string
   semester: string
+  timeZone: string
   attendanceOpenTime: string
   attendanceCloseTime: string
   autoLock: boolean

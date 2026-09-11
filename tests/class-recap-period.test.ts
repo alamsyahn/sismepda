@@ -13,8 +13,8 @@ test("accepts a valid period up to 31 days", () => {
   assert.equal(range.ok, true)
   if (range.ok) {
     assert.equal(range.dates.length, 31)
-    assert.equal(range.from.toISOString(), "2026-07-31T17:00:00.000Z")
-    assert.equal(range.to.toISOString(), "2026-08-30T17:00:00.000Z")
+    assert.equal(range.from.toISOString(), "2026-08-01T00:00:00.000Z")
+    assert.equal(range.to.toISOString(), "2026-08-31T00:00:00.000Z")
   }
 })
 
@@ -39,15 +39,15 @@ test("builds cumulative counts and distinguishes missing input from attendance",
     { id: "1", nis: "101", nisn: null, name: "Ahmad" },
     { id: "2", nis: "102", nisn: null, name: "Siti" },
   ]
-  const dates = [new Date(2026, 7, 3), new Date(2026, 7, 4), new Date(2026, 7, 5)]
+  const dates = [new Date("2026-08-03T00:00:00.000Z"), new Date("2026-08-04T00:00:00.000Z"), new Date("2026-08-05T00:00:00.000Z")]
   const result = buildClassRecap({
     students,
     dates,
     holidays: new Set(["2026-08-05"]),
     submittedDates: new Set(["2026-08-03"]),
     records: [
-      { studentId: "1", date: new Date(2026, 7, 3), status: "ALFA" },
-      { studentId: "2", date: new Date(2026, 7, 3), status: "HADIR" },
+      { studentId: "1", date: new Date("2026-08-03T00:00:00.000Z"), status: "ALFA" },
+      { studentId: "2", date: new Date("2026-08-03T00:00:00.000Z"), status: "HADIR" },
     ],
   })
 
@@ -66,22 +66,22 @@ test("sorts cumulative rows by most absences then name", () => {
       { id: "a", nis: null, nisn: null, name: "Zaki" },
       { id: "b", nis: null, nisn: null, name: "Ahmad" },
     ],
-    dates: [new Date(2026, 7, 3)],
+    dates: [new Date("2026-08-03T00:00:00.000Z")],
     holidays: new Set(),
     submittedDates: new Set(["2026-08-03"]),
-    records: [{ studentId: "a", date: new Date(2026, 7, 3), status: "SAKIT" }],
+    records: [{ studentId: "a", date: new Date("2026-08-03T00:00:00.000Z"), status: "SAKIT" }],
   })
   assert.deepEqual(result.cumulativeRows.map((row) => row.name), ["Zaki", "Ahmad"])
 })
 
 
-test("matches records created from UTC timestamps to local calendar dates", () => {
+test("matches canonical Prisma DATE values without timezone projection", () => {
   const result = buildClassRecap({
     students: [{ id: "a", nis: null, nisn: null, name: "Ahmad" }],
-    dates: [new Date(2026, 7, 1)],
+    dates: [new Date("2026-08-01T00:00:00.000Z")],
     holidays: new Set(),
     submittedDates: new Set(["2026-08-01"]),
-    records: [{ studentId: "a", date: new Date("2026-07-31T17:00:00.000Z"), status: "SAKIT" }],
+    records: [{ studentId: "a", date: new Date("2026-08-01T00:00:00.000Z"), status: "SAKIT" }],
   })
   assert.equal(result.rows[0].codes[0], "S")
 })
@@ -92,11 +92,11 @@ test("hari terisi parsial: siswa tanpa record tetap 'belum diinput', bukan hadir
       { id: "a", nis: null, nisn: null, name: "Andi" },
       { id: "b", nis: null, nisn: null, name: "Budi" },
     ],
-    dates: [new Date(2026, 7, 3)],
+    dates: [new Date("2026-08-03T00:00:00.000Z")],
     holidays: new Set(),
     submittedDates: new Set(["2026-08-03"]),
     // Hanya Andi yang diisi; Budi belum.
-    records: [{ studentId: "a", date: new Date(2026, 7, 3), status: "SAKIT" }],
+    records: [{ studentId: "a", date: new Date("2026-08-03T00:00:00.000Z"), status: "SAKIT" }],
   })
 
   assert.deepEqual(result.rows[0].codes, ["S"])
@@ -108,10 +108,10 @@ test("hari terisi parsial: siswa tanpa record tetap 'belum diinput', bukan hadir
 test("does not count a submitted attendance day when it is a holiday", () => {
   const result = buildClassRecap({
     students: [{ id: "a", nis: null, nisn: null, name: "Ahmad" }],
-    dates: [new Date("2026-08-16T17:00:00.000Z")],
+    dates: [new Date("2026-08-17T00:00:00.000Z")],
     holidays: new Set(["2026-08-17"]),
     submittedDates: new Set(["2026-08-17"]),
-    records: [{ studentId: "a", date: new Date("2026-08-16T17:00:00.000Z"), status: "ALFA" }],
+    records: [{ studentId: "a", date: new Date("2026-08-17T00:00:00.000Z"), status: "ALFA" }],
   })
   assert.equal(result.rows[0].codes[0], "L")
   assert.equal(result.schoolDayCount, 0)

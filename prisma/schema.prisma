@@ -59,7 +59,7 @@ model User {
   canManageTeacherProfiles Boolean @default(false)
   employmentStatus EmploymentStatus?
   position String?
-  teachingSince DateTime?
+  teachingSince DateTime? @db.Date
   belajarId String?
   teacherSubjects TeacherSubject[]
   teachingAssignments TeachingAssignment[]
@@ -125,7 +125,7 @@ model AdditionalDuty {
   userId String
   title String
   note String?
-  startDate DateTime?
+  startDate DateTime? @db.Date
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId])
 }
@@ -147,7 +147,7 @@ model Student {
   nisn String? @unique
   name String
   active Boolean @default(true)
-  /// Dasar perhitungan umur untuk IMT-menurut-umur.
+  /// Tanggal lahir — dasar perhitungan umur untuk IMT-menurut-umur.
   /// Nullable: data historis belum memilikinya.
   birthDate DateTime? @db.Date
   /// Nullable untuk alasan yang sama seperti birthDate.
@@ -167,7 +167,7 @@ model StudentViolationPoint {
   category String
   points Int
   note String?
-  occurredAt DateTime
+  occurredAt DateTime @db.Date
   createdAt DateTime @default(now())
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
   recordedBy User @relation(fields: [recordedById], references: [id])
@@ -290,7 +290,7 @@ model EuksComplaintOption {
 
 model AttendanceDay {
   id String @id @default(cuid())
-  date DateTime
+  date DateTime @db.Date
   classId String
   submittedById String
   submittedAt DateTime @default(now())
@@ -327,6 +327,7 @@ model SchoolSetting {
   npsn String?
   academicYear String @default("2025/2026")
   semester String @default("Ganjil")
+  timeZone String @default("Asia/Jakarta")
   attendanceOpenTime String @default("06:30")
   attendanceCloseTime String @default("08:00")
   autoLock Boolean @default(true)
@@ -336,7 +337,7 @@ model SchoolSetting {
 
 model SchoolHoliday {
   id String @id @default(cuid())
-  date DateTime @unique
+  date DateTime @db.Date @unique
   name String
   createdAt DateTime @default(now())
 }
@@ -416,7 +417,7 @@ model BosEntry {
   id String @id @default(cuid())
   categoryId String
   description String
-  occurredAt DateTime
+  occurredAt DateTime @db.Date
   /** Realisasi rupiah — decimal, never float. */
   amount Decimal @db.Decimal(14, 2)
   createdById String?
@@ -503,7 +504,7 @@ model SarprasItem {
   goodQuantity Int @default(0)
   moderateQuantity Int @default(0)
   repairQuantity Int @default(0)
-  acquisitionDate DateTime?
+  acquisitionDate DateTime? @db.Date
   inventoryCode String?
   description String?
   priority SarprasPriority?

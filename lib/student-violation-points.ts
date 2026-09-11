@@ -1,3 +1,5 @@
+import { fromPrismaDate, schoolDateFromInstant, schoolMonthOf } from "@/lib/school-date"
+
 export type ViolationPointRecord = { points: number; occurredAt: Date }
 
 export type PointLevel = {
@@ -15,15 +17,11 @@ export function pointLevel(total: number): PointLevel {
   return { key: "safe", label: "Baik", color: "var(--chart-1)", softColor: "bg-[var(--chart-1)]/12 text-[var(--chart-1)]" }
 }
 
-function localMonthKey(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
-}
-
-export function summarizeViolationPoints(records: ViolationPointRecord[], now = new Date()) {
+export function summarizeViolationPoints(records: ViolationPointRecord[], now = new Date(), timeZone?: string) {
   const totalPoints = records.reduce((sum, record) => sum + record.points, 0)
-  const month = localMonthKey(now)
+  const month = schoolMonthOf(schoolDateFromInstant(now, timeZone))
   const currentMonthPoints = records
-    .filter((record) => localMonthKey(record.occurredAt) === month)
+    .filter((record) => schoolMonthOf(fromPrismaDate(record.occurredAt)) === month)
     .reduce((sum, record) => sum + record.points, 0)
   return {
     totalPoints,

@@ -17,6 +17,7 @@ import { genderLabels, GENDER_VALUES } from "@/lib/student-input"
 import { ExportButton } from "@/components/export/export-button"
 import { tableRowNumber } from "@/lib/table-row-number"
 import { ProfileNameLink } from "@/components/profile/profile-name-link"
+import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
 type Student = { id: string; nis: string | null; nisn: string | null; name: string; className: string; active: boolean; birthDate: string | null; gender: "LAKI_LAKI" | "PEREMPUAN" | null }
 type EditValues = { nis: string; nisn: string; name: string; className: string; birthDate: string; gender: string }
@@ -24,6 +25,7 @@ type SortKey = "name" | "nis" | "nisn" | "className" | "active"
 type SortDirection = "asc" | "desc"
 
 export function StudentManager() {
+  const { today } = useSchoolTimeZone()
   const [students, setStudents] = useState<Student[]>([])
   const [classes, setClasses] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -179,7 +181,7 @@ export function StudentManager() {
 
       <Dialog open={Boolean(editing)} onOpenChange={(open) => { if (!open && !saving) setEditing(null) }}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Edit data siswa</DialogTitle><DialogDescription>Perubahan identitas dan kelas tidak menghapus riwayat absensi.</DialogDescription></DialogHeader>
         <div className="space-y-4"><div className="space-y-1.5"><Label htmlFor="edit-name">Nama lengkap</Label><Input id="edit-name" value={values.name} onChange={(event) => setValues((current) => ({ ...current, name: event.target.value }))} /></div><div className="grid grid-cols-2 gap-3"><div className="space-y-1.5"><Label htmlFor="edit-nis">NIS</Label><Input id="edit-nis" inputMode="numeric" maxLength={30} value={values.nis} onChange={(event) => setValues((current) => ({ ...current, nis: event.target.value.replace(/\D/g, "").slice(0, 30) }))} /></div><div className="space-y-1.5"><Label htmlFor="edit-nisn">NISN</Label><Input id="edit-nisn" inputMode="numeric" maxLength={10} value={values.nisn} onChange={(event) => setValues((current) => ({ ...current, nisn: event.target.value.replace(/\D/g, "").slice(0, 10) }))} /></div></div><p className="text-xs text-muted-foreground">Minimal salah satu NIS atau NISN wajib diisi.</p><div className="space-y-1.5"><Label>Kelas</Label><Select value={values.className} onValueChange={(value) => value && setValues((current) => ({ ...current, className: value }))}><SelectTrigger><SelectValue placeholder="Pilih kelas" /></SelectTrigger><SelectContent>{classes.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent></Select></div>
-        <div className="grid grid-cols-2 gap-3"><div className="space-y-1.5"><Label htmlFor="edit-birth-date">Tanggal lahir</Label><Input id="edit-birth-date" type="date" max={new Date().toISOString().slice(0, 10)} value={values.birthDate} onChange={(event) => setValues((current) => ({ ...current, birthDate: event.target.value }))} /></div><div className="space-y-1.5"><Label>Jenis kelamin</Label><Select value={values.gender} onValueChange={(value) => value && setValues((current) => ({ ...current, gender: value }))}><SelectTrigger><SelectValue placeholder="Pilih" /></SelectTrigger><SelectContent>{GENDER_VALUES.map((value) => <SelectItem key={value} value={value}>{genderLabels[value]}</SelectItem>)}</SelectContent></Select></div></div>
+        <div className="grid grid-cols-2 gap-3"><div className="space-y-1.5"><Label htmlFor="edit-birth-date">Tanggal lahir</Label><Input id="edit-birth-date" type="date" max={today()} value={values.birthDate} onChange={(event) => setValues((current) => ({ ...current, birthDate: event.target.value }))} /></div><div className="space-y-1.5"><Label>Jenis kelamin</Label><Select value={values.gender} onValueChange={(value) => value && setValues((current) => ({ ...current, gender: value }))}><SelectTrigger><SelectValue placeholder="Pilih" /></SelectTrigger><SelectContent>{GENDER_VALUES.map((value) => <SelectItem key={value} value={value}>{genderLabels[value]}</SelectItem>)}</SelectContent></Select></div></div>
         <p className="text-xs text-muted-foreground">Tanggal lahir dan jenis kelamin opsional; dipakai E-UKS untuk status gizi berdasarkan IMT-menurut-umur.</p></div>
         <DialogFooter><DialogClose render={<Button variant="outline" disabled={saving} />}>Batal</DialogClose><Button onClick={saveEdit} disabled={saving}>{saving ? <Loader2 className="size-4 animate-spin" /> : null}{saving ? "Menyimpan..." : "Simpan Perubahan"}</Button></DialogFooter>
       </DialogContent></Dialog>
