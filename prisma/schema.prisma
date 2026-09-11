@@ -79,6 +79,7 @@ model User {
   canViewEuks Boolean @default(false)
   canEditEuks Boolean @default(false)
   euksVisitsRecorded EuksVisit[] @relation("EuksVisitRecorder")
+  healthMeasurementsRecorded StudentHealthMeasurement[] @relation("HealthMeasurementRecorder")
 }
 
 model Subject {
@@ -143,6 +144,7 @@ model Student {
   attendances Attendance[]
   violationPoints StudentViolationPoint[]
   euksVisits EuksVisit[]
+  healthMeasurements StudentHealthMeasurement[]
 }
 
 model StudentViolationPoint {
@@ -178,6 +180,29 @@ model EuksVisit {
 
   @@index([occurredAt])
   @@index([studentId, occurredAt])
+}
+
+/// Satu kali pengukuran tinggi & berat badan siswa. Historis: setiap
+/// pengukuran menjadi baris baru sehingga tren IMT dapat dihitung.
+/// IMT tidak pernah disimpan — selalu diturunkan dari tinggi & berat.
+model StudentHealthMeasurement {
+  id String @id @default(cuid())
+  studentId String
+  /// Tanggal pengukuran — tanggal sekolah, bukan timestamp.
+  measuredAt DateTime @db.Date
+  /// Tinggi badan dalam sentimeter.
+  heightCm Decimal @db.Decimal(5, 1)
+  /// Berat badan dalam kilogram.
+  weightKg Decimal @db.Decimal(5, 1)
+  note String?
+  recordedById String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  recordedBy User? @relation("HealthMeasurementRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@unique([studentId, measuredAt])
+  @@index([studentId, measuredAt])
 }
 
 model AttendanceDay {

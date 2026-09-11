@@ -79,3 +79,69 @@ export function countVisitTerms(values: string[]): VisitTermCount[] {
     .map(([term, count]) => ({ term: visitTermLabel(term), count }))
     .sort((a, b) => (b.count - a.count) || a.term.localeCompare(b.term, "id"))
 }
+
+/** One height/weight measurement, already converted to plain numbers. */
+export type HealthMeasurement = {
+  id: string
+  measuredAt: string
+  heightCm: number
+  weightKg: number
+  note: string | null
+}
+
+/**
+ * BMI = kg / m². Always derived, never stored, so a corrected height or weight
+ * can never leave a stale IMT behind. Returns null when either input is
+ * non-positive, which would make the ratio meaningless.
+ */
+export function calculateBmi(heightCm: number, weightKg: number): number | null {
+  if (!(heightCm > 0) || !(weightKg > 0)) return null
+  const heightM = heightCm / 100
+  return weightKg / (heightM * heightM)
+}
+
+/** IMT is conventionally shown with one decimal. */
+export function formatBmi(bmi: number | null): string {
+  return bmi === null ? "-" : bmi.toFixed(1)
+}
+
+/**
+ * Nutritional status categories used by the "Status Gizi" card.
+ *
+ * The clinically correct classification for school-age children is BMI-for-age
+ * against a WHO/Permenkes LMS reference, which this repository does not have
+ * (see TD-011), and it additionally needs the student's age and sex, which the
+ * Student model does not store. Until that reference exists this returns
+ * "unknown" rather than a number dressed up as a diagnosis.
+ */
+export type NutritionStatus = "unknown"
+
+export function nutritionStatus(): NutritionStatus {
+  return "unknown"
+}
+
+export function nutritionStatusLabel(status: NutritionStatus): string {
+  return status === "unknown" ? "Belum dapat ditentukan" : status
+}
+
+/** A measurement plus its derived IMT, newest first, for chart and table. */
+export type BmiPoint = {
+  id: string
+  measuredAt: string
+  heightCm: number
+  weightKg: number
+  bmi: number | null
+  note: string | null
+}
+
+export function toBmiSeries(measurements: HealthMeasurement[]): BmiPoint[] {
+  return measurements
+    .map((item) => ({ ...item, bmi: calculateBmi(item.heightCm, item.weightKg) }))
+    .sort((a, b) => a.measuredAt.localeCompare(b.measuredAt))
+}
+
+/** The most recent measurement drives the three "saat ini" summary cards. */
+export function latestMeasurement(measurements: HealthMeasurement[]): HealthMeasurement | null {
+  if (measurements.length === 0) return null
+  return measurements.reduce((latest, item) => (item.measuredAt > latest.measuredAt ? item : latest))
+}

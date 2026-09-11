@@ -112,3 +112,13 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Direction:** Obtain an official LMS/standard-deviation dataset (WHO growth reference 5-19 years, or the Kemenkes tables) with a recorded citation, store it as versioned reference data, and select the curve by student sex once `Student` carries that attribute.
 - **Exit criteria:** Reference values are loaded from a cited dataset, unit tests verify known reference points against the published tables, and the chart renders an explicit empty state whenever the dataset is unavailable.
 
+
+## TD-012 — Student has no birth date or sex, blocking BMI-for-age
+
+- **Area / severity:** E-UKS health data — **High**
+- **Current condition:** `/e-uks/pantauan-kesehatan` shows "Status Gizi (berdasarkan IMT)" as "Belum dapat ditentukan" because `nutritionStatus()` cannot classify without them.
+- **Evidence:** `model Student` in `prisma/schema.prisma` has only `nis`, `nisn`, `name`, `active`, `classId`; a repository-wide search for `gender`/`birthDate`/`tanggalLahir` returns no matches.
+- **Impact:** Nutritional status and the KMS charts cannot be computed. BMI-for-age needs age in months and sex; adult cut-offs (18.5/25/30) are clinically invalid for school-age children, so no classification can be shown at all.
+- **Reason:** SISMEPDA was built for attendance, where student demographics were never required.
+- **Direction:** Add `birthDate` (`@db.Date`) and a `gender` enum to `Student` as nullable columns, expose them in the existing student management forms and import, then compute age in months at measurement date.
+- **Exit criteria:** Both fields exist and are populated for active students, `nutritionStatus()` classifies against the TD-011 reference dataset, and students still missing the data render an explicit empty state rather than a wrong category.

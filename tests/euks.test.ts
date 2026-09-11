@@ -2,11 +2,17 @@ import { strict as assert } from "node:assert"
 import { test } from "node:test"
 
 import {
+  calculateBmi,
   canViewEuks,
   countVisitTerms,
   euksCapabilities,
+  formatBmi,
   hasEuksPermission,
+  latestMeasurement,
   normalizeVisitTerm,
+  nutritionStatus,
+  nutritionStatusLabel,
+  toBmiSeries,
   visitTermLabel,
 } from "../lib/euks"
 
@@ -75,3 +81,44 @@ test("jumlah sama diurutkan alfabetis agar stabil", () => {
   ])
 })
 
+
+test("IMT dihitung dari tinggi dan berat, bukan disimpan", () => {
+  const bmi = calculateBmi(170, 60)
+  assert.ok(bmi !== null)
+  assert.equal(Math.round((bmi as number) * 100) / 100, 20.76)
+})
+
+test("IMT null bila tinggi atau berat tidak masuk akal", () => {
+  assert.equal(calculateBmi(0, 60), null)
+  assert.equal(calculateBmi(170, 0), null)
+  assert.equal(calculateBmi(-170, 60), null)
+})
+
+test("formatBmi menampilkan satu desimal dan strip untuk null", () => {
+  assert.equal(formatBmi(20.76), "20.8")
+  assert.equal(formatBmi(null), "-")
+})
+
+test("status gizi belum dapat ditentukan tanpa referensi IMT-menurut-umur", () => {
+  assert.equal(nutritionStatus(), "unknown")
+  assert.equal(nutritionStatusLabel(nutritionStatus()), "Belum dapat ditentukan")
+})
+
+test("toBmiSeries mengurutkan menaik dan menurunkan IMT tiap titik", () => {
+  const series = toBmiSeries([
+    { id: "b", measuredAt: "2026-03-01", heightCm: 170, weightKg: 60, note: null },
+    { id: "a", measuredAt: "2026-01-01", heightCm: 165, weightKg: 55, note: null },
+  ])
+  assert.deepEqual(series.map((point) => point.id), ["a", "b"])
+  assert.ok(series.every((point) => point.bmi !== null))
+})
+
+test("latestMeasurement memilih tanggal paling baru, bukan urutan array", () => {
+  const latest = latestMeasurement([
+    { id: "a", measuredAt: "2026-01-01", heightCm: 165, weightKg: 55, note: null },
+    { id: "b", measuredAt: "2026-03-01", heightCm: 170, weightKg: 60, note: null },
+    { id: "c", measuredAt: "2026-02-01", heightCm: 168, weightKg: 58, note: null },
+  ])
+  assert.equal(latest?.id, "b")
+  assert.equal(latestMeasurement([]), null)
+})

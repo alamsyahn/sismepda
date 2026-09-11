@@ -13,6 +13,7 @@ export type AuditEntity =
   | "SarprasItemType"
   | "SarprasItem"
   | "EuksVisit"
+  | "StudentHealthMeasurement"
 
 export type AuditAction =
   | "WORKBOOK_LINK_UPDATED"
@@ -37,6 +38,8 @@ export type AuditAction =
   | "EUKS_VISIT_CREATED"
   | "EUKS_VISIT_UPDATED"
   | "EUKS_VISIT_DELETED"
+  | "EUKS_MEASUREMENT_CREATED"
+  | "EUKS_MEASUREMENT_DELETED"
 
 export type AuditEntry = {
   actorId: string | null
