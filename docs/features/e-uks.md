@@ -112,6 +112,24 @@ call it, so the bands on the chart and the z-score behind a category can never
 diverge. A point sitting between the median and -1 SD is exactly a point whose
 z-score is between 0 and -1.
 
+### Select triggers must map value to label
+
+Base UI's `Select.Value` renders the raw `value` unless it is given a render
+function. With CUID ids as option values, a bare `<SelectValue />` shows
+`cmrgmf4mk000c3stmnx5ff25t` instead of `VII A`. Every select in this module
+passes a lookup function, matching the pattern already used in
+`components/dashboard/dashboard-header.tsx`:
+
+```tsx
+<SelectValue placeholder="Pilih kelas">
+  {(value: string) => classes.find((o) => o.id === value)?.name ?? "Pilih kelas"}
+</SelectValue>
+```
+
+The dropdown panel is sized to the trigger (`w-(--anchor-width)`), so a narrow
+trigger clips long student names in the list. The selector column is `sm:max-w-md`
+and both triggers are `w-full` so full names fit.
+
 ### Settings content
 
 `/e-uks/pengaturan` (ADMIN only) owns four pieces of content, all additive

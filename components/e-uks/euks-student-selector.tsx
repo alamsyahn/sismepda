@@ -35,15 +35,17 @@ export function EuksStudentSelector({ classes, students, selectedClassId, select
     : students
 
   return (
-    <div className="grid gap-3 sm:max-w-sm">
+    <div className="grid gap-3 sm:max-w-md">
       <div className="grid gap-2">
         <Label htmlFor="euks-class">Kelas</Label>
         <Select
           value={selectedClassId}
           onValueChange={(value: string | null) => push({ classId: value, studentId: null })}
         >
-          <SelectTrigger id="euks-class">
-            <SelectValue placeholder="Pilih kelas" />
+          <SelectTrigger id="euks-class" className="w-full">
+            <SelectValue placeholder="Pilih kelas">
+              {(value: string) => classes.find((o) => o.id === value)?.name ?? "Pilih kelas"}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {classes.map((option) => (
@@ -62,8 +64,13 @@ export function EuksStudentSelector({ classes, students, selectedClassId, select
           onValueChange={(value: string | null) => push({ studentId: value })}
           disabled={visibleStudents.length === 0}
         >
-          <SelectTrigger id="euks-student">
-            <SelectValue placeholder={selectedClassId ? "Pilih siswa" : "Pilih kelas terlebih dahulu"} />
+          <SelectTrigger id="euks-student" className="w-full">
+            <SelectValue placeholder={selectedClassId ? "Pilih siswa" : "Pilih kelas terlebih dahulu"}>
+              {(value: string) =>
+                students.find((s) => s.id === value)?.name ??
+                (selectedClassId ? "Pilih siswa" : "Pilih kelas terlebih dahulu")
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {visibleStudents.map((student) => (

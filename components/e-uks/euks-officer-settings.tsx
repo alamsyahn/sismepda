@@ -123,7 +123,13 @@ export function EuksOfficerSettings({
             <Label htmlFor="euks-officer-person">Orang</Label>
             <Select value={selection} onValueChange={(value) => setSelection(String(value))}>
               <SelectTrigger id="euks-officer-person" className="w-full">
-                <SelectValue />
+                <SelectValue>
+                  {(value: string) =>
+                    value === MANUAL
+                      ? "Ketik manual (siswa / pihak luar)"
+                      : (teachers.find((t) => t.id === value)?.name ?? "Ketik manual (siswa / pihak luar)")
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={MANUAL}>Ketik manual (siswa / pihak luar)</SelectItem>
