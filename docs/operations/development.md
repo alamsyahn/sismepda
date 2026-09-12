@@ -5,6 +5,8 @@ Requirements: Node/npm and PostgreSQL. Copy `.env.example` to untracked `.env` a
 ```bash
 npm install
 npm run db:setup       # migrate dev + idempotent seed
+npm run db:rbac-backfill                            # RBAC legacy backfill, dry-run report
+npm run db:rbac-backfill -- --apply --database=sismepda_dev   # apply once to the local DB
 npm run dev
 ```
 

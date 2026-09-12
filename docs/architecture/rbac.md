@@ -183,14 +183,57 @@ Not created (no operation exists in HEAD): `euks.export`, `bos.export`, `sarpras
 | `siswa` | Siswa | none |
 | `wali_murid` | Wali Murid | none |
 
-Templates are seeded once by key with `update: {}` (never re-applied on existing rows). No user is assigned a position role by name, NIP or `position` guessing; only the legacy mapping below is applied automatically.
+Templates are seeded once by key (created only when the key is absent; existing rows and their `RolePermission` set are never touched again). No user is assigned a position role by name, NIP or `position` guessing; only the legacy mapping below is applied automatically. Template contents are initial values, not a permanent authority: after an admin edits a role, seed reruns never restore removed permissions.
+
+## Seed vs backfill
+
+| | `prisma db seed` (`prisma/seed.ts` → `prisma/seed-rbac.ts`) | `npm run db:rbac-backfill` (`prisma/rbac-backfill-legacy.ts`) |
+|---|---|---|
+| When | every deploy (Docker migrator), every `db:setup` | once per database, run by an operator |
+| Permission catalog | upsert label/description/module for every registry key | not touched |
+| Roles | create missing templates and compatibility bundles with their initial permissions; existing roles untouched | not touched (fails if a bundle is missing → run seed first) |
+| Users | none on a populated database. Only a database with **zero** users gets the initial admin from `SEED_ADMIN_EMAIL/PASSWORD` (created as `system_admin` member, `isTeacher=false`). An existing account with the seed e-mail on an otherwise empty database aborts the seed (collision) — never promoted, never password-reset, never activated | writes `UserRole` memberships and `User.isTeacher` only; never password, `active`, identity, homeroom, `workbookSupervised`, `allowTeachersAccessAllClasses` or domain relations |
+| Idempotency | safe to rerun | `RbacMigration` marker; `apply` is refused once `COMPLETED` |
+
+The seed never runs the backfill, and the backfill never runs the seed. New registry keys on later releases are only added to the catalog; they are not granted to any existing role — `system_admin` reaches them through its key-based bypass.
+
+## Compatibility mapping (`lib/rbac-legacy.ts`, mapping version 1)
+
+Legacy access is reproduced with a small set of **compatibility bundles** (non-system, editable roles, key prefix `legacy_`) rather than one role per user. The bundle contents are derived from the HEAD helpers (`lib/bos.ts`, `lib/sarpras.ts`, `lib/euks.ts`, `lib/workbook.ts`, `lib/teacher-profile.ts`, `lib/class-access.ts`) — not from the Phase 1 template wishlist — so that effective behaviour is unchanged.
+
+| Legacy source | Membership / identity |
+|---|---|
+| `role = ADMIN` | `system_admin` + `legacy_guru`, `isTeacher = true`. Every ADMIN, never a single one chosen by e-mail/name |
+| `role = GURU` | `legacy_guru`, `isTeacher = true` |
+| `canManageTeacherProfiles` | `legacy_teacher_manager` (`teachers.directory.read`, `teachers.profile/duties/schedule.write`) |
+| `canViewWorkbookSupervision` | `legacy_workbook_viewer` (`workbook.supervision.read`) |
+| `canSuperviseWorkbooks` | `legacy_workbook_supervisor` (`…read` + `…write`) |
+| `canViewBos` | `legacy_bos_view` (`bos.read`) |
+| `canCreateBos` | `legacy_bos_create` (`bos.read`, `bos.entries.create`; the latter also covers category creation as in HEAD) |
+| `canEditBos` | `legacy_bos_edit` (`bos.read`, `bos.entries.update`, `bos.budget.write`) |
+| `canManageBosCategories` | `legacy_bos_categories` (`bos.read`, `bos.categories.manage`) — **no** category creation |
+| `canManageBosAccess` | `legacy_bos_access` (`bos.read`, `bos.access.manage`) — to be narrowed to a delegated bundle in Phase 4 |
+| `canViewSarpras` / `canEditSarpras` | `legacy_sarpras_view` (`sarpras.read`) / `legacy_sarpras_edit` (read + all `sarpras.*.write`) |
+| `canViewEuks` / `canEditEuks` | `legacy_euks_view` (overview/visits/monitoring read) / `legacy_euks_edit` (view set + visits/measurements/sick_absences write + complaint options read). Never `euks.*.manage` |
+| `workbookSupervised`, homeroom, `allowTeachersAccessAllClasses`, `active`, password, identity | preserved as-is; none becomes a grant |
+| inactive account | mapped like an active one, `active` stays `false`, `requireUser()` keeps denying |
+
+`legacy_guru` includes `reports.whatsapp.read` and `attendance.*.assigned_classes` because at HEAD `/laporan-whatsapp` only calls `requireUser()` and class scope comes from `lib/class-access.ts`. `isTeacher = true` for **all** ADMIN and GURU accounts is population compatibility (HEAD selects `role IN (ADMIN, GURU)` as the teacher population), not a claim that every administrator is a teacher. Any boolean `can*` column on `User` without an entry in `FLAG_TO_BUNDLE` aborts the backfill with an actionable error; nothing is ever mapped to `system_admin` as a fallback.
+
+**Parity.** `compareParity()` computes, per user, the old effective decision set (from the legacy helper logic, including class scope and the global teacher setting) and the new effective decision set (from RBAC memberships) as `operation@scope` strings and reports `LOST` and `GAINED` both ways. `apply` refuses to write when pre-write parity is not empty, and writes `COMPLETED` only after post-write parity (recomputed from database rows) is empty. Intentional security deltas are reported separately, never folded into "identical": fresh DB authority per request (TD-008), potential memberships on inactive accounts, key-based `system_admin` bypass that does not survive cloning, and population-level `isTeacher`.
+
+**Tooling contract.** Default is dry-run (zero writes). `--apply --database=<name>` is required and the typed name must equal `current_database()`, so a wrong `.env` cannot silently target another database. Work is resumable: each finished account is recorded in `RbacMigrationItem`, a retry before completion skips them, a failure halfway leaves `status = FAILED` (readiness not ready), and after `COMPLETED` a re-apply is refused so revoked grants are never replayed. No credentials are read or printed.
+
+## Readiness
+
+`lib/rbac-readiness.ts` derives one state from the `RbacMigration[legacy-access-backfill-v1]` row and the user count: `ready` (marker `COMPLETED`, or no marker on a database with zero users), `not-ready` (marker `RUNNING`/`FAILED`, or no marker on a populated database), `error` (unknown marker key or the readiness query itself failed). `getAuthorizationContext()` throws `RbacNotReadyError` for anything but `ready`; there is no fallback to legacy columns or JWT, and an empty `UserRole` set never becomes an implicit `GURU`. Legacy guards (`requireAdmin`, `lib/*-access.ts`) are unaffected until Phase 4 switches surfaces over.
 
 ## Compatibility and migration strategy
 
 Phases are executed serially; each is a separate commit with its own validation.
 
 1. **Phase 2 – schema & catalog (done).** `RbacRole`, `Permission`, `UserRole`, `RolePermission`, `User.isTeacher` added additively; catalog and templates seeded idempotently; `User.role` and all boolean columns untouched. Evaluator (`lib/rbac.ts` pure + `lib/rbac-access.ts` DB-backed) exists but no surface is wired to it. The `authorized` prefilter now derives public/authenticated policy from `lib/route-policy.ts` (fail closed for unknown paths); its legacy `ADMIN` checks stay until Phase 4, because the pages they cover (`/siswa`, `/guru`, `/pengaturan`, …) still have no server-side guard of their own.
-2. **Phase 3 – backfill.** One migration script, audited before apply: `role=ADMIN` → `system_admin` + `isTeacher=true` (admins are teacher records in HEAD: directory, workbook population and access lists all select `role IN (ADMIN, GURU)`); `role=GURU` → `guru` + `isTeacher=true`; boolean columns → per-user extra role membership is **not** invented; instead each legacy boolean maps to the matching template role only when the whole template is implied, otherwise a per-user *custom* role is created with exactly the mapped keys (`canViewBos`→`bos.read`, `canCreateBos`→`bos.read`+`bos.entries.create`, `canEditBos`→`bos.read`+`bos.entries.update`+`bos.budget.write`, `canManageBosCategories`→`bos.read`+`bos.categories.manage`, `canManageBosAccess`→`bos.read`+`bos.access.manage`, `canViewSarpras`→`sarpras.read`, `canEditSarpras`→`sarpras.read`+all `sarpras.*.write`, `canViewEuks`→`euks.overview.read`+`euks.visits.read`+`euks.monitoring.read`, `canEditEuks`→ view set + `euks.visits.write`+`euks.measurements.write`+`euks.sick_absences.write`+`euks.complaint_options.read`, `canViewWorkbookSupervision`→`workbook.supervision.read`, `canSuperviseWorkbooks`→`workbook.supervision.read`+`workbook.supervision.write`, `canManageTeacherProfiles`→`teachers.profile.write`+`teachers.duties.write`+`teachers.schedule.write`). Implied-view rules of the legacy helpers are reproduced explicitly here.
+2. **Phase 3 – backfill (done, local only; production apply is a Phase 4 cutover step).** Implemented in `lib/rbac-legacy.ts` (pure mapping + parity), `lib/rbac-backfill.ts` (tooling), `prisma/rbac-backfill-legacy.ts` (CLI, `npm run db:rbac-backfill`), `lib/rbac-readiness.ts`, migration `20260912180000_add_rbac_migration_markers` (`RbacMigration`, `RbacMigrationItem`). See "Seed vs backfill", "Compatibility mapping" and "Readiness" below.
 3. **Phase 4 – enforcement.** Replace `requireAdmin`, `lib/*-access.ts`, `getClassAccess` role check, `auth.ts authorized` gate, export type gate and `lib/nav.ts` with permission checks; remove capability copies from the JWT; add the no-module landing. Dual-run: legacy columns are still written by existing UIs during this phase but never read by guards.
 4. **Phase 5 – admin UI.** Role management, assignment, RBAC audit viewer; retire `/bos/akses`, `/sarpras/akses`, workbook scope flags and `canManageTeacherProfiles` editing.
 5. **Phase 6 – cleanup.** Drop `User.role`, boolean capability columns and the `"Role"` enum in a separate migration after a full release cycle with RBAC live.
@@ -306,8 +349,8 @@ No server actions (`"use server"`) exist in HEAD.
 | `components/export/export-center.tsx` | master exports shown when `role === "ADMIN"` | per export permission |
 | `lib/server-teacher-profile.ts`, `lib/server-workbook.ts`, `lib/server-bos.ts`, `lib/server-sarpras.ts`, `app/api/admin/homerooms` | teacher population = `role IN (ADMIN, GURU)` or `role = GURU` | `isTeacher = true` |
 | `lib/server-euks.ts readAssignableTeachers` | `active: true` (all users) | `isTeacher = true` |
-| `prisma/seed.ts` | creates `role: ADMIN` user from `SEED_ADMIN_*`, 27 classes, settings, workbooks | additionally seeds catalog + templates; assigns `system_admin` to seed admin |
-| `scripts/ensure-local-test-user.ts` | forces `role = ADMIN` (dev only) | assigns `system_admin` |
+| `prisma/seed.ts` | creates initial admin only on an empty database; seeds catalog, templates and compatibility bundles; never touches existing accounts | done (Phase 3) |
+| `scripts/ensure-local-test-user.ts` | forces `role = ADMIN` (dev only) | assigns `system_admin` (Phase 4) |
 | `scripts/seed-bos-test-users.ts`, `scripts/generate-euks-test-data.ts` | dev-only, set/select boolean capabilities | update in Phase 4 |
 | `Dockerfile` / `compose.yaml` migrator | `prisma migrate deploy && prisma db seed` on every deploy | unchanged; seed must stay idempotent |
 | `prisma/migrations/20260711170000_init` | `CREATE TYPE "Role" AS ENUM ('ADMIN','GURU')`; `User.role NOT NULL DEFAULT 'GURU'` | dropped in Phase 6 |

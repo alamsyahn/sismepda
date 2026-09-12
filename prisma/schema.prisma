@@ -104,6 +104,7 @@ model User {
   /// Keanggotaan role RBAC. Kosong berarti tanpa permission — tidak ada role
   /// default implisit.
   rbacRoles UserRole[]
+  rbacMigrationItems RbacMigrationItem[]
 }
 
 model Subject {
@@ -759,4 +760,40 @@ model RolePermission {
 
   @@id([roleId, permissionId])
   @@index([permissionId])
+}
+
+/// Status satu pekerjaan migrasi RBAC one-time (mis. backfill akses legacy).
+enum RbacMigrationStatus {
+  RUNNING
+  FAILED
+  COMPLETED
+}
+
+/// Penanda persisten migrasi RBAC. Satu baris per pekerjaan migrasi; dipakai
+/// sebagai sumber status kesiapan (`readiness`) aplikasi RBAC dan sebagai
+/// idempotency marker: setelah COMPLETED, backfill tidak boleh dijalankan
+/// ulang sehingga grant yang dicabut admin tidak pernah dipulihkan diam-diam.
+model RbacMigration {
+  key         String              @id
+  status      RbacMigrationStatus
+  startedAt   DateTime            @default(now())
+  completedAt DateTime?
+  lastError   String?
+  /// Ringkasan angka hasil migrasi/paritas. Tidak pernah memuat kredensial.
+  report      Json?
+  updatedAt   DateTime            @updatedAt
+  items       RbacMigrationItem[]
+}
+
+/// Unit kerja migrasi yang sudah selesai (per akun) sehingga percobaan ulang
+/// sebelum COMPLETED hanya memproses akun yang belum tuntas.
+model RbacMigrationItem {
+  migrationKey String
+  userId       String
+  completedAt  DateTime      @default(now())
+  migration    RbacMigration @relation(fields: [migrationKey], references: [key], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([migrationKey, userId])
+  @@index([userId])
 }

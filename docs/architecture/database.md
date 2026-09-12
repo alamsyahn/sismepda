@@ -30,6 +30,6 @@ Real instants such as `createdAt`, `updatedAt`, `submittedAt`, and `reviewedAt` 
 
 ## Migrations and seed
 
-Production uses `prisma migrate deploy`; development scripts use `prisma migrate dev`. The seed requires `DATABASE_URL`, `SEED_ADMIN_EMAIL`, and `SEED_ADMIN_PASSWORD`; it idempotently creates the admin, 27 classes (VII–IX A–I), the singleton school setting, and four workbook masters with 19 items. It deliberately does not delete workbook/items outside the current master because user links/statuses may depend on them.
+Production uses `prisma migrate deploy`; development scripts use `prisma migrate dev`. The seed requires `DATABASE_URL`, `SEED_ADMIN_EMAIL`, and `SEED_ADMIN_PASSWORD`; it idempotently seeds the RBAC permission catalog, role templates and compatibility bundles, creates the initial admin **only when the database has no users at all** (as a `system_admin` member; a colliding e-mail aborts), 27 classes (VII–IX A–I), the singleton school setting, and four workbook masters with 19 items. It never modifies existing accounts. The one-time legacy access backfill is a separate operator command (`npm run db:rbac-backfill`, see `architecture/rbac.md`). It deliberately does not delete workbook/items outside the current master because user links/statuses may depend on them.
 
 Schema validation: `npx prisma validate`. A migration must update both `schema.prisma` and a forward migration, regenerate the client, and be exercised against an isolated schema before deployment.

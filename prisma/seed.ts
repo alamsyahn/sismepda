@@ -4,6 +4,7 @@ import { PrismaPg } from "@prisma/adapter-pg"
 import { PrismaClient, LegacyRole } from "../app/generated/prisma/client"
 import { databaseSchema } from "../lib/database-config"
 import { workbookMasterData } from "../lib/workbook-master"
+import { SYSTEM_ADMIN_ROLE_KEY } from "../lib/rbac-permissions"
 import { seedRbac } from "./seed-rbac"
 
 function requiredEnv(name: "DATABASE_URL" | "SEED_ADMIN_EMAIL" | "SEED_ADMIN_PASSWORD") {
@@ -23,22 +24,60 @@ const classNames = ["VII", "VIII", "IX"].flatMap((grade) =>
 )
 
 async function main() {
-  await prisma.user.upsert({
-    where: { email: adminEmail },
-    update: {},
-    create: {
-      email: adminEmail,
-      name: "Admin Sekolah",
-      role: LegacyRole.ADMIN,
-      passwordHash: await hash(adminPassword, 12),
-    },
-  })
+  // Katalog + role dulu, supaya admin awal pada database segar langsung bisa
+  // menjadi anggota system_admin.
+  await seedRbac(prisma)
+  await bootstrapInitialAdmin()
   for (const name of classNames) {
     await prisma.schoolClass.upsert({ where: { name }, update: {}, create: { name, grade: name.split(" ")[0] } })
   }
   await prisma.schoolSetting.upsert({ where: { id: "default" }, update: {}, create: {} })
   await seedWorkbooks()
-  await seedRbac(prisma)
+}
+
+/**
+ * Admin awal hanya dibuat pada database yang BELUM punya akun sama sekali.
+ *
+ * Pada database yang sudah berisi akun, seed tidak menyentuh user mana pun:
+ * tidak mereset password, tidak mengaktifkan akun nonaktif, dan tidak
+ * mempromosikan akun yang kebetulan beremail SEED_ADMIN_EMAIL. Bila email
+ * itu sudah dipakai akun lain di database berisi, seed gagal dengan pesan
+ * jelas — bukan diam-diam melewati atau menimpa.
+ *
+ * Pada database segar, admin awal langsung menjadi anggota `system_admin`
+ * (RBAC) sekaligus `role=ADMIN` (legacy) supaya kedua model konsisten sampai
+ * kolom legacy dihapus.
+ */
+async function bootstrapInitialAdmin() {
+  const userCount = await prisma.user.count()
+  // Database berisi: tidak ada akun yang disentuh — bukan promosi, bukan
+  // reset password, bukan pengaktifan. Pembuatan akun baru dilakukan lewat
+  // pengelolaan akun, bukan seed deploy.
+  if (userCount > 0) return
+
+  const collision = await prisma.user.findUnique({ where: { email: adminEmail }, select: { id: true } })
+  if (collision) {
+    throw new Error(`SEED_ADMIN_EMAIL sudah dipakai akun ${collision.id}; bootstrap admin awal dibatalkan`)
+  }
+
+  const admin = await prisma.user.create({
+    data: {
+      email: adminEmail,
+      name: "Admin Sekolah",
+      role: LegacyRole.ADMIN,
+      isTeacher: true,
+      passwordHash: await hash(adminPassword, 12),
+    },
+    select: { id: true },
+  })
+  const systemAdmin = await prisma.role.findUnique({ where: { key: SYSTEM_ADMIN_ROLE_KEY }, select: { id: true } })
+  if (systemAdmin) {
+    await prisma.userRole.upsert({
+      where: { userId_roleId: { userId: admin.id, roleId: systemAdmin.id } },
+      update: {},
+      create: { userId: admin.id, roleId: systemAdmin.id },
+    })
+  }
 }
 
 /** Idempotent: re-running keeps a single row per workbook and per item. */

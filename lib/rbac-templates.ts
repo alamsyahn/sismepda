@@ -6,11 +6,16 @@
  * Template hanya dipakai sebagai NILAI AWAL saat sebuah role belum ada. Seed
  * tidak pernah menimpa isi role yang sudah ada, karena admin boleh menyesuaikan
  * permission lewat UI dan penyesuaian itu tidak boleh dikembalikan diam-diam
- * setiap kali deploy berjalan.
+ * setiap kali deploy berjalan. Template BUKAN otoritas permanen.
  *
  * Tidak ada implikasi otomatis di sini: setiap key ditulis lengkap, termasuk
  * pasangan read-nya. Aturan legacy semacam "boleh edit berarti boleh lihat"
  * direproduksi sebagai daftar eksplisit, bukan sebagai aturan evaluator.
+ *
+ * Granularitas key mengikuti guard yang benar-benar ada di kode (lihat
+ * lib/rbac-permissions.ts): satu key `*.write` menutup create/update/delete
+ * bila ketiganya dijaga guard yang sama di HEAD. Pemisahan lebih halus
+ * membutuhkan guard baru, bukan sekadar key baru.
  */
 
 import { SYSTEM_ADMIN_ROLE_KEY } from "@/lib/rbac-permissions"
@@ -42,7 +47,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
   {
     key: "guru",
     name: "Guru",
-    description: "Mengelola absensi dan profil siswa pada kelas binaannya.",
+    description:
+      "Mengelola absensi, profil, dan pelanggaran siswa pada kelas binaannya. Tidak otomatis memperoleh BOS, Sarpras, E-UKS, supervisi, maupun laporan WhatsApp sekolah.",
     isSystem: true,
     isProtected: false,
     permissionKeys: [
@@ -51,7 +57,6 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "attendance.read.assigned_classes",
       "attendance.write.assigned_classes",
       "attendance.export.assigned_classes",
-      "reports.whatsapp.read",
       "students.profile.read.assigned_classes",
       "students.violations.write.assigned_classes",
       "teachers.directory.read",
@@ -62,44 +67,38 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
   {
     key: "pengawas",
     name: "Pengawas",
-    description: "Memantau absensi seluruh kelas dan menilai supervisi buku kerja.",
+    description:
+      "Memantau dashboard dan laporan absensi seluruh kelas serta membaca supervisi buku kerja. Tanpa kewenangan menulis, menilai, atau mengekspor.",
     isSystem: true,
     isProtected: false,
     permissionKeys: [
       "attendance.dashboard.read.all",
       "attendance.reports.read.all",
-      "attendance.export.all",
-      "students.profile.read.all",
       "teachers.directory.read",
       "workbook.supervision.read",
-      "workbook.supervision.write",
     ],
   },
   {
     key: "kepala_sekolah",
     name: "Kepala Sekolah",
-    description: "Melihat seluruh modul tanpa kewenangan mengubah data operasional.",
+    description:
+      "Pemantauan Pengawas ditambah ringkasan BOS dan data Sarpras. Data kesehatan per siswa tidak otomatis; bukan bypass admin.",
     isSystem: true,
     isProtected: false,
     permissionKeys: [
       "attendance.dashboard.read.all",
       "attendance.reports.read.all",
-      "attendance.export.all",
-      "reports.whatsapp.read",
-      "students.profile.read.all",
       "teachers.directory.read",
       "workbook.supervision.read",
       "bos.read",
       "sarpras.read",
-      "euks.overview.read",
-      "euks.visits.read",
-      "euks.monitoring.read",
     ],
   },
   {
     key: "pengurus_uks",
     name: "Pengurus UKS",
-    description: "Mengelola seluruh modul E-UKS.",
+    description:
+      "Mencatat kunjungan, pengukuran, dan tindak lanjut absensi sakit di E-UKS. Pengaturan profil/pengurus/fasilitas UKS bukan bawaan.",
     isSystem: true,
     isProtected: false,
     permissionKeys: [
@@ -110,32 +109,24 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "euks.measurements.write",
       "euks.sick_absences.write",
       "euks.complaint_options.read",
-      "euks.complaint_options.manage",
-      "euks.profile.manage",
-      "euks.officers.manage",
-      "euks.facilities.manage",
-      "euks.hero_images.manage",
-      "euks.hero_logos.manage",
     ],
   },
   {
     key: "pengurus_bos",
     name: "Pengurus BOS",
-    description: "Mengelola realisasi dan anggaran BOS.",
+    description:
+      "Mencatat dan memperbaiki realisasi BOS serta menambah kategori. Anggaran, pengelolaan kategori, dan akses BOS bukan bawaan.",
     isSystem: true,
     isProtected: false,
-    permissionKeys: [
-      "bos.read",
-      "bos.entries.create",
-      "bos.entries.update",
-      "bos.budget.write",
-      "bos.categories.manage",
-    ],
+    // `bos.entries.create` menutup POST /api/bos/categories (pembuatan
+    // kategori) karena di HEAD keduanya dijaga hak yang sama (bos.create).
+    permissionKeys: ["bos.read", "bos.entries.create", "bos.entries.update"],
   },
   {
     key: "pengurus_sarpras",
     name: "Pengurus Sarpras",
-    description: "Mengelola data sarana dan prasarana.",
+    description:
+      "Mengelola lokasi, jenis, barang, dan foto sarana prasarana.",
     isSystem: true,
     isProtected: false,
     permissionKeys: [

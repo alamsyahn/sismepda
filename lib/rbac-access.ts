@@ -27,6 +27,36 @@ import {
   type ScopeDecision,
 } from "@/lib/rbac"
 import { SYSTEM_ADMIN_ROLE_KEY, isKnownPermission } from "@/lib/rbac-permissions"
+import { LEGACY_BACKFILL_KEY } from "@/lib/rbac-legacy"
+import { evaluateReadiness, type RbacReadiness } from "@/lib/rbac-readiness"
+
+export class RbacNotReadyError extends Error {
+  constructor(readonly readiness: RbacReadiness) {
+    super(`RBAC_NOT_READY:${readiness.state}:${readiness.reason}`)
+    this.name = "RbacNotReadyError"
+  }
+}
+
+/**
+ * Status kesiapan RBAC, dibaca dari database pada tiap permintaan
+ * (memoized request-local). Kegagalan query dipetakan ke `error`, bukan
+ * dilempar, supaya pemanggil yang hanya ingin menampilkan status tetap bisa;
+ * guard di bawah memperlakukan apa pun selain `ready` sebagai penolakan.
+ */
+export const getRbacReadiness = cache(async (): Promise<RbacReadiness> => {
+  try {
+    const [backfill, userCount] = await Promise.all([
+      prisma.rbacMigration.findUnique({
+        where: { key: LEGACY_BACKFILL_KEY },
+        select: { key: true, status: true },
+      }),
+      prisma.user.count(),
+    ])
+    return evaluateReadiness({ backfill, userCount })
+  } catch (error) {
+    return { state: "error", reason: error instanceof Error ? error.message : String(error) }
+  }
+})
 
 export class UnauthorizedError extends Error {
   constructor(message = "UNAUTHORIZED") {
@@ -95,6 +125,9 @@ export const requireUser = cache(async (): Promise<CurrentUser> => {
  * yang lebih buruk daripada menolak.
  */
 export const getAuthorizationContext = cache(async (): Promise<AuthorizationContext> => {
+  const readiness = await getRbacReadiness()
+  if (readiness.state !== "ready") throw new RbacNotReadyError(readiness)
+
   const user = await requireUser()
 
   const memberships = await prisma.userRole.findMany({

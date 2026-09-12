@@ -14,6 +14,7 @@
     "db:studio": "prisma studio",
     "db:setup": "prisma migrate dev && prisma db seed",
     "db:ensure-test-user": "tsx scripts/ensure-local-test-user.ts",
+    "db:rbac-backfill": "tsx prisma/rbac-backfill-legacy.ts",
     "dev:euks-seed": "tsx scripts/generate-euks-test-data.ts",
     "dev:euks-clear": "tsx scripts/clear-euks-test-data.ts",
     "dev:bootstrap": "tsx scripts/dev-bootstrap.ts"
