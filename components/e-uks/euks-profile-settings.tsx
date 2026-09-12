@@ -10,15 +10,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
+  PROFILE_CONTACT_MAX,
   PROFILE_DESCRIPTION_MAX,
   PROFILE_LOCATION_MAX,
   PROFILE_NAME_MAX,
+  PROFILE_SERVICE_HOURS_MAX,
 } from "@/lib/euks-settings"
 
 export type EuksProfileForm = {
   name: string | null
   location: string | null
   description: string | null
+  serviceHours: string | null
+  contact: string | null
 }
 
 export function EuksProfileSettings({ profile }: { profile: EuksProfileForm }) {
@@ -26,6 +30,8 @@ export function EuksProfileSettings({ profile }: { profile: EuksProfileForm }) {
   const [name, setName] = useState(profile.name ?? "")
   const [location, setLocation] = useState(profile.location ?? "")
   const [description, setDescription] = useState(profile.description ?? "")
+  const [serviceHours, setServiceHours] = useState(profile.serviceHours ?? "")
+  const [contact, setContact] = useState(profile.contact ?? "")
   const [saving, setSaving] = useState(false)
 
   const save = async () => {
@@ -34,7 +40,7 @@ export function EuksProfileSettings({ profile }: { profile: EuksProfileForm }) {
       const response = await fetch("/api/e-uks/profile", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, location, description }),
+        body: JSON.stringify({ name, location, description, serviceHours, contact }),
       })
       if (!response.ok) {
         const body = await response.json().catch(() => ({}))
@@ -75,6 +81,31 @@ export function EuksProfileSettings({ profile }: { profile: EuksProfileForm }) {
               maxLength={PROFILE_LOCATION_MAX}
               placeholder="Gedung B lantai 1, sebelah ruang guru"
               onChange={(event) => setLocation(event.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Jam layanan & kontak: ditampilkan sebagai blok tersendiri di hero
+            Halaman Utama, bukan sebagai statistik. */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="euks-profile-service-hours">Jam Layanan</Label>
+            <Input
+              id="euks-profile-service-hours"
+              value={serviceHours}
+              maxLength={PROFILE_SERVICE_HOURS_MAX}
+              placeholder="Senin–Jumat, 07.00–14.00 WIB"
+              onChange={(event) => setServiceHours(event.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="euks-profile-contact">Kontak</Label>
+            <Input
+              id="euks-profile-contact"
+              value={contact}
+              maxLength={PROFILE_CONTACT_MAX}
+              placeholder="0812-3456-7890 (Ibu Ani)"
+              onChange={(event) => setContact(event.target.value)}
             />
           </div>
         </div>

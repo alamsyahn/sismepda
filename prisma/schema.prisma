@@ -228,8 +228,39 @@ model EuksProfile {
   description String?
   /// Lokasi ruang UKS di lingkungan sekolah.
   location String?
+  /// Jam layanan UKS sebagai teks bebas, mis. "Senin–Sabtu, 07.00–14.00".
+  /// Teks dan bukan rentang terstruktur: jadwal UKS tidak dipakai perhitungan
+  /// apa pun, hanya ditampilkan pada kartu identitas Halaman Utama.
+  serviceHours String?
+  /// Kontak yang bisa dihubungi (nama petugas, nomor, atau ekstensi).
+  contact String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Foto latar carousel hero Halaman Utama E-UKS.
+///
+/// Tabel tersendiri, bukan kolom pada EuksProfile, karena jumlah fotonya bebas
+/// dan urutannya harus bisa diatur. Byte foto menumpang baris ini mengikuti
+/// pola EuksOfficer/SarprasPhoto: tidak ada berkas di disk, sehingga tidak ada
+/// nama file yang bertabrakan, tidak ada berkas yatim saat baris dihapus, dan
+/// tidak ada direktori unggahan yang perlu dipasang di VPS/Docker.
+model EuksHeroImage {
+  id String @id @default(cuid())
+  /// Keterangan opsional; dipakai sebagai teks alternatif bila diisi.
+  caption String?
+  /// Foto lanskap 16:9. Nullable karena baris dibuat lebih dulu, lalu byte
+  /// diunggah pada permintaan kedua — unggahan gagal menyisakan baris tanpa
+  /// foto, bukan record setengah tertulis.
+  photoData Bytes?
+  photoMimeType String?
+  photoUpdatedAt DateTime?
+  sortOrder Int @default(0)
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, sortOrder])
 }
 
 /// Pengurus UKS. Boleh menunjuk User (guru) atau diisi manual untuk siswa

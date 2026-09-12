@@ -1,7 +1,19 @@
-export function PageContainer({ children }: { children: React.ReactNode }) {
+import { cn } from "@/lib/utils"
+
+export function PageContainer({
+  children,
+  className,
+}: {
+  children: React.ReactNode
+  /** Menimpa jarak antar blok. Tanpa prop ini perilakunya identik dengan
+      sebelumnya (`space-y-6`), supaya halaman padat tabel tidak ikut berpindah
+      ke konteks flex; halaman bergaya landing memakainya untuk ritme lebih
+      lapang. */
+  className?: string
+}) {
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-      <div className="space-y-6">{children}</div>
+      <div className={className ? cn("flex flex-col", className) : "space-y-6"}>{children}</div>
     </div>
   )
 }

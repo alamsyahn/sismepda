@@ -83,6 +83,19 @@
   --sarpras-repair: oklch(0.62 0.2 18);
   --sarpras-moderate: oklch(0.75 0.15 70);
   --sarpras-good: oklch(0.65 0.16 155);
+  /* Aksen E-UKS: hijau daun yang kalem. Dipakai hanya di modul E-UKS
+     (eyebrow section, band insight, hero) sebagai warna identitas unit
+     kesehatan; --primary aplikasi tetap violet dan tidak diubah. */
+  --euks-accent: oklch(0.56 0.085 148);
+  --euks-accent-foreground: oklch(0.985 0.01 148);
+  --euks-accent-soft: oklch(0.95 0.028 148);
+  --euks-accent-muted: oklch(0.42 0.06 148);
+  /* Gradien latar bawaan hero dan placeholder potret. Nilainya sama di mode
+     terang dan gelap: gradien ini selalu berperan sebagai bidang gelap di
+     bawah overlay teks putih, jadi tidak boleh ikut menerang. */
+  --euks-hero-from: oklch(0.34 0.055 152);
+  --euks-hero-via: oklch(0.45 0.07 148);
+  --euks-hero-to: oklch(0.3 0.045 165);
   --radius: 0.875rem;
   --sidebar: oklch(0.99 0.005 275);
   --sidebar-foreground: oklch(0.28 0.03 275);
@@ -131,6 +144,10 @@
   --sarpras-repair: oklch(0.7 0.19 22);
   --sarpras-moderate: oklch(0.8 0.15 70);
   --sarpras-good: oklch(0.72 0.16 155);
+  --euks-accent: oklch(0.68 0.09 148);
+  --euks-accent-foreground: oklch(0.16 0.03 148);
+  --euks-accent-soft: oklch(0.28 0.04 148);
+  --euks-accent-muted: oklch(0.8 0.06 148);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -171,6 +188,10 @@
   --sarpras-repair: oklch(0.7 0.19 22);
   --sarpras-moderate: oklch(0.8 0.15 70);
   --sarpras-good: oklch(0.72 0.16 155);
+  --euks-accent: oklch(0.68 0.09 148);
+  --euks-accent-foreground: oklch(0.16 0.03 148);
+  --euks-accent-soft: oklch(0.28 0.04 148);
+  --euks-accent-muted: oklch(0.8 0.06 148);
   }
 }
 
@@ -216,6 +237,13 @@
   --color-danger-foreground: var(--danger-foreground);
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
+  --color-euks-accent: var(--euks-accent);
+  --color-euks-accent-foreground: var(--euks-accent-foreground);
+  --color-euks-accent-soft: var(--euks-accent-soft);
+  --color-euks-accent-muted: var(--euks-accent-muted);
+  --color-euks-hero-from: var(--euks-hero-from);
+  --color-euks-hero-via: var(--euks-hero-via);
+  --color-euks-hero-to: var(--euks-hero-to);
 }
 
 @media (prefers-reduced-motion: reduce) {

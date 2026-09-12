@@ -8,18 +8,22 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { resizeImageFile } from "@/lib/image-resize"
 import {
+  EUKS_HERO_MAX_EDGE,
   EUKS_PHOTO_MAX_EDGE,
+  HERO_PHOTO_ASPECT,
   MAX_EUKS_PHOTO_BYTES,
 } from "@/lib/euks-settings"
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp"]
 
-export type EuksPhotoShape = "portrait" | "landscape"
+export type EuksPhotoShape = "portrait" | "landscape" | "wide"
 
 const FRAME: Record<EuksPhotoShape, { ratio: string; hint: string; aspect: number }> = {
   // 9:16 potret — dipakai kartu pengurus; lihat euks-settings untuk rasionya.
   portrait: { ratio: "aspect-9/16", hint: "Rasio 9:16 (potret)", aspect: 9 / 16 },
   landscape: { ratio: "aspect-4/3", hint: "Rasio 4:3 (lanskap)", aspect: 4 / 3 },
+  // 16:9 — foto hero, dipasang sebagai latar selebar layar.
+  wide: { ratio: "aspect-16/9", hint: "Rasio 16:9 (lanskap lebar)", aspect: HERO_PHOTO_ASPECT },
 }
 
 /** Bingkai foto beserta placeholder; dipakai form maupun baris daftar. */
@@ -117,7 +121,9 @@ export function EuksPhotoField({
     try {
       const prepared = await resizeImageFile(picked, {
         aspect: FRAME[shape].aspect,
-        maxEdge: EUKS_PHOTO_MAX_EDGE,
+        // Foto hero ditampilkan selebar layar, jadi butuh sisi lebih panjang
+        // daripada thumbnail kartu.
+        maxEdge: shape === "wide" ? EUKS_HERO_MAX_EDGE : EUKS_PHOTO_MAX_EDGE,
       })
       if (prepared.size > MAX_EUKS_PHOTO_BYTES) {
         toast.error("Ukuran foto maksimal 2 MB")

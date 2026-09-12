@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { EuksComplaintOptionSettings } from "@/components/e-uks/euks-complaint-option-settings"
 import { EuksFacilitySettings } from "@/components/e-uks/euks-facility-settings"
+import { EuksHeroImageSettings } from "@/components/e-uks/euks-hero-image-settings"
 import { EuksOfficerSettings } from "@/components/e-uks/euks-officer-settings"
 import { EuksProfileSettings } from "@/components/e-uks/euks-profile-settings"
 import { EuksAccessError, requireEuksAdmin } from "@/lib/euks-access"
@@ -24,9 +25,10 @@ export default async function EuksPengaturanPage() {
     <PageContainer>
       <PageHeading
         title="Pengaturan E-UKS"
-        description="Kelola identitas, pengurus, fasilitas, dan pilihan keluhan yang dipakai modul E-UKS"
+        description="Kelola identitas, foto hero, pengurus, fasilitas, dan pilihan keluhan yang dipakai modul E-UKS"
       />
       <EuksProfileSettings profile={settings.profile} />
+      <EuksHeroImageSettings images={settings.heroImages} />
       <EuksOfficerSettings officers={settings.officers} teachers={teachers} />
       <EuksFacilitySettings facilities={settings.facilities} />
       <EuksComplaintOptionSettings options={settings.complaintOptions} />

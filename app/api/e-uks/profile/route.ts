@@ -5,9 +5,11 @@ import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
 import { euksErrorResponse, requireEuksAdmin } from "@/lib/euks-access"
 import {
+  PROFILE_CONTACT_MAX,
   PROFILE_DESCRIPTION_MAX,
   PROFILE_LOCATION_MAX,
   PROFILE_NAME_MAX,
+  PROFILE_SERVICE_HOURS_MAX,
   normalizeLabel,
 } from "@/lib/euks-settings"
 
@@ -26,6 +28,8 @@ const optionalText = (max: number) =>
 const payload = z.object({
   name: optionalText(PROFILE_NAME_MAX),
   location: optionalText(PROFILE_LOCATION_MAX),
+  serviceHours: optionalText(PROFILE_SERVICE_HOURS_MAX),
+  contact: optionalText(PROFILE_CONTACT_MAX),
   // Deskripsi multi-baris: spasi TIDAK dirapikan agar paragraf tetap utuh.
   description: z
     .string()
@@ -57,9 +61,21 @@ export async function PUT(request: Request) {
           entityId: profile.id,
           summary: "Identitas UKS diperbarui",
           before: before
-            ? { name: before.name, location: before.location, description: before.description }
+            ? {
+                name: before.name,
+                location: before.location,
+                description: before.description,
+                serviceHours: before.serviceHours,
+                contact: before.contact,
+              }
             : null,
-          after: { name: profile.name, location: profile.location, description: profile.description },
+          after: {
+            name: profile.name,
+            location: profile.location,
+            description: profile.description,
+            serviceHours: profile.serviceHours,
+            contact: profile.contact,
+          },
         },
         tx,
       )
@@ -70,6 +86,8 @@ export async function PUT(request: Request) {
       name: saved.name,
       location: saved.location,
       description: saved.description,
+      serviceHours: saved.serviceHours,
+      contact: saved.contact,
     })
   } catch (error) {
     const { error: message, status } = euksErrorResponse(error)

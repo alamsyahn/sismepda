@@ -267,6 +267,59 @@ list changes nothing: the field behaves exactly as it did before.
 aggregation uses, and a test asserts the two stay identical. If they diverged,
 a complaint could pass as new on the form yet merge in the statistics.
 
+### Home page composition
+
+`/e-uks` is a landing page, not a dashboard: hero → pengurus → fasilitas →
+insight → CTA. Statistics are kept in full but moved below the identity
+sections, because a school profile page that opens with counters reads as an
+admin screen.
+
+`EuksHeroImage` holds the hero slideshow, added by
+`20260912110000_add_euks_hero_images` together with the nullable
+`EuksProfile.serviceHours` / `.contact` columns. Photo bytes live in the row on
+the same reasoning as officer and facility photos above, and admins manage the
+list (add, replace, reorder, activate, delete) in Pengaturan E-UKS. There is no
+maximum count — the school decides how many slides it wants.
+
+Ordering is an explicit `sortOrder` integer, not creation order, so reordering
+never depends on when a photo was uploaded. Reorder swaps the `sortOrder` of
+two adjacent rows inside one transaction, which keeps the list consistent even
+if two admins move photos at the same time. `isActive` lets a photo be taken
+out of rotation without deleting it.
+
+Hero photos are sized to 1920 px (`EUKS_HERO_MAX_EDGE`) rather than the 1280 px
+used for cards, because a hero fills the viewport width where a card does not.
+
+| Endpoint | Method | Access |
+|---|---|---|
+| `/api/e-uks/hero-images` | `POST` create, `PATCH` update/reorder, `DELETE` remove | ADMIN |
+| `/api/e-uks/hero-images/[imageId]/photo` | `GET` serve, `PUT` upload/replace | GET `euks.view`; writes ADMIN |
+
+The carousel is roughly sixty lines of component code with no new dependency.
+What the page needs is a background crossfade, not a scrollable track: Embla,
+Swiper, and Keen all ship a drag/snap engine whose behaviour would then have to
+be switched off, and Embla's own fade plugin describes itself as eliminating
+the concept of scrolling. Paying ~9.7 KB gzip to disable the feature being
+imported is the wrong trade.
+
+The title block is a sibling of the slide stack, not a child, so it is
+structurally incapable of moving when a slide changes — the requirement is
+enforced by the DOM shape rather than by CSS that a later edit could undo.
+
+Autoplay runs at 6.5 s, pauses on hover and focus, and stops permanently once
+the reader touches any control, following the APG carousel pattern; the pause
+button is first in tab order and `prefers-reduced-motion` disables autoplay
+entirely. A live region announces the current slide.
+
+With no photos uploaded, the hero renders a leaf-green gradient with a dot
+pattern instead of collapsing, so the page is presentable before the school has
+supplied any imagery. The same applies per-section: officers fall back to
+initials on a deterministic gradient, facilities to a mapped icon.
+
+The `--euks-*` tokens in `app/globals.css` scope the leaf-green accent to this
+module. The app's own primary colour is unchanged; E-UKS reads as a health unit
+inside SISMEPDA rather than as a differently-themed app.
+
 ### Trend grouping is textual, not clinical
 
 `EuksVisit.complaint` and `.treatment` are free text. `lib/euks-trends.ts`
@@ -279,16 +332,14 @@ The page states this limitation to the reader. If the school later wants
 consolidated categories, the correct fix is a curated complaint list on the
 input form, not fuzzy matching after the fact.
 
-Wireframe 02 also shows a photo carousel. It is deliberately not built: it
-needs an image storage model and an upload endpoint, and the school chose to
-defer it. Nothing else on the page depends on it.
-
-Two departures from wireframe 03, both forced by the free-text schema:
+One departure from wireframe 03, forced by the free-text schema:
 
 - The monthly chart plots total visits per month, not columns stacked by
   treatment type — stacking needs a fixed set of categories that does not exist.
-- Wireframe 02's identity content (profile, pengurus, fasilitas) is configuration
-  managed in Pengaturan; the home page renders whatever is active there.
+
+Wireframe 02's identity content (profile, pengurus, fasilitas, hero photos) is
+configuration managed in Pengaturan; the home page renders whatever is active
+there.
 
 Empty months inside the range are kept at zero rather than skipped, so a quiet
 month reads as quiet instead of vanishing from the axis.
@@ -319,6 +370,8 @@ age outside the reference range.
 `POST /api/e-uks/visits` creates a visit; `PATCH`/`DELETE /api/e-uks/visits/[visitId]` edit and remove one. All three require `euks.edit`, validate with zod, reject inactive students, and append an `AuditLog` entry (`EUKS_VISIT_CREATED`/`UPDATED`/`DELETED`) inside the same transaction as the change. Clients refresh via `router.refresh()` rather than optimistic updates.
 
 `/api/e-uks/officers` and `/api/e-uks/facilities` each expose `POST` (create), `PATCH` (edit fields, toggle `active`, or `move` one position) and `DELETE` (remove the row), all ADMIN-only and each writing an `AuditLog` entry (`EUKS_OFFICER_*`/`EUKS_FACILITY_*`, including `_PHOTO_UPDATED`) in the same transaction. The photo sub-routes are described under Settings photos.
+
+`/api/e-uks/hero-images` exposes `POST` (create), `PATCH` (edit caption, toggle `active`, or `move` one position) and `DELETE`, all ADMIN-only, each writing an `EUKS_HERO_IMAGE_*` `AuditLog` entry in the same transaction. `PUT /api/e-uks/hero-images/[imageId]/photo` uploads or replaces the image; `GET` serves it to any `euks.view` reader. See Home page composition.
 
 ## Open reference-data requirement
 

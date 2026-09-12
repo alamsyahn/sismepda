@@ -31,6 +31,9 @@ export const COMPLAINT_LABEL_MAX = 80
 export const PROFILE_NAME_MAX = 120
 export const PROFILE_LOCATION_MAX = 120
 export const PROFILE_DESCRIPTION_MAX = 2000
+export const PROFILE_SERVICE_HOURS_MAX = 120
+export const PROFILE_CONTACT_MAX = 120
+export const HERO_CAPTION_MAX = 120
 
 /** Batas jumlah unit fasilitas; menahan salah ketik seperti 99999999. */
 export const FACILITY_QUANTITY_MAX = 9999
@@ -47,8 +50,18 @@ export const OFFICER_PHOTO_ASPECT = 9 / 16
 /** Rasio lanskap foto fasilitas; cocok untuk foto barang/ruangan. */
 export const FACILITY_PHOTO_ASPECT = 4 / 3
 
+/** Rasio foto hero; lanskap lebar supaya aman dipakai sebagai latar penuh. */
+export const HERO_PHOTO_ASPECT = 16 / 9
+
 /** Sisi terpanjang setelah kompresi klien; cukup untuk kartu dan pratinjau. */
 export const EUKS_PHOTO_MAX_EDGE = 1280
+
+/**
+ * Sisi terpanjang foto hero. Lebih besar dari foto kartu karena hero
+ * ditampilkan selebar layar; 1600 px masih tajam di laptop tanpa membuat
+ * byte-nya membengkak melewati batas 2 MB.
+ */
+export const EUKS_HERO_MAX_EDGE = 1600
 
 /**
  * URL foto pengurus. Query `v` memakai waktu pembaruan sehingga mengganti foto
@@ -69,6 +82,15 @@ export function euksFacilityPhotoUrl(
 ): string | null {
   if (!updatedAt) return null
   return `/api/e-uks/facilities/${id}/photo?v=${new Date(updatedAt).getTime()}`
+}
+
+/** URL foto hero; aturan cache-busting sama dengan pengurus dan fasilitas. */
+export function euksHeroImageUrl(
+  id: string,
+  updatedAt: Date | string | null | undefined,
+): string | null {
+  if (!updatedAt) return null
+  return `/api/e-uks/hero-images/${id}/photo?v=${new Date(updatedAt).getTime()}`
 }
 
 /**
@@ -92,4 +114,40 @@ export function reorder<T extends { id: string }>(items: T[], id: string, direct
 /** Nama tampil pengurus: guru tertaut memakai namanya sendiri bila ada. */
 export function officerDisplayName(officer: { name: string; user?: { name: string } | null }): string {
   return officer.user?.name ?? officer.name
+}
+
+/**
+ * Inisial untuk placeholder kartu pengurus: maksimal dua huruf dari kata
+ * pertama dan terakhir.
+ *
+ * Gelar dibuang lebih dulu supaya "Budi Santoso, S.Pd" berinisial "BS". Kata
+ * bertitik hanya dibuang bila BUKAN kata pertama: singkatan nama depan seperti
+ * "Moh.", "Muh.", dan "Abd." lazim di sini dan harus tetap dihitung, sehingga
+ * "Moh. Rizki" berinisial "MR", bukan "R".
+ */
+export function officerInitials(name: string): string {
+  const words = name
+    .replace(/,.*$/, "")
+    .trim()
+    .split(/\s+/)
+    .filter((word, index) => word.length > 0 && (index === 0 || !word.includes(".")))
+  if (words.length === 0) return "?"
+  const first = words[0][0]
+  const last = words.length > 1 ? words[words.length - 1][0] : ""
+  return (first + last).toUpperCase()
+}
+
+/**
+ * Warna placeholder pengurus, dipilih deterministik dari namanya.
+ *
+ * Deterministik dan bukan acak supaya kartu orang yang sama tidak berganti
+ * warna setiap halaman dimuat ulang. Nilainya indeks, bukan kelas Tailwind,
+ * agar berkas ini tetap bebas dari urusan tampilan.
+ */
+export function officerPlaceholderTone(name: string, tones: number): number {
+  let hash = 0
+  for (let index = 0; index < name.length; index += 1) {
+    hash = (hash * 31 + name.charCodeAt(index)) % 100000
+  }
+  return hash % tones
 }

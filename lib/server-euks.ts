@@ -54,7 +54,7 @@ export async function readEuksVisits(): Promise<EuksVisitRow[]> {
 
 /** Seluruh konten Pengaturan E-UKS untuk halaman admin dan Halaman Utama. */
 export async function readEuksSettings() {
-  const [profile, officers, facilities, complaintOptions] = await Promise.all([
+  const [profile, officers, facilities, complaintOptions, heroImages] = await Promise.all([
     prisma.euksProfile.findUnique({ where: { id: "default" } }),
     prisma.euksOfficer.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -87,6 +87,18 @@ export async function readEuksSettings() {
       orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
       select: { id: true, label: true, active: true, sortOrder: true },
     }),
+    prisma.euksHeroImage.findMany({
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      select: {
+        id: true,
+        caption: true,
+        active: true,
+        sortOrder: true,
+        // Sama seperti pengurus dan fasilitas: hanya penanda waktunya, supaya
+        // daftar tidak pernah menarik byte foto ke memori server.
+        photoUpdatedAt: true,
+      },
+    }),
   ])
 
   return {
@@ -94,10 +106,13 @@ export async function readEuksSettings() {
       name: profile?.name ?? null,
       location: profile?.location ?? null,
       description: profile?.description ?? null,
+      serviceHours: profile?.serviceHours ?? null,
+      contact: profile?.contact ?? null,
     },
     officers,
     facilities,
     complaintOptions,
+    heroImages,
   }
 }
 
