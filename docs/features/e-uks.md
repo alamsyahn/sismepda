@@ -30,6 +30,7 @@ One row per student visit to the health unit, and the single source of truth for
 | `complaint`, `treatment` | Free text; aggregation normalizes them (see below) |
 | `followUp` | Optional |
 | `recordedById` | The recording user, `SetNull` on delete so history survives account removal |
+| `isSynthetic` | `false` for every real entry; `true` only for development test data |
 
 Indexed on `occurredAt` and on `(studentId, occurredAt)` to serve both the chronological log and per-student lookups.
 
@@ -48,10 +49,21 @@ prevents two measurements on the same school date.
 | `heightCm`, `weightKg` | `Decimal(5,1)`; converted with `Number()` before crossing to client components, because Prisma `Decimal` is not serializable |
 | `note` | Optional |
 | `recordedById` | `SetNull` so history survives account removal |
+| `isSynthetic` | `false` for every real entry; `true` only for development test data |
 
 **IMT is always derived, never stored.** `calculateBmi()` computes kg/m² on read,
 so a corrected height or weight can never leave a stale IMT behind. It returns
 `null` for non-positive inputs instead of `Infinity`/`NaN`.
+
+### Synthetic data markers
+
+`EuksVisit.isSynthetic`, `StudentHealthMeasurement.isSynthetic`, and
+`Student.syntheticDemographics` are `false` by default, so all existing and all
+real data is marked real without a backfill. They exist only so the
+development-only generator can be cleaned up selectively, and are never set by
+the application UI or by `prisma/seed.ts`. Application queries deliberately
+ignore them: local test data must exercise the same code paths as real data. See
+[Development and verification](../operations/development.md).
 
 The relational content collections for carousel/pengurus/fasilitas are introduced
 by the following phases and documented here as they land.

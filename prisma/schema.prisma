@@ -152,6 +152,12 @@ model Student {
   birthDate DateTime? @db.Date
   /// Nullable untuk alasan yang sama seperti birthDate.
   gender Gender?
+  /// Menandai bahwa `gender` dan/atau `birthDate` baris ini diisi oleh
+  /// generator data uji development (`npm run dev:euks-seed`), bukan data
+  /// sekolah sesungguhnya. Generator hanya mengisi kolom yang masih NULL dan
+  /// tidak pernah menimpa nilai asli; `dev:euks-clear` mengembalikan kolom
+  /// bertanda ini ke NULL. Selalu false pada produksi.
+  syntheticDemographics Boolean @default(false)
   classId String
   schoolClass SchoolClass @relation(fields: [classId], references: [id])
   attendances Attendance[]
@@ -186,12 +192,16 @@ model EuksVisit {
   treatment String
   followUp String?
   recordedById String?
+  /// Data uji yang dibuat generator development. Selalu false untuk data
+  /// nyata, sehingga penghapusan data uji dapat menyaring baris secara pasti.
+  isSynthetic Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
   recordedBy User? @relation("EuksVisitRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
 
   @@index([occurredAt])
+  @@index([isSynthetic])
   @@index([studentId, occurredAt])
 }
 
@@ -209,12 +219,15 @@ model StudentHealthMeasurement {
   weightKg Decimal @db.Decimal(5, 1)
   note String?
   recordedById String?
+  /// Data uji yang dibuat generator development; lihat EuksVisit.isSynthetic.
+  isSynthetic Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
   recordedBy User? @relation("HealthMeasurementRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
 
   @@unique([studentId, measuredAt])
+  @@index([isSynthetic])
   @@index([studentId, measuredAt])
 }
 
