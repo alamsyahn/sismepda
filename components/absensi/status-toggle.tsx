@@ -1,49 +1,96 @@
 "use client"
 
-import { cn } from "@/lib/utils"
-import {
-  INPUT_STATUS_ORDER,
-  inputStatusConfig,
-  type InputStatus,
-} from "@/lib/attendance-input"
+import { useRef } from "react"
+import { Check } from "lucide-react"
 
-export function StatusToggle({
+import { cn } from "@/lib/utils"
+import type { StatusConfig } from "@/lib/attendance-input"
+
+export type StatusOption<T extends string> = {
+  value: T
+  config: StatusConfig
+}
+
+/**
+ * Segmented control yang secara semantik adalah radio group.
+ *
+ * Dipakai dua kali per siswa: status utama (Belum Diisi / Hadir / Tidak Hadir)
+ * dan alasan ketidakhadiran. Navigasi panah mengikuti pola radio group WAI-ARIA
+ * (roving tabindex), dan pilihan aktif ditandai ikon centang + border tebal,
+ * bukan warna saja.
+ */
+export function StatusRadioGroup<T extends string>({
+  options,
   value,
   onChange,
-  studentName,
+  label,
+  className,
+  optionClassName,
 }: {
-  value: InputStatus
-  onChange: (status: InputStatus) => void
-  studentName: string
+  options: readonly StatusOption<T>[]
+  value: T | null
+  onChange: (value: T) => void
+  label: string
+  className?: string
+  optionClassName?: string
 }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const move = (from: number, delta: number) => {
+    const next = (from + delta + options.length) % options.length
+    onChange(options[next].value)
+    const buttons = containerRef.current?.querySelectorAll<HTMLButtonElement>("[role=radio]")
+    buttons?.[next]?.focus()
+  }
+
+  const activeIndex = options.findIndex((option) => option.value === value)
+
   return (
     <div
-      role="group"
-      aria-label={`Status kehadiran ${studentName}`}
-      className="flex flex-wrap gap-1.5"
+      ref={containerRef}
+      role="radiogroup"
+      aria-label={label}
+      className={cn("flex flex-wrap gap-1.5", className)}
     >
-      {INPUT_STATUS_ORDER.map((status) => {
-        const cfg = inputStatusConfig[status]
-        const active = value === status
+      {options.map((option, index) => {
+        const active = option.value === value
+        // Roving tabindex: hanya satu tombol per grup yang masuk urutan Tab.
+        const tabbable = activeIndex === -1 ? index === 0 : active
         return (
           <button
-            key={status}
+            key={option.value}
             type="button"
-            aria-pressed={active}
-            onClick={() => onChange(status)}
+            role="radio"
+            aria-checked={active}
+            tabIndex={tabbable ? 0 : -1}
+            onClick={() => onChange(option.value)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                event.preventDefault()
+                move(index, 1)
+              } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                event.preventDefault()
+                move(index, -1)
+              }
+            }}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
+              "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50",
               active
-                ? cn(cfg.active, "shadow-sm")
+                ? cn(option.config.active, "border-2 font-semibold shadow-sm")
                 : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+              optionClassName,
             )}
           >
-            <span
-              className={cn("size-1.5 rounded-full transition-opacity", !active && "opacity-40")}
-              style={{ backgroundColor: cfg.token }}
-              aria-hidden
-            />
-            {cfg.label}
+            {active ? (
+              <Check className="size-3.5 shrink-0" aria-hidden />
+            ) : (
+              <span
+                className="size-1.5 shrink-0 rounded-full opacity-40"
+                style={{ backgroundColor: option.config.token }}
+                aria-hidden
+              />
+            )}
+            <span className="text-center leading-tight">{option.config.label}</span>
           </button>
         )
       })}

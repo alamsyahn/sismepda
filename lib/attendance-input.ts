@@ -56,6 +56,27 @@ export const INPUT_STATUS_ORDER: InputStatus[] = [
   "dispensasi",
 ]
 
+/**
+ * Alasan ketidakhadiran. Di database keempat nilai ini tetap status tersendiri
+ * (SAKIT/IZIN/ALFA/DISPENSASI); "Tidak Hadir" hanyalah pengelompokan di UI.
+ */
+export const ABSENCE_REASONS = ["sakit", "izin", "alfa", "dispensasi"] as const
+export type AbsenceReason = (typeof ABSENCE_REASONS)[number]
+
+/** Pilihan status utama pada form: hanya tiga. */
+export type PrimaryStatus = "belum" | "hadir" | "tidakHadir"
+export const PRIMARY_STATUS_ORDER: PrimaryStatus[] = ["belum", "hadir", "tidakHadir"]
+
+export function isAbsenceReason(status: InputStatus): status is AbsenceReason {
+  return (ABSENCE_REASONS as readonly string[]).includes(status)
+}
+
+/** Status tersimpan -> pilihan utama yang tampak terpilih di layar. */
+export function primaryStatusOf(status: InputStatus): PrimaryStatus {
+  if (isAbsenceReason(status)) return "tidakHadir"
+  return status === "hadir" ? "hadir" : "belum"
+}
+
 // Status yang benar-benar terisi (bukan "belum")
 export const FILLED_STATUS_ORDER: Exclude<InputStatus, "belum">[] = [
   "hadir",
@@ -111,6 +132,69 @@ export const inputStatusConfig: Record<InputStatus, StatusConfig> = {
     active: "border-[var(--status-dispensasi,var(--chart-6))]/35 bg-[var(--status-dispensasi,var(--chart-6))]/15 text-[var(--status-dispensasi,var(--chart-6))]",
     badge: "bg-[var(--status-dispensasi,var(--chart-6))]/15 text-[var(--status-dispensasi,var(--chart-6))]",
   },
+}
+
+export const primaryStatusConfig: Record<PrimaryStatus, StatusConfig> = {
+  belum: inputStatusConfig.belum,
+  hadir: inputStatusConfig.hadir,
+  tidakHadir: {
+    label: "Tidak Hadir",
+    token: "var(--chart-4)",
+    active: "border-[var(--chart-4)]/40 bg-[var(--chart-4)]/12 text-foreground",
+    badge: "bg-[var(--chart-4)]/12 text-foreground",
+  },
+}
+
+/**
+ * Teks kontekstual field keterangan. Label, placeholder, dan pesan error
+ * mengikuti alasan yang dipilih supaya pengguna tahu persis apa yang diminta.
+ */
+export const absenceNoteCopy: Record<
+  AbsenceReason,
+  { label: string; placeholder: string; error: string }
+> = {
+  sakit: {
+    label: "Keterangan sakit",
+    placeholder: "Contoh: Demam",
+    error: "Masukkan keterangan sakit",
+  },
+  izin: {
+    label: "Keterangan izin",
+    placeholder: "Contoh: Acara Keluarga",
+    error: "Masukkan keterangan izin",
+  },
+  alfa: {
+    label: "Keterangan alfa",
+    placeholder: "Contoh: Tidak ada surat",
+    error: "Masukkan keterangan alfa",
+  },
+  dispensasi: {
+    label: "Keterangan dispensasi",
+    placeholder: "Contoh: Mengikuti kompetisi sepakbola",
+    error: "Masukkan keterangan dispensasi",
+  },
+}
+
+/** Keterangan hanya wajib ketika siswa tidak hadir dengan alasan tertentu. */
+export function requiresNote(status: InputStatus): boolean {
+  return isAbsenceReason(status)
+}
+
+export function isNoteMissing(status: InputStatus, note: string | undefined): boolean {
+  return requiresNote(status) && (note ?? "").trim() === ""
+}
+
+/**
+ * Siswa yang menghalangi penyimpanan: tidak hadir dengan alasan terpilih tetapi
+ * keterangannya masih kosong. Urutannya mengikuti roster penuh supaya tombol
+ * Simpan bisa langsung melompat ke siswa bermasalah pertama.
+ */
+export function studentsMissingNote<T extends { id: string }>(
+  roster: readonly T[],
+  statuses: Record<string, InputStatus>,
+  notes: Record<string, string>,
+): T[] {
+  return roster.filter((student) => isNoteMissing(statuses[student.id] ?? "belum", notes[student.id]))
 }
 
 // Format "07:24" -> "07.24" (konvensi jam Indonesia)

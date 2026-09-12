@@ -17,6 +17,34 @@ keyword, otherwise the new class looks empty for no visible reason. A `siswa`
 query parameter pre-fills the box, which is how the E-UKS sick-absence table
 jumps straight to one student alongside `classId` and `date`.
 
+### Status selection UI
+
+The form presents three primary statuses only — **Belum Diisi, Hadir, Tidak
+Hadir** — as an accessible radio group (roving tabindex, arrow keys, check icon
+so selection never depends on colour alone). "Tidak Hadir" is a UI grouping, not
+a database status: choosing it reveals an inline radio group of Sakit / Izin /
+Alfa / Dispensasi, and only that choice writes a real status. Until a reason is
+picked the student stays `belum`, so no absence value can be submitted without
+being chosen. Switching back to Hadir or Belum Diisi drops the reason and clears
+its note. Existing records reopen with Tidak Hadir plus the stored reason and
+note already selected. The status legend above the roster shows the same three
+groups, where Tidak Hadir is the sum of the four reasons.
+
+A note is **required** for every absence reason. Label, placeholder and error
+message follow the reason (`absenceNoteCopy` in `lib/attendance-input.ts`);
+helper text reads "Wajib diisi" until the field is blurred while empty or the
+user presses Simpan, only then does the inline error appear, and it clears as
+soon as a value is typed. Hadir and Belum Diisi show no note field at all (a
+"—" placeholder on desktop). Both Simpan buttons behave identically: they show a
+live count from the full roster ("⚠ N siswa masih memerlukan keterangan" versus
+"✓ Semua data wajib sudah lengkap"), and pressing Simpan with a missing note
+blocks submission, reveals the inline errors, clears an active name filter if it
+hides the offender, then smooth-scrolls (with sticky-header offset) and focuses
+the first offending note input — no native validation, alert or modal. Desktop
+keeps the table layout; below `lg` each student becomes a stacked card with
+touch-sized controls and a two-column reason grid. Semua Hadir and Kosongkan
+Semua also reset the pending/error state so no absence parent stays active.
+
 ## Reporting rules
 
 - Dashboard attendance percentage is HADIR divided by all **recorded statuses**, not registered students. Completion is complete classes divided by accessible classes.
