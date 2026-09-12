@@ -12,7 +12,8 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
-    "db:setup": "prisma migrate dev && prisma db seed"
+    "db:setup": "prisma migrate dev && prisma db seed",
+    "db:ensure-test-user": "tsx scripts/ensure-local-test-user.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

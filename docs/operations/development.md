@@ -10,6 +10,14 @@ npm run dev
 
 For users without database-creation rights, use a dedicated schema query parameter such as `?schema=sismepda_local`; runtime and Prisma CLI both honor it. Generated Prisma client is under `app/generated/prisma/`.
 
+## Local test account
+
+`npm run db:ensure-test-user` (`scripts/ensure-local-test-user.ts`) guarantees exactly one development-only account for browser/E2E testing, separate from `prisma/seed.ts`. It is manual: run it after a production→local restore overwrote the local database, never on application start. Credentials come from the untracked `.env` (`ALLOW_LOCAL_TEST_USER`, `DEV_TEST_USER_EMAIL`, `DEV_TEST_USER_PASSWORD`, `DEV_TEST_USER_NAME`) and must never be committed or documented.
+
+The account is created with `Role.ADMIN`, the highest value of the two-value `Role` enum, because ADMIN passes every delegated capability guard and therefore reaches all UI without schema changes. Behavior is idempotent: a missing account is created, an existing one is never duplicated and only minimally repaired (`active`, `role`, password hash) when it could no longer log in; no other column and no other table is touched.
+
+Safety guards are pure functions in `lib/local-test-user.ts`, evaluated before any database connection opens, and all fail closed: `NODE_ENV` must not be `production`, `ALLOW_LOCAL_TEST_USER` must equal `"true"`, `DATABASE_URL` must parse as PostgreSQL with a local host and a development database name (the production name is not on the allowlist), and the email must use a reserved test domain. An unparsable `DATABASE_URL` aborts instead of falling back, so no path writes to production.
+
 Quality gates:
 
 ```bash
