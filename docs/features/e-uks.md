@@ -15,7 +15,9 @@ E-UKS is the school health unit (Unit Kesehatan Sekolah) module inside SISMEPDA.
 
 ## Authorization
 
-E-UKS follows the Sarpras delegation model: `User.canViewEuks` and `User.canEditEuks`, where edit implies view and ADMIN always passes. `lib/euks.ts` holds the pure policy (used by the nav filter and the Auth.js proxy gate) and `lib/euks-access.ts` re-reads rights from PostgreSQL in `requireEuksViewer()`, `requireEuksEditor()` and `requireEuksAdmin()`. The `authorized` callback in `auth.ts` is a session-level pre-filter only; every page and route handler still calls its own guard. Health data is never public.
+E-UKS authorizes through RBAC against the current database on every request; `lib/euks-access.ts` is a thin wrapper over `requirePermission()`. Rights are granular per operation — `euks.content.read` for public-facing content, `euks.overview.read` for visit aggregates, `euks.visits.read/create/update/delete`, `euks.monitoring.read`, `euks.measurements.read/create/delete`, `euks.sick_absences.read/update`, `euks.complaint_options.read/create/update`, `euks.profile.update`, and `create/update/delete` for officers, facilities, hero images and hero logos. Holding one never widens another: a visit editor does not gain sick-absence editing, and reading complaint options does not permit configuring them.
+
+E-UKS is school-wide for domain permission holders; homeroom assignment never restricts it. Health data is never public and `/e-uks` is not a public page. Permission also governs the payload, not just rendering: an account with only `euks.content.read` triggers no measurement, visit or sick-absence query at all, rather than receiving the data and having React hide it. `euks.sick_absences.update` may change only `note`/`followUp`, and only on attendance rows whose status is `SAKIT` as verified from the database — never status, date, class, or general attendance.
 
 ## Data model
 

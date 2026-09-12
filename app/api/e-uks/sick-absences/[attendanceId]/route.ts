@@ -30,12 +30,12 @@ export async function PATCH(
   { params }: { params: Promise<{ attendanceId: string }> },
 ) {
   try {
-    const viewer = await requireEuksPermission("euks.edit")
+    const viewer = await requireEuksPermission("euks.sick_absences.update")
     const { attendanceId } = await params
     const body = payload.parse(await request.json())
 
-    const existing = await prisma.attendance.findUnique({
-      where: { id: attendanceId },
+    const existing = await prisma.attendance.findFirst({
+      where: { id: attendanceId, status: "SAKIT" },
       select: {
         id: true,
         status: true,

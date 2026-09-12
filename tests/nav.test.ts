@@ -32,6 +32,13 @@ const ADMIN_GRANTS = [
   "homerooms.export",
   "school.holidays.export",
   "school.settings.read",
+  "bos.read",
+  "sarpras.read",
+  "euks.content.read",
+  "euks.overview.read",
+  "euks.monitoring.read",
+  "euks.visits.read",
+  "euks.profile.update",
   "workbook.supervision.read",
   "reports.whatsapp.read.all",
 ]
@@ -105,17 +112,26 @@ test("dashboard tidak aktif di halaman lain", () => {
   assert.notEqual(activeNavHref(entries, "/rekap-siswa"), "/")
 })
 
-test("account nav: profil terbuka, pengaturan butuh permission", () => {
+test("account nav: profil terbuka, pengaturan menerima setiap domain yang dirender", () => {
   assert.deepEqual(accountNav.map((item) => item.href), ["/profil", "/pengaturan"])
   // "Profil Saya" sengaja tanpa daftar permission: setiap sesi sah memilikinya.
   assert.deepEqual(
     accountNav.filter((item) => !item.permissions?.length).map((item) => item.href),
     ["/profil"],
   )
-  assert.deepEqual(
-    accountNav.find((item) => item.href === "/pengaturan")?.permissions,
-    ["school.settings.read"],
-  )
+  assert.deepEqual(accountNav.find((item) => item.href === "/pengaturan")?.permissions, [
+    "school.settings.read",
+    "school.settings.update",
+    "school.class_access.manage",
+    "school.branding.update",
+    "school.holidays.read",
+    "school.holidays.create",
+    "school.holidays.update",
+    "school.holidays.delete",
+    "school.holidays.export",
+    "database.backup",
+    "database.restore",
+  ])
 })
 
 test("visibleNavItems tetap kompatibel sebagai daftar datar", () => {
@@ -125,14 +141,13 @@ test("visibleNavItems tetap kompatibel sebagai daftar datar", () => {
   assert.equal(new Set(hrefs).size, hrefs.length, "tidak boleh ada href duplikat")
 })
 
-test("BOS hanya terlihat oleh pemegang hak, bukan semua GURU", () => {
+test("BOS hanya terlihat dari grant RBAC terkini", () => {
   const hrefs = (viewer: Parameters<typeof visibleNavEntries>[1]) =>
     flattenNav(visibleNavEntries(mainNav, viewer)).map((item) => item.href)
 
   assert.ok(!hrefs(guru).includes("/bos"), "GURU polos tidak boleh melihat menu BOS")
-  assert.ok(hrefs({ role: "GURU", grants: GURU_GRANTS, canViewBos: true }).includes("/bos"))
-  assert.ok(hrefs({ role: "GURU", grants: GURU_GRANTS, canCreateBos: true }).includes("/bos"))
-  assert.ok(hrefs(admin).includes("/bos"))
+  assert.ok(hrefs({ role: "GURU", grants: [...GURU_GRANTS, "bos.read"] }).includes("/bos"))
+  assert.ok(!hrefs({ role: "GURU", grants: GURU_GRANTS, canViewBos: true }).includes("/bos"))
 })
 
 test("BOS adalah menu utama tepat di bawah E-UKS", () => {
@@ -166,23 +181,23 @@ test("E-UKS adalah group di antara Kurikulum dan BOS", () => {
   ])
 })
 
-test("capability E-UKS mengikuti guard server", () => {
-  const hrefs = (viewer: Parameters<typeof visibleNavEntries>[1]) =>
-    flattenNav(visibleNavEntries(mainNav, viewer)).map((item) => item.href)
+test("submenu E-UKS mengikuti permission masing-masing", () => {
+  const hrefs = (grants: readonly string[]) =>
+    flattenNav(visibleNavEntries(mainNav, { role: "GURU", grants })).map((item) => item.href)
 
-  assert.ok(!hrefs(guru).includes("/e-uks"), "GURU polos tidak boleh melihat menu E-UKS")
-  assert.ok(hrefs({ role: "GURU", grants: GURU_GRANTS, canViewEuks: true }).includes("/e-uks"))
-  // Hak kelola menyiratkan hak lihat, sehingga menu tetap muncul.
-  assert.ok(hrefs({ role: "GURU", grants: GURU_GRANTS, canEditEuks: true }).includes("/e-uks"))
-  assert.ok(hrefs(admin).includes("/e-uks"))
+  assert.ok(!hrefs(GURU_GRANTS).includes("/e-uks"))
+  assert.ok(hrefs([...GURU_GRANTS, "euks.content.read"]).includes("/e-uks"))
+  assert.ok(hrefs([...GURU_GRANTS, "euks.monitoring.read"]).includes("/e-uks/pantauan-kesehatan"))
+  assert.ok(hrefs([...GURU_GRANTS, "euks.visits.read"]).includes("/e-uks/riwayat-kunjungan"))
+  assert.ok(!hrefs([...GURU_GRANTS, "euks.visits.create"]).includes("/e-uks/pengaturan"))
 })
 
-test("Pengaturan E-UKS hanya untuk ADMIN", () => {
+test("Pengaturan E-UKS tampil dari permission konfigurasi, bukan ADMIN legacy", () => {
   const hrefs = (viewer: Parameters<typeof visibleNavEntries>[1]) =>
     flattenNav(visibleNavEntries(mainNav, viewer)).map((item) => item.href)
 
-  assert.ok(!hrefs({ role: "GURU", grants: GURU_GRANTS, canEditEuks: true }).includes("/e-uks/pengaturan"))
-  assert.ok(hrefs(admin).includes("/e-uks/pengaturan"))
+  assert.ok(hrefs({ role: "GURU", grants: [...GURU_GRANTS, "euks.profile.update"] }).includes("/e-uks/pengaturan"))
+  assert.ok(!hrefs({ role: "ADMIN", grants: GURU_GRANTS }).includes("/e-uks/pengaturan"))
 })
 
 test("active state E-UKS bekerja untuk seluruh route modul", () => {
@@ -226,15 +241,13 @@ test("Sarpras adalah menu utama tepat di bawah BOS", () => {
   assert.ok(!isNavGroup(sarpras), "Sarpras bukan group/submenu")
 })
 
-test("capability sarpras mengikuti guard server", () => {
+test("Sarpras hanya terlihat dari grant read RBAC terkini", () => {
   const hrefs = (viewer: Parameters<typeof visibleNavEntries>[1]) =>
     flattenNav(visibleNavEntries(mainNav, viewer)).map((item) => item.href)
 
   assert.ok(!hrefs(guru).includes("/sarpras"), "GURU polos tidak boleh melihat menu Sarpras")
-  assert.ok(hrefs({ role: "GURU", grants: GURU_GRANTS, canViewSarpras: true }).includes("/sarpras"))
-  // Hak edit menyiratkan hak lihat, sehingga menu tetap muncul.
-  assert.ok(hrefs({ role: "GURU", grants: GURU_GRANTS, canEditSarpras: true }).includes("/sarpras"))
-  assert.ok(hrefs(admin).includes("/sarpras"))
+  assert.ok(hrefs({ role: "GURU", grants: [...GURU_GRANTS, "sarpras.read"] }).includes("/sarpras"))
+  assert.ok(!hrefs({ role: "GURU", grants: GURU_GRANTS, canEditSarpras: true }).includes("/sarpras"))
 })
 
 test("route Sarpras aktif termasuk sub-halaman akses", () => {

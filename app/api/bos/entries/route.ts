@@ -2,7 +2,8 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
-import { bosErrorResponse, requireBosPermission } from "@/lib/bos-access"
+import { requirePermission } from "@/lib/rbac-access"
+import { authFailureResponse } from "@/lib/api-errors"
 import { formatRupiah, normalizeDocumentUrl } from "@/lib/bos"
 import { parseSchoolDate, toPrismaDate } from "@/lib/school-date"
 
@@ -34,7 +35,7 @@ function normalizeDocuments(documents: Array<{ url: string; label: string | null
 /** Create one BOS usage entry. Requires bos.create. */
 export async function POST(request: Request) {
   try {
-    const viewer = await requireBosPermission("bos.create")
+    const viewer = await requirePermission("bos.entries.create")
     const body = payload.parse(await request.json())
 
     const schoolDate = parseSchoolDate(body.occurredAt)
@@ -63,15 +64,15 @@ export async function POST(request: Request) {
           description: body.description,
           occurredAt,
           amount: body.amount,
-          createdById: viewer.id,
-          updatedById: viewer.id,
+          createdById: viewer.user.id,
+          updatedById: viewer.user.id,
           ...(documents.length > 0 ? { documents: { create: documents } } : {}),
         },
         select: { id: true },
       })
       await recordAuditLog(
         {
-          actorId: viewer.id,
+          actorId: viewer.user.id,
           action: "BOS_ENTRY_CREATED",
           entity: "BosEntry",
           entityId: entry.id,
@@ -91,7 +92,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(created, { status: 201 })
   } catch (error) {
-    const { error: message, status } = bosErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    if (error instanceof z.ZodError) return NextResponse.json({ error: "Data BOS tidak valid" }, { status: 400 })
+    return authFailureResponse(error, "Entry BOS gagal dibuat")
   }
 }

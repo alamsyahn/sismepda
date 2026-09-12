@@ -389,6 +389,14 @@ export function canReparent(
   return !subtreeIds(locations, id).has(parentId)
 }
 
+/** A supplied parent must be root (`null`) or an existing location. */
+export function isValidLocationParent(
+  parentId: string | null,
+  knownLocationIds: ReadonlySet<string>,
+): boolean {
+  return parentId === null || knownLocationIds.has(parentId)
+}
+
 /** "Kelas / VIII A" — the readable full path of a location. */
 export function locationPath(locations: FlatLocation[], id: string): string {
   const byId = new Map(locations.map((location) => [location.id, location]))

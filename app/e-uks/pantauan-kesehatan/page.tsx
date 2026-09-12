@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation"
+import { pageCan, requirePagePermission } from "@/lib/page-guards"
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -7,7 +7,6 @@ import { EuksMeasurementTable } from "@/components/e-uks/euks-measurement-table"
 import { EuksSickAbsenceTable } from "@/components/e-uks/euks-sick-absence-table"
 import { EuksBmiChart } from "@/components/e-uks/euks-bmi-chart"
 import { EuksKmsChart } from "@/components/e-uks/euks-kms-chart"
-import { EuksAccessError, requireEuksViewer } from "@/lib/euks-access"
 import {
   ageInYears,
   formatBmi,
@@ -30,18 +29,23 @@ type Props = {
 }
 
 export default async function PantauanKesehatanPage({ searchParams }: Props) {
-  let viewer
-  try {
-    viewer = await requireEuksViewer()
-  } catch (error) {
-    if (error instanceof EuksAccessError) redirect("/")
-    throw error
-  }
-  const capabilities = viewer.capabilities
+  await requirePagePermission("euks.monitoring.read")
+  const [canMeasurements, canCreateMeasurement, canDeleteMeasurement, canSickAbsences, canUpdateSickAbsence, canVisits] = await Promise.all([
+    pageCan("euks.measurements.read"),
+    pageCan("euks.measurements.create"),
+    pageCan("euks.measurements.delete"),
+    pageCan("euks.sick_absences.read"),
+    pageCan("euks.sick_absences.update"),
+    pageCan("euks.visits.read"),
+  ])
 
   const { classId = "", studentId = "" } = await searchParams
   const [classes, students] = await Promise.all([readEuksClassOptions(), readEuksStudentOptions()])
-  const monitoring = studentId ? await readStudentMonitoring(studentId) : null
+  const monitoring = studentId ? await readStudentMonitoring(studentId, {
+    measurements: canMeasurements,
+    sickAbsences: canSickAbsences,
+    visits: canVisits,
+  }) : null
 
   const series = monitoring ? toBmiSeries(monitoring.measurements) : []
   const heightSeries = monitoring
@@ -102,7 +106,7 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
         </Card>
       ) : (
         <>
-          <Card>
+          {canSickAbsences ? <Card>
             <CardHeader>
               <CardTitle>Riwayat Ketidakhadiran Karena Sakit</CardTitle>
               <p className="text-muted-foreground text-sm">
@@ -114,13 +118,13 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
             <CardContent>
               <EuksSickAbsenceTable
                 rows={monitoring.sickAbsences}
-                canEdit={capabilities.canEdit}
+                canEdit={canUpdateSickAbsence}
                 studentName={monitoring.student.name}
               />
             </CardContent>
-          </Card>
+          </Card> : null}
 
-          <Card>
+          {canVisits ? <Card>
             <CardHeader>
               <CardTitle>Riwayat Siswa Masuk UKS</CardTitle>
               <p className="text-muted-foreground text-sm">
@@ -159,9 +163,9 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
                 </TableBody>
               </Table>
             </CardContent>
-          </Card>
+          </Card> : null}
 
-          <Card>
+          {canMeasurements ? <Card>
             <CardHeader>
               <CardTitle>Grafik IMT</CardTitle>
             </CardHeader>
@@ -170,12 +174,13 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
               <EuksMeasurementTable
                 studentId={monitoring.student.id}
                 points={series}
-                canEdit={capabilities.canEdit}
+                canCreate={canCreateMeasurement}
+                canDelete={canDeleteMeasurement}
               />
             </CardContent>
-          </Card>
+          </Card> : null}
 
-          <Card>
+          {canMeasurements ? <Card>
             <CardHeader>
               <CardTitle>Kartu Menuju Sehat (KMS)</CardTitle>
             </CardHeader>
@@ -188,7 +193,7 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
                 kesehatan.
               </p>
             </CardContent>
-          </Card>
+          </Card> : null}
         </>
       )}
     </PageContainer>

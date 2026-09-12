@@ -1,0 +1,62 @@
+import { strict as assert } from "node:assert"
+import { readFileSync } from "node:fs"
+import { test } from "node:test"
+
+const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
+
+test("E-UKS uses DB-current school-wide permission guards, not homeroom or legacy flags", () => {
+  const access = read("lib/euks-access.ts")
+  assert.match(access, /requirePermission/)
+  // Abaikan komentar: yang dinilai adalah kode yang benar-benar dieksekusi.
+  const code = access.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")
+  assert.doesNotMatch(code, /canViewEuks|canEditEuks|requireClassScope|homeroom/i)
+  assert.doesNotMatch(code, /requireEuksAdmin|role === "ADMIN"/)
+})
+
+test("visit update permission does not authorize sick absence update", () => {
+  assert.match(read("app/api/e-uks/visits/[visitId]/route.ts"), /euks\.visits\.update/)
+  assert.match(read("app/api/e-uks/sick-absences/[attendanceId]/route.ts"), /euks\.sick_absences\.update/)
+})
+
+test("sick absence endpoint cannot accept or update status date or class", () => {
+  const source = read("app/api/e-uks/sick-absences/[attendanceId]/route.ts")
+  assert.match(source, /status:\s*"SAKIT"/)
+  assert.doesNotMatch(source, /status:\s*z\.|date:\s*z\.|classId:\s*z\./)
+  assert.match(source, /data:\s*\{\s*note,\s*followUp\s*\}/)
+})
+
+test("landing content is isolated from optional overview health queries", () => {
+  const source = read("app/e-uks/page.tsx")
+  const overviewGuard = source.indexOf('pageCan("euks.overview.read")')
+  const trendQuery = source.indexOf("readEuksVisitDateRange()")
+  assert.ok(overviewGuard >= 0 && trendQuery > overviewGuard)
+  assert.match(source, /const range = canOverview \? await readEuksVisitDateRange\(\) : null/)
+})
+
+test("measurement delete requires its exact permission", () => {
+  assert.match(read("app/api/e-uks/measurements/[measurementId]/route.ts"), /euks\.measurements\.delete/)
+})
+
+test("complaint read permission does not grant mutation", () => {
+  const source = read("app/api/e-uks/complaint-options/route.ts")
+  assert.match(source, /GET[\s\S]*euks\.complaint_options\.read/)
+  assert.match(source, /POST[\s\S]*euks\.complaint_options\.create/)
+  assert.match(source, /PATCH[\s\S]*euks\.complaint_options\.update/)
+})
+
+test("E-UKS settings page is permission-composed, not legacy ADMIN-gated", () => {
+  const source = read("app/e-uks/pengaturan/page.tsx")
+  assert.doesNotMatch(source, /requireEuksAdmin|role === "ADMIN"|legacyAdminOnly/)
+  assert.match(source, /requirePageAnyPermission\(/)
+  // Setiap panel hanya dimuat bila pemakainya berhak atasnya.
+  assert.match(source, /pageCan/)
+  for (const key of [
+    "euks.profile.update",
+    "euks.officers.create",
+    "euks.facilities.delete",
+    "euks.complaint_options.update",
+  ]) {
+    assert.ok(source.includes(`"${key}"`), `panel permission ${key} hilang`)
+  }
+  assert.match(source, /canOfficers \? await readAssignableTeachers\(\) : \[\]/)
+})

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
-import { requireAdmin } from "@/lib/auth-guards"
+import { authFailureResponse } from "@/lib/api-errors"
 import { prisma } from "@/lib/prisma"
+import { requirePermission } from "@/lib/rbac-access"
 import { detectFaviconType, MAX_FAVICON_BYTES, faviconUrl } from "@/lib/site-branding"
 
 export async function GET(request: Request) {
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    await requireAdmin()
+    await requirePermission("school.branding.update")
     const contentLength = Number(request.headers.get("content-length") ?? 0)
     if (contentLength > MAX_FAVICON_BYTES + 64 * 1024) {
       return NextResponse.json({ error: "Ukuran favicon maksimal 512 KB" }, { status: 413 })
@@ -61,10 +62,6 @@ export async function PUT(request: Request) {
     })
     return NextResponse.json({ faviconUrl: faviconUrl(updated.faviconUpdatedAt), hasFavicon: true })
   } catch (error) {
-    const unauthorized = error instanceof Error && error.message === "UNAUTHORIZED"
-    return NextResponse.json(
-      { error: unauthorized ? "Tidak diizinkan" : "Favicon gagal disimpan" },
-      { status: unauthorized ? 403 : 500 },
-    )
+    return authFailureResponse(error, "Favicon gagal disimpan")
   }
 }

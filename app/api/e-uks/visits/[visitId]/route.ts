@@ -32,7 +32,7 @@ const visitSelect = {
 /** Edit one recorded visit. Requires euks.edit. */
 export async function PATCH(request: Request, { params }: { params: Promise<{ visitId: string }> }) {
   try {
-    const viewer = await requireEuksPermission("euks.edit")
+    const viewer = await requireEuksPermission("euks.visits.update")
     const { visitId } = await params
     const body = payload.parse(await request.json())
 
@@ -116,7 +116,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ vi
 /** Remove one recorded visit. Requires euks.edit. */
 export async function DELETE(_request: Request, { params }: { params: Promise<{ visitId: string }> }) {
   try {
-    const viewer = await requireEuksPermission("euks.edit")
+    const viewer = await requireEuksPermission("euks.visits.delete")
     const { visitId } = await params
 
     const visit = await prisma.euksVisit.findUnique({ where: { id: visitId }, select: visitSelect })

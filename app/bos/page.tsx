@@ -6,7 +6,8 @@ import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { BosBudgetCard } from "@/components/bos/bos-budget-card"
 import { BosBreakdownCard } from "@/components/bos/bos-breakdown-card"
 import { BosEntryTable } from "@/components/bos/bos-entry-table"
-import { BosAccessError, requireBosViewer } from "@/lib/bos-access"
+import { requireBosViewer } from "@/lib/bos-access"
+import { ForbiddenError } from "@/lib/rbac-access"
 import { readBosOverview } from "@/lib/server-bos"
 
 export default async function BosPage() {
@@ -14,7 +15,7 @@ export default async function BosPage() {
   try {
     viewer = await requireBosViewer()
   } catch (error) {
-    if (error instanceof BosAccessError) redirect("/")
+    if (error instanceof ForbiddenError) redirect("/")
     throw error
   }
 
@@ -42,7 +43,7 @@ export default async function BosPage() {
       />
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <BosBudgetCard summary={overview.summary} canEdit={viewer.capabilities.canEdit} />
+        <BosBudgetCard summary={overview.summary} canEdit={viewer.capabilities.canUpdateBudget} />
         <BosBreakdownCard totals={overview.categoryTotals} />
       </div>
 
@@ -51,6 +52,7 @@ export default async function BosPage() {
         categories={overview.categories}
         canCreate={viewer.capabilities.canCreate}
         canEdit={viewer.capabilities.canEdit}
+        canCreateCategories={viewer.capabilities.canCreateCategories}
       />
     </PageContainer>
   )

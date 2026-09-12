@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
 import { detectProfilePhotoType } from "@/lib/profile"
-import { euksErrorResponse, requireEuksAdmin, requireEuksViewer } from "@/lib/euks-access"
+import { euksErrorResponse, requireEuksPermission } from "@/lib/euks-access"
 import { MAX_EUKS_PHOTO_BYTES, euksFacilityPhotoUrl } from "@/lib/euks-settings"
 
 /**
@@ -15,7 +15,7 @@ import { MAX_EUKS_PHOTO_BYTES, euksFacilityPhotoUrl } from "@/lib/euks-settings"
 /** Tampilkan foto; cukup hak baca E-UKS. */
 export async function GET(_request: Request, { params }: { params: Promise<{ facilityId: string }> }) {
   try {
-    await requireEuksViewer()
+    await requireEuksPermission("euks.content.read")
     const { facilityId } = await params
 
     const facility = await prisma.euksFacility.findUnique({
@@ -43,7 +43,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ fac
 /** Simpan/ganti foto. Hanya ADMIN. */
 export async function PUT(request: Request, { params }: { params: Promise<{ facilityId: string }> }) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.facilities.update")
     const { facilityId } = await params
 
     const contentLength = Number(request.headers.get("content-length") ?? 0)
@@ -101,7 +101,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ faci
 /** Hapus foto saja; fasilitas tetap ada dan kembali memakai placeholder. */
 export async function DELETE(_request: Request, { params }: { params: Promise<{ facilityId: string }> }) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.facilities.update")
     const { facilityId } = await params
 
     const facility = await prisma.euksFacility.findUnique({

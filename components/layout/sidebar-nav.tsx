@@ -51,39 +51,7 @@ export function SidebarNav({ onNavigate, grants, roleNames }: { onNavigate?: () 
   const { data: session } = useSession()
   const branding = useAppBranding()
 
-  const viewer = useMemo(
-    () => ({
-      grants,
-      // Masih dibutuhkan modul BOS/Sarpras/E-UKS yang belum bermigrasi.
-      role: session?.user.role ?? "GURU",
-      canSuperviseWorkbooks: session?.user.canSuperviseWorkbooks,
-      canViewWorkbookSupervision: session?.user.canViewWorkbookSupervision,
-      canViewBos: session?.user.canViewBos,
-      canCreateBos: session?.user.canCreateBos,
-      canEditBos: session?.user.canEditBos,
-      canManageBosCategories: session?.user.canManageBosCategories,
-      canManageBosAccess: session?.user.canManageBosAccess,
-      canViewSarpras: session?.user.canViewSarpras,
-      canEditSarpras: session?.user.canEditSarpras,
-      canViewEuks: session?.user.canViewEuks,
-      canEditEuks: session?.user.canEditEuks,
-    }),
-    [
-      grants,
-      session?.user.role,
-      session?.user.canSuperviseWorkbooks,
-      session?.user.canViewWorkbookSupervision,
-      session?.user.canViewBos,
-      session?.user.canCreateBos,
-      session?.user.canEditBos,
-      session?.user.canManageBosCategories,
-      session?.user.canManageBosAccess,
-      session?.user.canViewSarpras,
-      session?.user.canEditSarpras,
-      session?.user.canViewEuks,
-      session?.user.canEditEuks,
-    ],
-  )
+  const viewer = useMemo(() => ({ grants }), [grants])
 
   const entries = useMemo(() => visibleNavEntries(mainNav, viewer), [viewer])
   const accountItems = useMemo(() => accountNav.filter((item) => canSeeNavItem(item, viewer)), [viewer])

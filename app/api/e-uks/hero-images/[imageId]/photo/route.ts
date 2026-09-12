@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
 import { detectProfilePhotoType } from "@/lib/profile"
-import { euksErrorResponse, requireEuksAdmin, requireEuksViewer } from "@/lib/euks-access"
+import { euksErrorResponse, requireEuksPermission } from "@/lib/euks-access"
 import { MAX_EUKS_PHOTO_BYTES, euksHeroImageUrl } from "@/lib/euks-settings"
 
 /**
@@ -18,7 +18,7 @@ import { MAX_EUKS_PHOTO_BYTES, euksHeroImageUrl } from "@/lib/euks-settings"
 /** Tampilkan foto. Cukup hak baca E-UKS; foto hero bukan data kesehatan. */
 export async function GET(_request: Request, { params }: { params: Promise<{ imageId: string }> }) {
   try {
-    await requireEuksViewer()
+    await requireEuksPermission("euks.content.read")
     const { imageId } = await params
 
     const image = await prisma.euksHeroImage.findUnique({
@@ -52,7 +52,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ima
 /** Simpan/ganti foto. Hanya ADMIN, sama dengan konten pengaturan lainnya. */
 export async function PUT(request: Request, { params }: { params: Promise<{ imageId: string }> }) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.hero_images.update")
     const { imageId } = await params
 
     const contentLength = Number(request.headers.get("content-length") ?? 0)
@@ -113,7 +113,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ imag
 /** Hapus foto saja; entri hero tetap ada dan kembali memakai placeholder. */
 export async function DELETE(_request: Request, { params }: { params: Promise<{ imageId: string }> }) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.hero_images.update")
     const { imageId } = await params
 
     const image = await prisma.euksHeroImage.findUnique({

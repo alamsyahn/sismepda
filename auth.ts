@@ -3,9 +3,6 @@ import Credentials from "next-auth/providers/credentials"
 import { compare } from "bcryptjs"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
-import { canViewBos, hasBosPermission } from "@/lib/bos"
-import { canViewSarpras } from "@/lib/sarpras"
-import { canViewEuks } from "@/lib/euks"
 import { clearLoginFailures, consumeLoginAttempt } from "@/lib/login-rate-limit"
 import { isPublicRoute } from "@/lib/route-policy"
 
@@ -168,44 +165,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return true
       }
       if (!loggedIn) return false
-      // Tidak ada lagi tapis otorisasi berbasis role di dalam JWT untuk modul
-      // inti: /siswa, /guru, /wali-kelas, /supervisi-buku-kerja/kelola kini
-      // dijaga requirePermission() di server, dengan database sebagai satu-
-      // satunya otoritas. Menapis di sini memakai klaim token yang basi akan
-      // menghalangi grant baru berlaku tanpa logout.
-      // Modul BOS: tapis awal berbasis sesi. Guard sebenarnya tetap di
-      // requireBosPermission() pada setiap halaman dan route handler.
-      if (path === "/bos" || path.startsWith("/bos/")) {
-        if (!canViewBos(auth!.user)) return Response.redirect(new URL("/", request.nextUrl))
-        if (
-          (path === "/bos/akses" || path.startsWith("/bos/akses/")) &&
-          !hasBosPermission(auth!.user, "bos.manage_access")
-        ) {
-          return Response.redirect(new URL("/bos", request.nextUrl))
-        }
-      }
-      // Modul Sarpras: tapis awal berbasis sesi. Guard sebenarnya tetap di
-      // requireSarprasPermission() pada halaman dan setiap route handler.
-      if (path === "/sarpras" || path.startsWith("/sarpras/")) {
-        if (!canViewSarpras(auth!.user)) return Response.redirect(new URL("/", request.nextUrl))
-        if (
-          (path === "/sarpras/akses" || path.startsWith("/sarpras/akses/")) &&
-          auth!.user.role !== "ADMIN"
-        ) {
-          return Response.redirect(new URL("/sarpras", request.nextUrl))
-        }
-      }
-      // Modul E-UKS: tapis awal berbasis sesi. Guard sebenarnya tetap di
-      // requireEuksPermission() pada halaman dan setiap route handler.
-      if (path === "/e-uks" || path.startsWith("/e-uks/")) {
-        if (!canViewEuks(auth!.user)) return Response.redirect(new URL("/", request.nextUrl))
-        if (
-          (path === "/e-uks/pengaturan" || path.startsWith("/e-uks/pengaturan/")) &&
-          auth!.user.role !== "ADMIN"
-        ) {
-          return Response.redirect(new URL("/e-uks", request.nextUrl))
-        }
-      }
+      // Otorisasi seluruh domain dilakukan oleh guard server dengan context
+      // RBAC database terkini. Proxy hanya memastikan sesi ada; klaim JWT yang
+      // basi tidak boleh menghalangi grant baru atau mempertahankan grant lama.
       return true
     },
   },

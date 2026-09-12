@@ -3,7 +3,6 @@ import { test } from "node:test"
 
 import {
   bosCapabilities,
-  canViewBos,
   categoryBreakdown,
   categorySlug,
   documentLabel,
@@ -16,44 +15,29 @@ import {
   summarizeBos,
 } from "../lib/bos"
 
-const admin = { role: "ADMIN" as const }
-const guru = { role: "GURU" as const }
-
-test("ADMIN selalu lolos setiap permission BOS", () => {
-  for (const permission of [
-    "bos.view",
-    "bos.create",
-    "bos.edit",
-    "bos.manage_categories",
-    "bos.manage_access",
-  ] as const) {
-    assert.equal(hasBosPermission(admin, permission), true)
-  }
+test("permission BOS memakai exact current-DB grant tanpa authority role atau flag legacy", () => {
+  const grants = new Set(["bos.read", "bos.entries.create"])
+  assert.equal(hasBosPermission(grants, "bos.read"), true)
+  assert.equal(hasBosPermission(grants, "bos.entries.create"), true)
+  assert.equal(hasBosPermission(grants, "bos.entries.update"), false)
+  assert.equal(hasBosPermission(new Set(), "bos.read"), false)
 })
 
-test("GURU tanpa hak sama sekali tidak bisa melihat BOS", () => {
-  assert.equal(canViewBos(guru), false)
-  assert.equal(hasBosPermission(guru, "bos.create"), false)
-  assert.equal(hasBosPermission(guru, "bos.manage_access"), false)
-})
-
-test("hak selain view otomatis menyiratkan bos.view", () => {
-  assert.equal(canViewBos({ role: "GURU", canCreateBos: true }), true)
-  assert.equal(canViewBos({ role: "GURU", canEditBos: true }), true)
-  assert.equal(canViewBos({ role: "GURU", canManageBosCategories: true }), true)
-  assert.equal(canViewBos({ role: "GURU", canManageBosAccess: true }), true)
-  // Tetapi view saja tidak memberi hak menulis.
-  assert.equal(hasBosPermission({ role: "GURU", canViewBos: true }, "bos.edit"), false)
-})
-
-test("bosCapabilities memetakan seluruh hak viewer", () => {
-  const caps = bosCapabilities({ role: "GURU", canViewBos: true, canCreateBos: true })
+test("bosCapabilities memetakan permission BOS secara independen", () => {
+  const caps = bosCapabilities(new Set([
+    "bos.read",
+    "bos.entries.create",
+    "bos.categories.create",
+    "bos.access.manage",
+  ]))
   assert.deepEqual(caps, {
     canView: true,
     canCreate: true,
     canEdit: false,
+    canUpdateBudget: false,
+    canCreateCategories: true,
     canManageCategories: false,
-    canManageAccess: false,
+    canManageAccess: true,
   })
 })
 

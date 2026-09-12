@@ -2,7 +2,8 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
-import { requireSarprasEditor, sarprasErrorResponse } from "@/lib/sarpras-access"
+import { authFailureResponse } from "@/lib/api-errors"
+import { requireSarprasPermission } from "@/lib/sarpras-access"
 import { canReparent, normalizeSarprasName, sarprasSlug } from "@/lib/sarpras"
 
 const createPayload = z.object({
@@ -24,7 +25,7 @@ const deletePayload = z.object({ id: z.string().min(1) })
 /** Create a location anywhere in the tree. Requires sarpras.edit. */
 export async function POST(request: Request) {
   try {
-    const viewer = await requireSarprasEditor()
+    const viewer = await requireSarprasPermission("sarpras.locations.create")
     const body = createPayload.parse(await request.json())
     const name = normalizeSarprasName(body.name)
     const slug = sarprasSlug(name)
@@ -70,15 +71,14 @@ export async function POST(request: Request) {
 
     return NextResponse.json(created, { status: 201 })
   } catch (error) {
-    const { error: message, status } = sarprasErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    return authFailureResponse(error, "Data Sarpras tidak valid")
   }
 }
 
 /** Rename, reorder, or move a location. Requires sarpras.edit. */
 export async function PATCH(request: Request) {
   try {
-    const viewer = await requireSarprasEditor()
+    const viewer = await requireSarprasPermission("sarpras.locations.update")
     const body = updatePayload.parse(await request.json())
     if (body.name === undefined && body.parentId === undefined && body.sortOrder === undefined) {
       return NextResponse.json({ error: "Tidak ada perubahan yang dikirim" }, { status: 400 })
@@ -155,8 +155,7 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json(updated)
   } catch (error) {
-    const { error: message, status } = sarprasErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    return authFailureResponse(error, "Data Sarpras tidak valid")
   }
 }
 
@@ -168,7 +167,7 @@ export async function PATCH(request: Request) {
  */
 export async function DELETE(request: Request) {
   try {
-    const viewer = await requireSarprasEditor()
+    const viewer = await requireSarprasPermission("sarpras.locations.delete")
     const body = deletePayload.parse(await request.json())
 
     const location = await prisma.sarprasLocation.findUnique({
@@ -213,7 +212,6 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    const { error: message, status } = sarprasErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    return authFailureResponse(error, "Data Sarpras tidak valid")
   }
 }

@@ -73,6 +73,7 @@ type Props = {
   draft: ItemDraft
   locations: SarprasLocationRow[]
   itemTypes: SarprasItemTypeOption[]
+  canCreateItemType: boolean
   onItemTypeCreated: (itemType: SarprasItemTypeOption) => void
   onSaved: () => void
 }
@@ -84,6 +85,7 @@ export function SarprasItemDialog({
   draft,
   locations,
   itemTypes,
+  canCreateItemType,
   onItemTypeCreated,
   onSaved,
 }: Props) {
@@ -203,7 +205,7 @@ export function SarprasItemDialog({
                 id="sarpras-type"
                 value={form.itemTypeId}
                 itemTypes={itemTypes}
-                canCreate
+                canCreate={canCreateItemType}
                 onChange={(itemTypeId) => setForm((current) => ({ ...current, itemTypeId }))}
                 onCreate={createItemType}
               />

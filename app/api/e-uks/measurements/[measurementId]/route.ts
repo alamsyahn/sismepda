@@ -6,7 +6,7 @@ import { euksErrorResponse, requireEuksPermission } from "@/lib/euks-access"
 /** Remove one measurement. Requires euks.edit. */
 export async function DELETE(_request: Request, { params }: { params: Promise<{ measurementId: string }> }) {
   try {
-    const viewer = await requireEuksPermission("euks.edit")
+    const viewer = await requireEuksPermission("euks.measurements.delete")
     const { measurementId } = await params
 
     const existing = await prisma.studentHealthMeasurement.findUnique({

@@ -3,7 +3,7 @@ import { z } from "zod"
 
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
-import { euksErrorResponse, requireEuksAdmin } from "@/lib/euks-access"
+import { euksErrorResponse, requireEuksPermission } from "@/lib/euks-access"
 import { OFFICER_NAME_MAX, OFFICER_ROLE_MAX, normalizeLabel } from "@/lib/euks-settings"
 
 const createPayload = z.object({
@@ -29,7 +29,7 @@ const deletePayload = z.object({ id: z.string().min(1) })
 
 export async function POST(request: Request) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.officers.create")
     const body = createPayload.parse(await request.json())
 
     // Nama disalin sebagai teks meski bertaut akun, supaya kartu tetap
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.officers.update")
     const body = updatePayload.parse(await request.json())
 
     const existing = await prisma.euksOfficer.findUnique({
@@ -177,7 +177,7 @@ export async function PATCH(request: Request) {
  */
 export async function DELETE(request: Request) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.officers.delete")
     const body = deletePayload.parse(await request.json())
 
     const existing = await prisma.euksOfficer.findUnique({

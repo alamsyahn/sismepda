@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation"
 import Link from "next/link"
 
 import { PageContainer } from "@/components/layout/page-container"
@@ -11,7 +10,7 @@ import { EuksHero } from "@/components/e-uks/euks-hero"
 import { EuksOfficerRail } from "@/components/e-uks/euks-officer-rail"
 import { EuksFacilityGrid } from "@/components/e-uks/euks-facility-grid"
 import { EuksSection, EuksSectionEmpty } from "@/components/e-uks/euks-section"
-import { EuksAccessError, requireEuksViewer } from "@/lib/euks-access"
+import { pageCan, requirePageAnyPermission } from "@/lib/page-guards"
 import {
   euksFacilityPhotoUrl,
   euksHeroImageUrl,
@@ -41,18 +40,17 @@ const TOP_TERMS = 10
  * bukan hal pertama yang perlu dilihat pengunjung halaman ini.
  */
 export default async function EuksHomePage() {
-  let viewer
-  try {
-    viewer = await requireEuksViewer()
-  } catch (error) {
-    if (error instanceof EuksAccessError) redirect("/")
-    throw error
-  }
+  await requirePageAnyPermission(["euks.content.read", "euks.overview.read"])
+  const [canContent, canOverview] = await Promise.all([
+    pageCan("euks.content.read"),
+    pageCan("euks.overview.read"),
+  ])
 
-  const settings = await readEuksSettings()
-  // Halaman Pengaturan E-UKS dijaga requireEuksAdmin, jadi hanya ADMIN yang
-  // perlu melihat tautan menuju ke sana.
-  const canManage = viewer.role === "ADMIN"
+  const settings = canContent ? await readEuksSettings() : {
+    profile: { name: null, location: null, description: null, serviceHours: null, contact: null },
+    officers: [], facilities: [], complaintOptions: [], heroImages: [], heroLogos: [],
+  }
+  const canManage = canContent && await pageCan("euks.profile.update")
 
   const activeOfficers = settings.officers.filter((officer) => officer.active)
   const activeFacilities = settings.facilities.filter((facility) => facility.active)
@@ -75,9 +73,9 @@ export default async function EuksHomePage() {
       url: euksHeroLogoUrl(logo.id, logo.logoUpdatedAt)!,
     }))
 
-  const range = await readEuksVisitDateRange()
-  const visits = range ? await readEuksTrendVisits(range.first, range.last) : []
-  const distinctStudents = range ? await countDistinctVisitingStudents(range.first, range.last) : 0
+  const range = canOverview ? await readEuksVisitDateRange() : null
+  const visits = canOverview && range ? await readEuksTrendVisits(range.first, range.last) : []
+  const distinctStudents = canOverview && range ? await countDistinctVisitingStudents(range.first, range.last) : 0
 
   const complaints = rankTerms(
     visits.map((visit) => visit.complaint),

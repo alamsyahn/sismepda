@@ -4,7 +4,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { NextResponse } from "next/server"
-import { requireAdmin } from "@/lib/auth-guards"
+import { authFailureResponse } from "@/lib/api-errors"
+import { requirePermission } from "@/lib/rbac-access"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -25,7 +26,7 @@ function backupName() {
 export async function GET() {
   let directory: string | undefined
   try {
-    await requireAdmin()
+    await requirePermission("database.backup")
     directory = await mkdtemp(join(tmpdir(), "sismepda-backup-"))
     const output = join(directory, "backup.dump")
     await execute("pg_dump", ["--dbname", databaseUrl(), "--format=custom", "--data-only", "--no-owner", "--no-privileges", "--exclude-table=_prisma_migrations", "--file", output], { maxBuffer: 10 * 1024 * 1024 })
@@ -33,7 +34,7 @@ export async function GET() {
     return new Response(backup, { headers: { "Content-Type": "application/octet-stream", "Content-Disposition": `attachment; filename="${backupName()}"`, "Cache-Control": "no-store", "X-SISMEPDA-Backup-Format": "postgresql-data-v1" } })
   } catch (error) {
     console.error("Database backup failed", error)
-    return NextResponse.json({ error: "Backup database gagal dibuat" }, { status: 500 })
+    return authFailureResponse(error, "Backup database gagal dibuat")
   } finally {
     if (directory) await rm(directory, { recursive: true, force: true }).catch(() => undefined)
   }
@@ -42,7 +43,7 @@ export async function GET() {
 export async function POST(request: Request) {
   let directory: string | undefined
   try {
-    await requireAdmin()
+    await requirePermission("database.restore")
     const contentLength = Number(request.headers.get("content-length") ?? 0)
     if (contentLength > MAX_BACKUP_SIZE) return NextResponse.json({ error: "Ukuran backup maksimal 200 MB" }, { status: 413 })
     const form = await request.formData()
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true })
   } catch (error) {
     console.error("Database restore failed", error)
-    return NextResponse.json({ error: "Restore gagal. Database lama tidak diubah karena proses dibatalkan." }, { status: 400 })
+    return authFailureResponse(error, "Restore gagal. Database lama tidak diubah karena proses dibatalkan.")
   } finally {
     if (directory) await rm(directory, { recursive: true, force: true }).catch(() => undefined)
   }

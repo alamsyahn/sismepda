@@ -3,7 +3,8 @@ import { z } from "zod"
 import type { Prisma } from "@/app/generated/prisma/client"
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
-import { requireSarprasEditor, sarprasErrorResponse } from "@/lib/sarpras-access"
+import { authFailureResponse } from "@/lib/api-errors"
+import { requireSarprasPermission } from "@/lib/sarpras-access"
 import { parseSchoolDate, toPrismaDate } from "@/lib/school-date"
 import { quantityError, type SarprasQuantities } from "@/lib/sarpras"
 
@@ -56,7 +57,7 @@ function nullableText(value: string | null | undefined): string | null | undefin
 /** Create one item (a need for a type of goods at a location). Requires sarpras.edit. */
 export async function POST(request: Request) {
   try {
-    const viewer = await requireSarprasEditor()
+    const viewer = await requireSarprasPermission("sarpras.items.create")
     const body = createPayload.parse(await request.json())
     const acquisitionDateValue = body.acquisitionDate ? parseSchoolDate(body.acquisitionDate) : null
     if (body.acquisitionDate && !acquisitionDateValue) return NextResponse.json({ error: "Tanggal perolehan tidak valid" }, { status: 400 })
@@ -128,15 +129,14 @@ export async function POST(request: Request) {
 
     return NextResponse.json(created, { status: 201 })
   } catch (error) {
-    const { error: message, status } = sarprasErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    return authFailureResponse(error, "Data Sarpras tidak valid")
   }
 }
 
 /** Update an item — quantities, details, or its location. Requires sarpras.edit. */
 export async function PATCH(request: Request) {
   try {
-    const viewer = await requireSarprasEditor()
+    const viewer = await requireSarprasPermission("sarpras.items.update")
     const body = updatePayload.parse(await request.json())
     const acquisitionDateValue = body.acquisitionDate ? parseSchoolDate(body.acquisitionDate) : null
     if (body.acquisitionDate && !acquisitionDateValue) return NextResponse.json({ error: "Tanggal perolehan tidak valid" }, { status: 400 })
@@ -259,15 +259,14 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({ id: updated.id })
   } catch (error) {
-    const { error: message, status } = sarprasErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    return authFailureResponse(error, "Data Sarpras tidak valid")
   }
 }
 
 /** Delete one item. Its photos and history cascade with it. Requires sarpras.edit. */
 export async function DELETE(request: Request) {
   try {
-    const viewer = await requireSarprasEditor()
+    const viewer = await requireSarprasPermission("sarpras.items.delete")
     const body = deletePayload.parse(await request.json())
 
     const item = await prisma.sarprasItem.findUnique({
@@ -302,7 +301,6 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    const { error: message, status } = sarprasErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    return authFailureResponse(error, "Data Sarpras tidak valid")
   }
 }

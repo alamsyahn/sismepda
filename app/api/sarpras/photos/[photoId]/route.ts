@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { requireSarprasViewer, sarprasErrorResponse } from "@/lib/sarpras-access"
+import { authFailureResponse } from "@/lib/api-errors"
+import { requireSarprasPermission } from "@/lib/sarpras-access"
 
 /**
  * Stream one Sarpras photo. Requires sarpras.view — inventory photos are not
@@ -8,7 +9,7 @@ import { requireSarprasViewer, sarprasErrorResponse } from "@/lib/sarpras-access
  */
 export async function GET(_request: Request, { params }: { params: Promise<{ photoId: string }> }) {
   try {
-    await requireSarprasViewer()
+    await requireSarprasPermission("sarpras.photos.read")
     const { photoId } = await params
 
     const photo = await prisma.sarprasPhoto.findUnique({
@@ -26,7 +27,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pho
       },
     })
   } catch (error) {
-    const { error: message, status } = sarprasErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    return authFailureResponse(error, "Data Sarpras tidak valid")
   }
 }

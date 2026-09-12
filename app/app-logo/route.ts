@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
-import { requireAdmin } from "@/lib/auth-guards"
+import { authFailureResponse } from "@/lib/api-errors"
 import { prisma } from "@/lib/prisma"
+import { requirePermission } from "@/lib/rbac-access"
 import {
   appLogoUrl,
   DEFAULT_APP_LOGO_URL,
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    await requireAdmin()
+    await requirePermission("school.branding.update")
     const contentLength = Number(request.headers.get("content-length") ?? 0)
     if (contentLength > MAX_APP_LOGO_BYTES + 64 * 1024) {
       return NextResponse.json({ error: "Ukuran logo maksimal 1 MB" }, { status: 413 })
@@ -70,14 +71,14 @@ export async function PUT(request: Request) {
     })
     return NextResponse.json({ appLogoUrl: appLogoUrl(updated.appLogoUpdatedAt), hasAppLogo: true })
   } catch (error) {
-    return NextResponse.json(...brandingError(error, "Logo gagal disimpan"))
+    return authFailureResponse(error, "Logo gagal disimpan")
   }
 }
 
 /** Hapus logo custom sehingga aplikasi kembali memakai logo default. */
 export async function DELETE() {
   try {
-    await requireAdmin()
+    await requirePermission("school.branding.update")
     await prisma.schoolSetting.upsert({
       where: { id: "default" },
       update: { appLogoData: null, appLogoMimeType: null, appLogoUpdatedAt: null },
@@ -86,12 +87,6 @@ export async function DELETE() {
     })
     return NextResponse.json({ appLogoUrl: DEFAULT_APP_LOGO_URL, hasAppLogo: false })
   } catch (error) {
-    return NextResponse.json(...brandingError(error, "Logo gagal dikembalikan ke default"))
+    return authFailureResponse(error, "Logo gagal dikembalikan ke default")
   }
-}
-
-function brandingError(error: unknown, fallback: string): [{ error: string }, { status: number }] {
-  const message = error instanceof Error ? error.message : ""
-  const denied = message === "UNAUTHORIZED" || message === "FORBIDDEN"
-  return [{ error: denied ? "Tidak diizinkan" : fallback }, { status: denied ? 403 : 500 }]
 }

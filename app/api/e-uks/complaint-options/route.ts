@@ -3,7 +3,7 @@ import { z } from "zod"
 
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
-import { euksErrorResponse, requireEuksAdmin, requireEuksEditor } from "@/lib/euks-access"
+import { euksErrorResponse, requireEuksPermission } from "@/lib/euks-access"
 import { COMPLAINT_LABEL_MAX, euksSlug, normalizeLabel } from "@/lib/euks-settings"
 
 const createPayload = z.object({
@@ -26,7 +26,7 @@ const SELECT = { id: true, label: true, active: true, sortOrder: true } as const
  */
 export async function GET() {
   try {
-    await requireEuksEditor()
+    await requireEuksPermission("euks.complaint_options.read")
     const options = await prisma.euksComplaintOption.findMany({
       where: { active: true },
       orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
@@ -41,7 +41,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.complaint_options.create")
     const body = createPayload.parse(await request.json())
     const label = normalizeLabel(body.label)
     const slug = euksSlug(label)
@@ -97,7 +97,7 @@ export async function POST(request: Request) {
  */
 export async function PATCH(request: Request) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.complaint_options.update")
     const body = updatePayload.parse(await request.json())
 
     const existing = await prisma.euksComplaintOption.findUnique({

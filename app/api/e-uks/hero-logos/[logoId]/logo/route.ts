@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
-import { euksErrorResponse, requireEuksAdmin, requireEuksViewer } from "@/lib/euks-access"
+import { euksErrorResponse, requireEuksPermission } from "@/lib/euks-access"
 import {
   EUKS_LOGO_FORMAT_LABEL,
   MAX_EUKS_LOGO_BYTES,
@@ -23,7 +23,7 @@ import {
 /** Tampilkan logo. Cukup hak baca E-UKS, sama seperti foto hero. */
 export async function GET(_request: Request, { params }: { params: Promise<{ logoId: string }> }) {
   try {
-    await requireEuksViewer()
+    await requireEuksPermission("euks.content.read")
     const { logoId } = await params
 
     const logo = await prisma.euksHeroLogo.findUnique({
@@ -61,7 +61,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ log
 /** Simpan/ganti berkas logo. Hanya ADMIN. */
 export async function PUT(request: Request, { params }: { params: Promise<{ logoId: string }> }) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.hero_logos.update")
     const { logoId } = await params
 
     const contentLength = Number(request.headers.get("content-length") ?? 0)
@@ -138,7 +138,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ logo
 /** Hapus berkasnya saja; entri logo tetap ada dan bisa diunggahi ulang. */
 export async function DELETE(_request: Request, { params }: { params: Promise<{ logoId: string }> }) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.hero_logos.update")
     const { logoId } = await params
 
     const logo = await prisma.euksHeroLogo.findUnique({

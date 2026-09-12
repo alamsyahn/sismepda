@@ -2,7 +2,8 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
-import { bosErrorResponse, requireBosPermission } from "@/lib/bos-access"
+import { requirePermission } from "@/lib/rbac-access"
+import { authFailureResponse } from "@/lib/api-errors"
 import { formatRupiah } from "@/lib/bos"
 
 const payload = z.object({
@@ -13,7 +14,7 @@ const payload = z.object({
 /** Update anggaran awal BOS. Requires bos.edit. */
 export async function PATCH(request: Request) {
   try {
-    const viewer = await requireBosPermission("bos.edit")
+    const viewer = await requirePermission("bos.budget.update")
     const body = payload.parse(await request.json())
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -31,7 +32,7 @@ export async function PATCH(request: Request) {
 
       await recordAuditLog(
         {
-          actorId: viewer.id,
+          actorId: viewer.user.id,
           action: "BOS_BUDGET_UPDATED",
           entity: "BosSetting",
           entityId: "default",
@@ -49,7 +50,7 @@ export async function PATCH(request: Request) {
       initialBudget: updated.initialBudget == null ? null : Number(updated.initialBudget.toString()),
     })
   } catch (error) {
-    const { error: message, status } = bosErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    if (error instanceof z.ZodError) return NextResponse.json({ error: "Anggaran tidak valid" }, { status: 400 })
+    return authFailureResponse(error, "Anggaran BOS gagal diperbarui")
   }
 }

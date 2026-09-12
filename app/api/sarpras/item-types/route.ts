@@ -2,7 +2,8 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
-import { requireSarprasEditor, sarprasErrorResponse } from "@/lib/sarpras-access"
+import { authFailureResponse } from "@/lib/api-errors"
+import { requireSarprasPermission } from "@/lib/sarpras-access"
 import { normalizeSarprasName, sarprasSlug } from "@/lib/sarpras"
 
 const createPayload = z.object({ name: z.string().trim().min(2).max(80) })
@@ -22,7 +23,7 @@ const deletePayload = z.object({ id: z.string().min(1) })
  */
 export async function POST(request: Request) {
   try {
-    const viewer = await requireSarprasEditor()
+    const viewer = await requireSarprasPermission("sarpras.item_types.create")
     const body = createPayload.parse(await request.json())
     const name = normalizeSarprasName(body.name)
     const slug = sarprasSlug(name)
@@ -62,15 +63,14 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ...created, reused: false }, { status: 201 })
   } catch (error) {
-    const { error: message, status } = sarprasErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    return authFailureResponse(error, "Data Sarpras tidak valid")
   }
 }
 
 /** Rename or deactivate a master item type. Requires sarpras.edit. */
 export async function PATCH(request: Request) {
   try {
-    const viewer = await requireSarprasEditor()
+    const viewer = await requireSarprasPermission("sarpras.item_types.update")
     const body = updatePayload.parse(await request.json())
     if (body.name === undefined && body.active === undefined) {
       return NextResponse.json({ error: "Tidak ada perubahan yang dikirim" }, { status: 400 })
@@ -119,8 +119,7 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json(updated)
   } catch (error) {
-    const { error: message, status } = sarprasErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    return authFailureResponse(error, "Data Sarpras tidak valid")
   }
 }
 
@@ -130,7 +129,7 @@ export async function PATCH(request: Request) {
  */
 export async function DELETE(request: Request) {
   try {
-    const viewer = await requireSarprasEditor()
+    const viewer = await requireSarprasPermission("sarpras.item_types.delete")
     const body = deletePayload.parse(await request.json())
 
     const itemType = await prisma.sarprasItemType.findUnique({
@@ -166,7 +165,6 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    const { error: message, status } = sarprasErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    return authFailureResponse(error, "Data Sarpras tidak valid")
   }
 }

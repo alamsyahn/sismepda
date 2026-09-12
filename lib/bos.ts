@@ -1,69 +1,30 @@
 /** Pure BOS logic — no Prisma imports so it stays unit-testable. */
 
-/** The five BOS rights. Each maps to one boolean column on User. */
+/** Concrete BOS operations checked against current database RBAC grants. */
 export type BosPermission =
-  | "bos.view"
-  | "bos.create"
-  | "bos.edit"
-  | "bos.manage_categories"
-  | "bos.manage_access"
+  | "bos.read"
+  | "bos.entries.create"
+  | "bos.entries.update"
+  | "bos.budget.update"
+  | "bos.categories.create"
+  | "bos.categories.update"
+  | "bos.access.manage"
 
-export type BosUserRights = {
-  role: "ADMIN" | "GURU"
-  canViewBos?: boolean
-  canCreateBos?: boolean
-  canEditBos?: boolean
-  canManageBosCategories?: boolean
-  canManageBosAccess?: boolean
+/** No role or legacy flag is authority here; callers pass effective DB grants. */
+export function hasBosPermission(grants: ReadonlySet<string>, permission: BosPermission): boolean {
+  return grants.has(permission)
 }
 
-/** Permission -> the User column that grants it. */
-export const bosPermissionColumns = {
-  "bos.view": "canViewBos",
-  "bos.create": "canCreateBos",
-  "bos.edit": "canEditBos",
-  "bos.manage_categories": "canManageBosCategories",
-  "bos.manage_access": "canManageBosAccess",
-} as const satisfies Record<BosPermission, keyof BosUserRights>
-
-export const bosPermissionLabels: Record<BosPermission, string> = {
-  "bos.view": "Lihat BOS",
-  "bos.create": "Tambah Entry",
-  "bos.edit": "Edit Data",
-  "bos.manage_categories": "Kelola Kategori",
-  "bos.manage_access": "Kelola Akses",
-}
-
-/**
- * Single source of truth for BOS authorization. ADMIN always passes.
- * Any granted right implies bos.view — a user who may create or edit must be
- * able to open the module, so the two can never drift out of sync.
- */
-export function hasBosPermission(user: BosUserRights, permission: BosPermission): boolean {
-  if (user.role === "ADMIN") return true
-  if (user[bosPermissionColumns[permission]] === true) return true
-  if (permission !== "bos.view") return false
-  return (
-    user.canCreateBos === true ||
-    user.canEditBos === true ||
-    user.canManageBosCategories === true ||
-    user.canManageBosAccess === true
-  )
-}
-
-/** Convenience wrapper used by the nav filter and the page guards. */
-export function canViewBos(user: BosUserRights): boolean {
-  return hasBosPermission(user, "bos.view")
-}
-
-/** Every right the viewer holds, for handing capabilities down to the client. */
-export function bosCapabilities(user: BosUserRights) {
+/** Every independent BOS operation for handing capabilities to the client. */
+export function bosCapabilities(grants: ReadonlySet<string>) {
   return {
-    canView: hasBosPermission(user, "bos.view"),
-    canCreate: hasBosPermission(user, "bos.create"),
-    canEdit: hasBosPermission(user, "bos.edit"),
-    canManageCategories: hasBosPermission(user, "bos.manage_categories"),
-    canManageAccess: hasBosPermission(user, "bos.manage_access"),
+    canView: hasBosPermission(grants, "bos.read"),
+    canCreate: hasBosPermission(grants, "bos.entries.create"),
+    canEdit: hasBosPermission(grants, "bos.entries.update"),
+    canUpdateBudget: hasBosPermission(grants, "bos.budget.update"),
+    canCreateCategories: hasBosPermission(grants, "bos.categories.create"),
+    canManageCategories: hasBosPermission(grants, "bos.categories.update"),
+    canManageAccess: hasBosPermission(grants, "bos.access.manage"),
   }
 }
 

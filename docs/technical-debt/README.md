@@ -72,15 +72,35 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Direction:** Derive and explicitly select the configured schema for dump/restore, parse archive identifiers structurally, and combine this with the TD-002 table allowlist.
 - **Exit criteria:** Database-backed tests successfully backup and restore both `public` and a named schema, reject cross-schema/unknown-table archives, and verify rollback on failure.
 
-## TD-008 — Stale JWT role still authorizes the not-yet-migrated modules
+## TD-008 — Legacy role/capability columns still exist but no longer authorize
 
-- **Area / severity:** Authorization — **Medium** (was High; core modules resolved in Phase 4)
-- **Current condition:** Core modules (dashboard, attendance, recap/export, students, teachers, homerooms, workbook, navigation) authorize through `lib/rbac-access.ts` against the current database and no longer read the JWT role. The remaining consumers of the stale path are `lib/auth-guards.ts` (`requireAdmin()`) and the capability guards in `lib/bos-access.ts`, `lib/euks-access.ts`, `lib/sarpras-access.ts`, used by BOS, Sarpras, E-UKS, `/pengaturan`, branding and database backup. Those capability guards re-read their boolean rights from PostgreSQL, but the ADMIN escape hatch inside them still comes from the JWT role.
-- **Evidence:** `auth.ts` (JWT/session callbacks, 30-day maximum age); `lib/auth-guards.ts:4-15`; `app/api/admin/{database,holidays,settings}/route.ts`.
-- **Impact:** A user demoted from ADMIN can retain ADMIN-only access to those remaining surfaces until the token refreshes or expires. Deactivation still takes effect immediately, and every core surface now reflects demotion on the next request.
-- **Reason:** Enforcement was migrated module by module; the modules above are scheduled after the core.
-- **Direction:** Migrate the remaining modules onto `requirePermission()` and delete `lib/auth-guards.ts`, then drop the capability copies from the JWT (see [architecture/rbac.md](../architecture/rbac.md), Phase 5+).
-- **Exit criteria:** No source file outside `lib/rbac-*.ts` reads `user.role` or a `can*` column for an authorization decision, and an integration test proves demotion immediately blocks every remaining ADMIN-only page and API on an existing session.
+- **Area / severity:** Authorization — **Low** (was Medium; domain modules resolved in Phase 5)
+- **Current condition:** Every application surface authorizes through `lib/rbac-access.ts` against the current database. `requireAdmin()` in `lib/auth-guards.ts` and the pure helpers in `lib/euks.ts`, `lib/sarpras.ts`, `lib/workbook.ts`, `lib/teacher-profile.ts` still contain "ADMIN always passes" logic, but a repo-wide grep confirms **no runtime call sites** — they are referenced only by their own definitions and by tests. `User.role` and the `can*` columns are still written by existing UIs and read by `lib/rbac-legacy.ts` for one-time backfill parity.
+- **Evidence:** `lib/auth-guards.ts:12-16`; `lib/euks.ts:31`; `lib/sarpras.ts:32`; `lib/workbook.ts:150`; `lib/teacher-profile.ts:45`.
+- **Impact:** No live authorization impact. The risk is future regression: a new handler could import one of these helpers and silently reintroduce JWT-role authority.
+- **Reason:** The columns are retained through one release cycle so the backfill remains re-verifiable; deleting the dead helpers early would break the parity mapping and its tests.
+- **Direction:** In Phase 6, delete the dead helpers together with `User.role`, the `can*` columns and the `"Role"` enum, and remove `requireAdmin()` outright.
+- **Exit criteria:** `lib/auth-guards.ts` no longer exports `requireAdmin`, no source file outside `lib/rbac-legacy.ts` and `tests/` mentions `user.role` or a `can*` column, and the schema no longer carries those columns.
+
+## TD-012 — Two route handlers map authorization failures to HTTP 400
+
+- **Area / severity:** API contract — **Low**
+- **Current condition:** `teacherErrorResponse` (`lib/teacher-access.ts:22-25`) and `workbookErrorResponse` (`lib/workbook-access.ts:38-41`) recognize only their own error class; every other error, including `UnauthorizedError`, `ForbiddenError` and `RbacNotReadyError`, falls through to `{ status: 400 }`. Used by `app/api/teachers/[teacherId]/duties/route.ts` and `.../schedule/route.ts`.
+- **Evidence:** `lib/teacher-access.ts:22-25`, `lib/workbook-access.ts:38-41`. Compare `lib/euks-access.ts:15-21`, which delegates to `describeAuthFailure`.
+- **Impact:** Enforcement is correct — unauthorized requests are still rejected — but clients and monitoring observe 400 instead of 401/403/503, contradicting the contract in `lib/api-errors.ts`.
+- **Reason:** These two wrappers predate `lib/api-errors.ts` and were not revisited when the shared mapper landed in Phase 4.
+- **Direction:** Route both wrappers through `describeAuthFailure` as the E-UKS wrapper does.
+- **Exit criteria:** Both handlers return 401/403/503 for the corresponding failures, covered by a direct handler test.
+
+## TD-013 — `/api/attendance-trend` validates before authorizing
+
+- **Area / severity:** API contract / information disclosure — **Low**
+- **Current condition:** `app/api/attendance-trend/route.ts:8-15` calls `readSchoolTimeZone()` and validates the range before authorization, which happens later inside `lib/server-attendance-trend.ts:51`.
+- **Evidence:** `app/api/attendance-trend/route.ts:8-15`; `lib/server-attendance-trend.ts:36,51`.
+- **Impact:** An unauthorized caller can trigger a `schoolSetting` read and receive a 409 revealing whether the academic-year configuration is valid. Attendance data itself stays protected.
+- **Reason:** The handler was migrated in Phase 4 by delegating authorization to the loader rather than guarding at the entry point.
+- **Direction:** Authorize at the top of the handler, as `PUT /api/admin/settings` now does, keeping the loader check as defence in depth.
+- **Exit criteria:** An unauthorized request to `/api/attendance-trend` returns 401/403 without reading `schoolSetting`, proven by a direct handler test.
 
 ## TD-009 — Teacher deletion is blocked by recorded violation points
 

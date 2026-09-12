@@ -25,7 +25,7 @@ uses today.
 
 Physical names avoid the existing PostgreSQL enum `"Role"` (`prisma/migrations/20260711170000_init`). The Prisma model is `RbacRole`; the other tables use their model names. The legacy enum keeps its physical type: its Prisma symbol was renamed to `LegacyRole` with `@@map("Role")`, so `User.role` and the PostgreSQL type are untouched.
 
-**Implementation status.** Phases 2–4 have landed. The **core modules** (dashboard, attendance, recap/export, students, teachers, homerooms, workbook, navigation) now authorize exclusively through `requirePermission()` / `requireClassScopeFor()` against the current database. `User.role` and the boolean capability columns are still written by existing UIs and still read by the **not-yet-migrated modules** (BOS, Sarpras, E-UKS, settings, database backup) via `lib/*-access.ts`; they are no longer consulted by any core guard.
+**Implementation status.** Phases 2–5 have landed. Every application surface — core modules (dashboard, attendance, recap/export, students, teachers, homerooms, workbook, navigation) **and** the domain modules (BOS, Sarpras, E-UKS, school settings, branding, holidays, database backup/restore) — now authorizes exclusively through `requirePermission()` / `requireAnyPermission()` / `requireClassScopeFor()` against the current database. `User.role` and the boolean capability columns are still written by existing UIs and are still read by `lib/rbac-legacy.ts` for the one-time backfill parity mapping, but they are **no longer consulted by any runtime guard**. Contracting those columns is Phase 6.
 
 ```text
 RbacRole            id cuid PK · key text unique (lowercase, stable) · name text
@@ -128,39 +128,47 @@ Every key below corresponds to at least one surface in the inventory. Keys are g
 | `workbook.supervision.review` | — | `PATCH /api/workbooks/status` |
 | `workbook.scope.manage` | — | `/supervisi-buku-kerja/kelola`, `PATCH /api/workbooks/scope` (`workbookSupervised` + legacy supervision flags) |
 | `bos.read` | — | `/bos`, page loaders |
-| `bos.entries.create` | — | `POST /api/bos/entries`, `POST /api/bos/categories` (inline category creation while entering) |
+| `bos.entries.create` | — | `POST /api/bos/entries` |
 | `bos.entries.update` | — | `PATCH /api/bos/entries/[entryId]` |
-| `bos.budget.write` | — | `PATCH /api/bos/settings` |
-| `bos.categories.manage` | — | `PATCH /api/bos/categories` |
-| `bos.access.manage` | — | `/bos/akses`, `PATCH /api/bos/access` (legacy; superseded by `rbac.assignments.manage` once migrated) |
-| `sarpras.read` | — | `/sarpras`, `GET /api/sarpras/history`, `GET /api/sarpras/photos`, `GET /api/sarpras/photos/[photoId]` |
-| `sarpras.locations.write` | — | `POST/PATCH/DELETE /api/sarpras/locations` |
-| `sarpras.item_types.write` | — | `POST/PATCH/DELETE /api/sarpras/item-types` |
-| `sarpras.items.write` | — | `POST/PATCH/DELETE /api/sarpras/items` |
-| `sarpras.photos.write` | — | `POST/DELETE /api/sarpras/photos` |
-| `sarpras.access.manage` | — | `/sarpras/akses`, `PATCH /api/sarpras/access` (legacy; superseded by `rbac.assignments.manage`) |
-| `euks.overview.read` | — | `/e-uks`, `readEuksSettings`, trend loaders, `GET` photo/logo handlers under `/api/e-uks/*` |
+| `bos.budget.update` | — | `PATCH /api/bos/settings` |
+| `bos.categories.create` | — | `POST /api/bos/categories` (create / reuse / reactivate by slug, as in source) |
+| `bos.categories.update` | — | `PATCH /api/bos/categories` (rename, activate/deactivate) |
+| `bos.access.manage` | — | `/bos/akses`, `PATCH /api/bos/access`. **Domain-scoped delegation only**: assign/unassign the five allowlisted `legacy_bos_*` bundles. Never equivalent to `rbac.assignments.manage` |
+| `sarpras.read` | — | `/sarpras`, overview loader |
+| `sarpras.history.read` | — | `GET /api/sarpras/history` |
+| `sarpras.photos.read` | — | `GET /api/sarpras/photos`, `GET /api/sarpras/photos/[photoId]` |
+| `sarpras.locations.create/update/delete` | — | `POST` / `PATCH` / `DELETE /api/sarpras/locations` |
+| `sarpras.item_types.create/update/delete` | — | `POST` / `PATCH` / `DELETE /api/sarpras/item-types` |
+| `sarpras.items.create/update/delete` | — | `POST` / `PATCH` / `DELETE /api/sarpras/items` |
+| `sarpras.photos.create` | — | `POST /api/sarpras/photos` |
+| `sarpras.photos.delete` | — | `DELETE /api/sarpras/photos/[photoId]` |
+| `euks.content.read` | — | `/e-uks` public-facing content (profile, officers, facilities, hero assets). Grants **no** health data |
+| `euks.overview.read` | — | `/e-uks` visit aggregates and trend loaders |
 | `euks.visits.read` | — | `/e-uks/riwayat-kunjungan`, `readEuksVisits` |
-| `euks.visits.write` | — | `POST /api/e-uks/visits`, `PATCH/DELETE /api/e-uks/visits/[visitId]` |
-| `euks.monitoring.read` | — | `/e-uks/pantauan-kesehatan`, student health loaders |
-| `euks.measurements.write` | — | `POST /api/e-uks/measurements`, `DELETE /api/e-uks/measurements/[measurementId]` |
-| `euks.sick_absences.write` | — | `PATCH /api/e-uks/sick-absences/[attendanceId]` (note/followUp on SAKIT rows only) |
+| `euks.visits.create/update/delete` | — | `POST /api/e-uks/visits`, `PATCH` / `DELETE /api/e-uks/visits/[visitId]` |
+| `euks.monitoring.read` | — | `/e-uks/pantauan-kesehatan` shell and student selectors |
+| `euks.measurements.read` | — | measurement panel of the monitoring loader |
+| `euks.measurements.create` | — | `POST /api/e-uks/measurements` |
+| `euks.measurements.delete` | — | `DELETE /api/e-uks/measurements/[measurementId]` |
+| `euks.sick_absences.read` | — | sick-absence panel of the monitoring loader |
+| `euks.sick_absences.update` | — | `PATCH /api/e-uks/sick-absences/[attendanceId]` — `note`/`followUp` only, on rows whose status is `SAKIT` **as read from the database**. Never status, date, class, or general attendance |
 | `euks.complaint_options.read` | — | `GET /api/e-uks/complaint-options` |
-| `euks.complaint_options.manage` | — | `POST/PATCH /api/e-uks/complaint-options` |
-| `euks.profile.manage` | — | `/e-uks/pengaturan`, `PUT /api/e-uks/profile` |
-| `euks.officers.manage` | — | `POST/PATCH/DELETE /api/e-uks/officers`, `PUT/DELETE …/officers/[id]/photo` |
-| `euks.facilities.manage` | — | `POST/PATCH/DELETE /api/e-uks/facilities`, `PUT/DELETE …/facilities/[id]/photo` |
-| `euks.hero_images.manage` | — | `POST/PATCH/DELETE /api/e-uks/hero-images`, `PUT/DELETE …/hero-images/[id]/photo` |
-| `euks.hero_logos.manage` | — | `POST/PATCH/DELETE /api/e-uks/hero-logos`, `PUT/DELETE …/hero-logos/[id]/logo` |
+| `euks.complaint_options.create` | — | `POST /api/e-uks/complaint-options` (create / reuse / reactivate) |
+| `euks.complaint_options.update` | — | `PATCH /api/e-uks/complaint-options` (rename, activate/deactivate; no delete exists in source) |
+| `euks.profile.update` | — | `PUT /api/e-uks/profile` |
+| `euks.officers.create/update/delete` | — | `POST` / `PATCH` / `DELETE /api/e-uks/officers`, `PUT`/`DELETE …/officers/[id]/photo` |
+| `euks.facilities.create/update/delete` | — | `POST` / `PATCH` / `DELETE /api/e-uks/facilities`, `PUT`/`DELETE …/facilities/[id]/photo` |
+| `euks.hero_images.create/update/delete` | — | `POST` / `PATCH` / `DELETE /api/e-uks/hero-images`, `PUT`/`DELETE …/hero-images/[id]/photo` |
+| `euks.hero_logos.create/update/delete` | — | `POST` / `PATCH` / `DELETE /api/e-uks/hero-logos`, `PUT`/`DELETE …/hero-logos/[id]/logo` |
 | `school.settings.read` | — | `/pengaturan`, `GET /api/admin/settings` |
-| `school.settings.write` | — | `PUT /api/admin/settings` (excluding `allowTeachersAccessAllClasses`) |
-| `school.class_access.write` | — | `allowTeachersAccessAllClasses` field of `PUT /api/admin/settings` |
-| `school.branding.write` | — | `PUT/DELETE /app-logo`, `PUT /favicon.ico`, branding fields of settings |
+| `school.settings.update` | — | ordinary school/attendance fields of `PUT /api/admin/settings` |
+| `school.class_access.manage` | — | `allowTeachersAccessAllClasses` field only. A settings editor cannot flip it |
+| `school.branding.update` | — | branding fields of settings, `PUT/DELETE /app-logo`, `PUT /favicon.ico` |
 | `school.holidays.read` | — | `GET /api/admin/holidays` |
-| `school.holidays.write` | — | `POST/PATCH/DELETE /api/admin/holidays` |
+| `school.holidays.create/update/delete` | — | `POST` / `PATCH` / `DELETE /api/admin/holidays` |
 | `school.holidays.export` | — | `GET /api/export?type=holidays` |
-| `database.backup` | — | `GET /api/admin/database` |
-| `database.restore` | — | `POST /api/admin/database` |
+| `database.backup` | — | `GET /api/admin/database`. Independent of restore |
+| `database.restore` | — | `POST /api/admin/database`. Independent of backup |
 | `accounts.read` | — | account list for role assignment UI (new surface, Phase 3+) |
 | `rbac.roles.read` | — | role list/detail (new) |
 | `rbac.roles.manage` | — | create/update/delete non-system roles, edit role permissions (new) |
@@ -243,8 +251,17 @@ Phases are executed serially; each is a separate commit with its own validation.
    - `lib/nav.ts` filters by permission key instead of role name; empty groups disappear and there is no `GURU` fallback while the session loads. Grants are computed server-side (`lib/server-nav-grants.ts`) and passed down as props. Role display is multi-badge with a "Tanpa role" state.
    - Teacher population comes from `User.isTeacher` (`lib/teacher-population.ts`), which also refuses account operations against holders of a **protected** role unless the caller is a system admin.
    Still legacy at the end of Phase 4: BOS, Sarpras, E-UKS, `/pengaturan`, database backup, and the `requireAdmin` helper they use.
-4. **Phase 5 – admin UI.** Role management, assignment, RBAC audit viewer; retire `/bos/akses`, `/sarpras/akses`, workbook scope flags and `canManageTeacherProfiles` editing.
-5. **Phase 6 – cleanup.** Drop `User.role`, boolean capability columns and the `"Role"` enum in a separate migration after a full release cycle with RBAC live.
+4. **Phase 5 – domain enforcement (done).** BOS, Sarpras, E-UKS, school settings, branding, holidays and database backup/restore now authorize through the current database, with operation-specific keys:
+   - Coarse `*.write` / `*.manage` keys were split into `create` / `update` / `delete` per operation, and `euks.content.read` was introduced so public-facing E-UKS content no longer implies health data. Migration `20260913130000_migrate_domain_permissions` copies every existing `RolePermission` edge onto **all** operations the old key used to open, so nobody loses access; `20260913140000_retire_superseded_domain_permissions` then removes the superseded rows.
+   - No operation was invented: BOS entries have no delete, complaint options have no delete, and measurements have no update, because the source has none.
+   - **Delegated BOS access** (`bos.access.manage`) stays a domain-scoped exception. `PATCH /api/bos/access` accepts only `{ userId, bundleKey, assigned }` via a strict schema — no `roleId` — resolves the role server-side from a closed allowlist of five `legacy_bos_*` bundles, and on **every** request re-validates that the bundle's current permission set still equals the expected BOS-only set. A contaminated bundle is rejected (409); a target holding any protected role is rejected (403). The mutation touches exactly one `UserRole` row, so other grants survive. It can never grant Guru, UKS, a global manager or `system_admin`, and cannot reach `active`, password, email or NIP.
+   - Because permissions union across roles, removing a delegated bundle does not necessarily remove effective BOS access — the UI states this rather than implying revocation.
+   - Response projection follows permission, not just rendering: `readStudentMonitoring` substitutes empty results for panels the caller cannot read, so a content-only account triggers no measurement/visit/sick-absence query at all.
+   - `allowTeachersAccessAllClasses` requires `school.class_access.manage`; an ordinary settings editor cannot flip it. `PUT /api/admin/settings` authorizes before parsing so a rejected caller gets 403, not a Zod 400.
+   - Public branding (`/site-branding.json`, `/app-logo`, `/favicon.ico` GET) stays public and exposes only the branding projection; mutations require `school.branding.update`.
+   - The Sarpras access shortcut (`/sarpras/akses`, `PATCH /api/sarpras/access`, `readSarprasAccessScope`) was **removed**: it only wrote legacy boolean columns, which after this phase decide nothing — a control that appeared to work but did not.
+   - `auth.ts` no longer prefilters `/bos`, `/sarpras` or `/e-uks` from JWT claims, and `lib/nav.ts` no longer carries `capability` / `legacyAdminOnly`.
+5. **Phase 6 – admin UI & cleanup.** Global role/account management UI, RBAC audit viewer, then drop `User.role`, the boolean capability columns and the `"Role"` enum in a separate migration after a full release cycle with RBAC live.
 
 Every phase keeps the Docker migrator (`prisma migrate deploy && prisma db seed`) valid: seed remains idempotent and must not require RBAC tables before their migration exists.
 

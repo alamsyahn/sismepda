@@ -27,7 +27,8 @@ import type { SarprasItemRow, SarprasLocationRow } from "@/lib/server-sarpras"
 type Props = {
   locations: SarprasLocationRow[]
   items: SarprasItemRow[]
-  canEdit: boolean
+  capabilities: { create: boolean; update: boolean; delete: boolean }
+  canCreateItem: boolean
   onAddLocation: (parentId: string | null) => void
   onEditLocation: (location: SarprasLocationRow) => void
   onDeleteLocation: (location: SarprasLocationRow) => void
@@ -43,7 +44,8 @@ type Props = {
 export function SarprasLocationTree({
   locations,
   items,
-  canEdit,
+  capabilities,
+  canCreateItem,
   onAddLocation,
   onEditLocation,
   onDeleteLocation,
@@ -103,7 +105,7 @@ export function SarprasLocationTree({
             Telusuri per lokasi, atau cari langsung barang yang dibutuhkan.
           </p>
         </div>
-        {canEdit ? (
+        {capabilities.create ? (
           <Button variant="outline" className="shrink-0" onClick={() => onAddLocation(null)}>
             <FolderPlus className="size-4" />
             Tambah Lokasi
@@ -140,7 +142,7 @@ export function SarprasLocationTree({
             <EmptyState
               message="Belum ada lokasi sarpras."
               action={
-                canEdit ? (
+                capabilities.create ? (
                   <Button size="sm" variant="outline" onClick={() => onAddLocation(null)}>
                     <FolderPlus className="size-4" />
                     Tambah Lokasi
@@ -157,7 +159,8 @@ export function SarprasLocationTree({
                   expanded={expanded}
                   onToggle={toggle}
                   itemsByLocation={itemsByLocation}
-                  canEdit={canEdit}
+                  capabilities={capabilities}
+                  canCreateItem={canCreateItem}
                   onAddLocation={onAddLocation}
                   onEditLocation={onEditLocation}
                   onDeleteLocation={onDeleteLocation}
@@ -178,7 +181,8 @@ function TreeRow({
   expanded,
   onToggle,
   itemsByLocation,
-  canEdit,
+  capabilities,
+  canCreateItem,
   onAddLocation,
   onEditLocation,
   onDeleteLocation,
@@ -189,7 +193,8 @@ function TreeRow({
   expanded: Record<string, boolean>
   onToggle: (id: string) => void
   itemsByLocation: Map<string, SarprasItemRow[]>
-  canEdit: boolean
+  capabilities: { create: boolean; update: boolean; delete: boolean }
+  canCreateItem: boolean
   onAddLocation: (parentId: string | null) => void
   onEditLocation: (location: SarprasLocationRow) => void
   onDeleteLocation: (location: SarprasLocationRow) => void
@@ -227,7 +232,7 @@ function TreeRow({
           </span>
         </button>
 
-        {canEdit ? (
+        {canCreateItem || capabilities.create || capabilities.update || capabilities.delete ? (
           <div className="relative shrink-0">
             <Button
               size="icon-sm"
@@ -248,31 +253,31 @@ function TreeRow({
                   onClick={() => setMenuOpen(false)}
                 />
                 <div className="absolute right-0 z-50 mt-1 w-48 overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-md">
-                  <MenuItem
+                  {canCreateItem ? <MenuItem
                     icon={<Plus className="size-4" />}
                     label="Tambah Barang"
                     onClick={() => {
                       setMenuOpen(false)
                       onAddItem(node.id)
                     }}
-                  />
-                  <MenuItem
+                  /> : null}
+                  {capabilities.create ? <MenuItem
                     icon={<FolderPlus className="size-4" />}
                     label="Tambah Sub-lokasi"
                     onClick={() => {
                       setMenuOpen(false)
                       onAddLocation(node.id)
                     }}
-                  />
-                  <MenuItem
+                  /> : null}
+                  {capabilities.update ? <MenuItem
                     icon={<Pencil className="size-4" />}
                     label="Edit / Pindahkan"
                     onClick={() => {
                       setMenuOpen(false)
                       onEditLocation(node)
                     }}
-                  />
-                  <MenuItem
+                  /> : null}
+                  {capabilities.delete ? <MenuItem
                     icon={<Trash2 className="size-4" />}
                     label="Hapus"
                     tone="text-destructive"
@@ -280,7 +285,7 @@ function TreeRow({
                       setMenuOpen(false)
                       onDeleteLocation(node)
                     }}
-                  />
+                  /> : null}
                 </div>
               </>
             ) : null}
@@ -295,7 +300,7 @@ function TreeRow({
               <p className="text-sm text-muted-foreground">
                 Belum ada data sarpras di lokasi ini.
               </p>
-              {canEdit ? (
+              {canCreateItem ? (
                 <Button size="sm" variant="outline" onClick={() => onAddItem(node.id)}>
                   <Plus className="size-4" />
                   Tambah Barang
@@ -321,7 +326,8 @@ function TreeRow({
                   expanded={expanded}
                   onToggle={onToggle}
                   itemsByLocation={itemsByLocation}
-                  canEdit={canEdit}
+                  capabilities={capabilities}
+                  canCreateItem={canCreateItem}
                   onAddLocation={onAddLocation}
                   onEditLocation={onEditLocation}
                   onDeleteLocation={onDeleteLocation}

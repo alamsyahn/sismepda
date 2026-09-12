@@ -3,7 +3,7 @@ import { z } from "zod"
 
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
-import { euksErrorResponse, requireEuksAdmin } from "@/lib/euks-access"
+import { euksErrorResponse, requireEuksPermission } from "@/lib/euks-access"
 import {
   FACILITY_NAME_MAX,
   FACILITY_NOTE_MAX,
@@ -56,7 +56,7 @@ const SELECT = {
  */
 export async function POST(request: Request) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.facilities.create")
     const body = createPayload.parse(await request.json())
     const name = normalizeLabel(body.name)
     const slug = euksSlug(name)
@@ -112,7 +112,7 @@ export async function POST(request: Request) {
 /** Perbarui isi atau status tampil satu fasilitas. */
 export async function PATCH(request: Request) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.facilities.update")
     const body = updatePayload.parse(await request.json())
 
     const existing = await prisma.euksFacility.findUnique({ where: { id: body.id }, select: SELECT })
@@ -168,7 +168,7 @@ export async function PATCH(request: Request) {
  */
 export async function DELETE(request: Request) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.facilities.delete")
     const body = deletePayload.parse(await request.json())
 
     const existing = await prisma.euksFacility.findUnique({

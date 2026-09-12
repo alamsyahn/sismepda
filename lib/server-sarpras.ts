@@ -50,7 +50,7 @@ export { sarprasPhotoUrl } from "@/lib/sarpras-constants"
  * The one read the Sarpras page needs: locations, item types, every item with
  * its derived status, the unit-based dashboard stats, and per-location counts.
  */
-export async function readSarprasOverview() {
+export async function readSarprasOverview(includePhotos = true) {
   const [locations, itemTypes, items] = await Promise.all([
     prisma.sarprasLocation.findMany({
       select: { id: true, name: true, parentId: true, sortOrder: true },
@@ -77,7 +77,9 @@ export async function readSarprasOverview() {
         updatedAt: true,
         location: { select: { name: true } },
         itemType: { select: { name: true } },
-        photos: { select: { id: true, caption: true }, orderBy: { sortOrder: "asc" } },
+        photos: includePhotos
+          ? { select: { id: true, caption: true }, orderBy: { sortOrder: "asc" } }
+          : false,
       },
       orderBy: [{ updatedAt: "desc" }],
     }),
@@ -102,7 +104,7 @@ export async function readSarprasOverview() {
     inventoryCode: item.inventoryCode,
     description: item.description,
     priority: item.priority,
-    photos: item.photos,
+    photos: "photos" in item ? item.photos : [],
     updatedAt: item.updatedAt,
   }))
 
@@ -143,23 +145,3 @@ export async function readSarprasHistory(itemId: string, limit = 30) {
 }
 
 export type SarprasHistoryRow = Awaited<ReturnType<typeof readSarprasHistory>>[number]
-
-/** Every account that can be granted Sarpras rights, for the access page. */
-export async function readSarprasAccessScope() {
-  return prisma.user.findMany({
-    where: { role: { in: ["ADMIN", "GURU"] } },
-    select: {
-      id: true,
-      name: true,
-      nip: true,
-      role: true,
-      active: true,
-      position: true,
-      canViewSarpras: true,
-      canEditSarpras: true,
-    },
-    orderBy: [{ active: "desc" }, { name: "asc" }],
-  })
-}
-
-export type SarprasAccessRow = Awaited<ReturnType<typeof readSarprasAccessScope>>[number]

@@ -3,7 +3,7 @@ import { z } from "zod"
 
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
-import { euksErrorResponse, requireEuksAdmin } from "@/lib/euks-access"
+import { euksErrorResponse, requireEuksPermission } from "@/lib/euks-access"
 import { HERO_CAPTION_MAX, normalizeLabel } from "@/lib/euks-settings"
 
 /**
@@ -42,7 +42,7 @@ const deletePayload = z.object({ id: z.string().min(1) })
 
 export async function POST(request: Request) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.hero_images.create")
     const body = createPayload.parse(await request.json())
 
     const last = await prisma.euksHeroImage.findFirst({
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.hero_images.update")
     const body = updatePayload.parse(await request.json())
 
     const existing = await prisma.euksHeroImage.findUnique({
@@ -157,7 +157,7 @@ export async function PATCH(request: Request) {
  */
 export async function DELETE(request: Request) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.hero_images.delete")
     const body = deletePayload.parse(await request.json())
 
     const existing = await prisma.euksHeroImage.findUnique({

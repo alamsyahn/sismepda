@@ -26,6 +26,7 @@ type Props = {
   categories: BosCategoryOption[]
   canCreate: boolean
   canEdit: boolean
+  canCreateCategories: boolean
 }
 
 function toDraft(entry: BosEntryRow): EntryDraft {
@@ -39,7 +40,7 @@ function toDraft(entry: BosEntryRow): EntryDraft {
   }
 }
 
-export function BosEntryTable({ entries, categories, canCreate, canEdit }: Props) {
+export function BosEntryTable({ entries, categories, canCreate, canEdit, canCreateCategories }: Props) {
   const { today } = useSchoolTimeZone()
   const router = useRouter()
   const [options, setOptions] = useState(categories)
@@ -193,7 +194,7 @@ export function BosEntryTable({ entries, categories, canCreate, canEdit }: Props
         onOpenChange={setFormOpen}
         draft={draft}
         categories={options}
-        canCreateCategory={canCreate || canEdit}
+        canCreateCategory={canCreateCategories}
         onCategoryCreated={(category) =>
           setOptions((current) =>
             current.some((item) => item.id === category.id) ? current : [...current, category],

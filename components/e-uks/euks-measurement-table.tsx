@@ -24,11 +24,12 @@ import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 type Props = {
   studentId: string
   points: BmiPoint[]
-  canEdit: boolean
+  canCreate: boolean
+  canDelete: boolean
 }
 
 /** History of measurements plus the form that appends a new one. */
-export function EuksMeasurementTable({ studentId, points, canEdit }: Props) {
+export function EuksMeasurementTable({ studentId, points, canCreate, canDelete }: Props) {
   const { today } = useSchoolTimeZone()
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -90,7 +91,7 @@ export function EuksMeasurementTable({ studentId, points, canEdit }: Props) {
 
   return (
     <div className="space-y-3">
-      {canEdit ? (
+      {canCreate ? (
         <div className="flex justify-end">
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger render={<Button size="sm" />}>
@@ -170,13 +171,13 @@ export function EuksMeasurementTable({ studentId, points, canEdit }: Props) {
             <TableHead>Berat Badan (kg)</TableHead>
             <TableHead>IMT</TableHead>
             <TableHead>Catatan</TableHead>
-            {canEdit ? <TableHead className="w-16 text-right">Aksi</TableHead> : null}
+            {canDelete ? <TableHead className="w-16 text-right">Aksi</TableHead> : null}
           </TableRow>
         </TableHeader>
         <TableBody>
           {ordered.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={canEdit ? 7 : 6} className="text-muted-foreground py-8 text-center">
+              <TableCell colSpan={canDelete ? 7 : 6} className="text-muted-foreground py-8 text-center">
                 Belum ada pengukuran untuk siswa ini.
               </TableCell>
             </TableRow>
@@ -189,7 +190,7 @@ export function EuksMeasurementTable({ studentId, points, canEdit }: Props) {
                 <TableCell>{point.weightKg}</TableCell>
                 <TableCell>{formatBmi(point.bmi)}</TableCell>
                 <TableCell>{point.note ?? "-"}</TableCell>
-                {canEdit ? (
+                {canDelete ? (
                   <TableCell className="text-right">
                     <Button
                       variant="ghost"

@@ -250,7 +250,16 @@ export type StudentMonitoringData = {
  * visit tables are read-only projections of existing Attendance and EuksVisit
  * data — E-UKS never copies student data into its own tables.
  */
-export async function readStudentMonitoring(studentId: string): Promise<StudentMonitoringData | null> {
+export type EuksMonitoringSelection = {
+  measurements: boolean
+  sickAbsences: boolean
+  visits: boolean
+}
+
+export async function readStudentMonitoring(
+  studentId: string,
+  selection: EuksMonitoringSelection = { measurements: true, sickAbsences: true, visits: true },
+): Promise<StudentMonitoringData | null> {
   const student = await prisma.student.findUnique({
     where: { id: studentId },
     select: {
@@ -264,12 +273,12 @@ export async function readStudentMonitoring(studentId: string): Promise<StudentM
   if (!student) return null
 
   const [measurements, absences, visits] = await Promise.all([
-    prisma.studentHealthMeasurement.findMany({
+    selection.measurements ? prisma.studentHealthMeasurement.findMany({
       where: { studentId },
       select: { id: true, measuredAt: true, heightCm: true, weightKg: true, note: true },
       orderBy: { measuredAt: "desc" },
-    }),
-    prisma.attendance.findMany({
+    }) : Promise.resolve([]),
+    selection.sickAbsences ? prisma.attendance.findMany({
       where: { studentId, status: "SAKIT" },
       select: {
         id: true,
@@ -278,8 +287,8 @@ export async function readStudentMonitoring(studentId: string): Promise<StudentM
         attendanceDay: { select: { date: true, classId: true } },
       },
       orderBy: { attendanceDay: { date: "desc" } },
-    }),
-    prisma.euksVisit.findMany({
+    }) : Promise.resolve([]),
+    selection.visits ? prisma.euksVisit.findMany({
       where: { studentId },
       select: {
         id: true,
@@ -291,10 +300,10 @@ export async function readStudentMonitoring(studentId: string): Promise<StudentM
         recordedBy: { select: { name: true } },
       },
       orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
-    }),
+    }) : Promise.resolve([]),
   ])
 
-  // Hari libur hanya dibaca sepanjang rentang tanggal sakit siswa ini; di luar
+  // Hari libur hanya dibaca sepanjang rentang tanggal sakit siswa ini;
   // rentang itu tidak ada celah yang perlu disambung.
   const sickDates = absences.map((item) => fromPrismaDate(item.attendanceDay.date))
   const holidays =

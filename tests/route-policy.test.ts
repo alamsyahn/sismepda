@@ -28,7 +28,10 @@ test("modul inti tidak lagi ditapis di lapisan ini", () => {
   // Tapis berbasis role di dalam JWT dihapus pada Phase 4: halaman-halaman ini
   // kini dijaga requirePermission() di server, sehingga pencabutan/pemberian
   // hak berlaku pada request berikutnya tanpa logout.
-  for (const path of ["/siswa", "/guru", "/wali-kelas/input", "/supervisi-buku-kerja/kelola"]) {
+  for (const path of [
+    "/siswa", "/guru", "/wali-kelas/input", "/supervisi-buku-kerja/kelola",
+    "/bos", "/bos/akses", "/sarpras", "/e-uks", "/e-uks/pengaturan", "/pengaturan",
+  ]) {
     assert.equal(routePolicy(path), "authenticated", `${path} tetap wajib login`)
     assert.equal(isPublicRoute(path), false, `${path} tidak boleh publik`)
   }

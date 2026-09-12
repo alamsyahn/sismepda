@@ -29,12 +29,13 @@ import {
 } from "@/components/sarpras/sarpras-location-dialog"
 import { fromPrismaDate } from "@/lib/school-date"
 import type { SarprasStatus } from "@/lib/sarpras"
+import type { SarprasCapabilities } from "@/lib/sarpras-authorization"
 import type { SarprasItemRow, SarprasLocationRow, SarprasOverview } from "@/lib/server-sarpras"
 import { sarprasPhotoUrl } from "@/lib/sarpras-constants"
 
 type Props = {
   overview: SarprasOverview
-  canEdit: boolean
+  capabilities: SarprasCapabilities
 }
 
 /** yyyy-mm-dd for the date input, from a Date the server sent. */
@@ -64,7 +65,7 @@ function toItemDraft(item: SarprasItemRow): ItemDraft {
  * Client shell for the Sarpras page. Owns the cross-section state — the chart
  * and the priority tabs share one selected status — and every dialog.
  */
-export function SarprasView({ overview, canEdit }: Props) {
+export function SarprasView({ overview, capabilities }: Props) {
   const router = useRouter()
 
   const [activeStatus, setActiveStatus] = useState<SarprasStatus>("MISSING")
@@ -184,7 +185,8 @@ export function SarprasView({ overview, canEdit }: Props) {
       <SarprasLocationTree
         locations={overview.locations}
         items={overview.items}
-        canEdit={canEdit}
+        capabilities={capabilities.locations}
+        canCreateItem={capabilities.items.create}
         onAddLocation={openCreateLocation}
         onEditLocation={openEditLocation}
         onDeleteLocation={setDeleteLocation}
@@ -196,14 +198,19 @@ export function SarprasView({ overview, canEdit }: Props) {
         item={syncedDetailItem}
         open={detailOpen}
         onOpenChange={setDetailOpen}
-        canEdit={canEdit}
+        capabilities={{
+          historyRead: capabilities.historyRead,
+          photos: capabilities.photos,
+          itemUpdate: capabilities.items.update,
+          itemDelete: capabilities.items.delete,
+        }}
         onEdit={openEditItem}
         onDelete={setDeleteItem}
         onPreviewPhoto={(photoId, title) => setPreview({ photoId, title })}
         onChanged={() => router.refresh()}
       />
 
-      {canEdit ? (
+      {capabilities.items.create || capabilities.items.update || capabilities.locations.create || capabilities.locations.update ? (
         <>
           <SarprasItemDialog
             open={itemDialogOpen}
@@ -211,6 +218,7 @@ export function SarprasView({ overview, canEdit }: Props) {
             draft={itemDraft}
             locations={overview.locations}
             itemTypes={itemTypes}
+            canCreateItemType={capabilities.itemTypes.create}
             onItemTypeCreated={(itemType) =>
               setItemTypes((current) =>
                 current.some((type) => type.id === itemType.id) ? current : [...current, itemType],

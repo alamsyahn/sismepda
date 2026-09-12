@@ -2,7 +2,8 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
-import { bosErrorResponse, requireBosPermission } from "@/lib/bos-access"
+import { requirePermission } from "@/lib/rbac-access"
+import { authFailureResponse } from "@/lib/api-errors"
 import { categorySlug, normalizeCategoryName } from "@/lib/bos"
 
 const createPayload = z.object({ name: z.string().trim().min(2).max(80) })
@@ -20,7 +21,7 @@ const updatePayload = z.object({
  */
 export async function POST(request: Request) {
   try {
-    const viewer = await requireBosPermission("bos.create")
+    const viewer = await requirePermission("bos.categories.create")
     const body = createPayload.parse(await request.json())
     const name = normalizeCategoryName(body.name)
     const slug = categorySlug(name)
@@ -47,7 +48,7 @@ export async function POST(request: Request) {
       })
       await recordAuditLog(
         {
-          actorId: viewer.id,
+          actorId: viewer.user.id,
           action: "BOS_CATEGORY_CREATED",
           entity: "BosCategory",
           entityId: category.id,
@@ -61,8 +62,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ...created, reused: false }, { status: 201 })
   } catch (error) {
-    const { error: message, status } = bosErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    if (error instanceof z.ZodError) return NextResponse.json({ error: "Data kategori tidak valid" }, { status: 400 })
+    return authFailureResponse(error, "Kategori BOS gagal diproses")
   }
 }
 
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
  */
 export async function PATCH(request: Request) {
   try {
-    const viewer = await requireBosPermission("bos.manage_categories")
+    const viewer = await requirePermission("bos.categories.update")
     const body = updatePayload.parse(await request.json())
     if (body.name === undefined && body.active === undefined) {
       return NextResponse.json({ error: "Tidak ada perubahan yang dikirim" }, { status: 400 })
@@ -106,7 +107,7 @@ export async function PATCH(request: Request) {
       })
       await recordAuditLog(
         {
-          actorId: viewer.id,
+          actorId: viewer.user.id,
           action: "BOS_CATEGORY_UPDATED",
           entity: "BosCategory",
           entityId: category.id,
@@ -121,7 +122,7 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json(updated)
   } catch (error) {
-    const { error: message, status } = bosErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    if (error instanceof z.ZodError) return NextResponse.json({ error: "Data kategori tidak valid" }, { status: 400 })
+    return authFailureResponse(error, "Kategori BOS gagal diproses")
   }
 }

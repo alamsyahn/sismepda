@@ -21,7 +21,7 @@ const payload = z.object({
 /** Record one height/weight measurement. Requires euks.edit. */
 export async function POST(request: Request) {
   try {
-    const viewer = await requireEuksPermission("euks.edit")
+    const viewer = await requireEuksPermission("euks.measurements.create")
     const body = payload.parse(await request.json())
 
     const schoolDate = parseSchoolDate(body.measuredAt)

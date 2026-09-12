@@ -202,14 +202,14 @@ test("template: Pengawas & Kepala Sekolah tanpa write/export/health; Kepala Seko
 
 test("template: Pengurus UKS/BOS/Sarpras tidak mendapat delete/config destruktif", () => {
   const uks = getRoleTemplate("pengurus_uks")!.permissionKeys
-  assert.ok(uks.includes("euks.visits.write") && uks.includes("euks.complaint_options.read"))
+  assert.ok(uks.includes("euks.visits.create") && uks.includes("euks.complaint_options.read"))
   assert.ok(!uks.some((k) => k.endsWith(".manage")), "profil/pengurus/fasilitas/opsi keluhan bukan bawaan")
   const bos = getRoleTemplate("pengurus_bos")!.permissionKeys
   // bos.entries.create menutup POST /api/bos/categories di HEAD (hak bos.create yang sama).
-  assert.deepEqual([...bos].sort(), ["bos.entries.create", "bos.entries.update", "bos.read"])
-  assert.ok(!bos.includes("bos.access.manage") && !bos.includes("bos.budget.write"))
+  assert.deepEqual([...bos].sort(), ["bos.categories.create", "bos.entries.create", "bos.entries.update", "bos.read"])
+  assert.ok(!bos.includes("bos.access.manage") && !bos.includes("bos.budget.update"))
   const sarpras = getRoleTemplate("pengurus_sarpras")!.permissionKeys
-  assert.ok(sarpras.includes("sarpras.photos.write") && !sarpras.includes("sarpras.access.manage"))
+  assert.ok(sarpras.includes("sarpras.photos.create") && !sarpras.includes("sarpras.access.manage"))
 })
 
 test("template: Siswa & Wali Murid tanpa grant sensitif; hanya system_admin yang protected", () => {
@@ -272,8 +272,9 @@ test("mapping: kombinasi flag menghasilkan gabungan bundle tanpa duplikat", () =
 
 test("mapping: pengecualian kategori BOS — canManageBosCategories tidak memberi categories.create", () => {
   const subject = subjectFromPlan(planLegacyUser(guruBos))
-  assert.equal(hasPermission(subject, "bos.categories.manage"), true)
-  assert.equal(hasPermission(subject, "bos.entries.create"), false, "pembuatan kategori = bos.create di HEAD, bukan manage")
+  assert.equal(hasPermission(subject, "bos.categories.update"), true)
+  assert.equal(hasPermission(subject, "bos.categories.create"), false, "pembuatan kategori = bos.create di HEAD, bukan manage")
+  assert.equal(hasPermission(subject, "bos.entries.create"), false)
   assert.equal(hasPermission(subject, "bos.read"), true)
 })
 
@@ -282,12 +283,13 @@ test("mapping: WhatsApp school-wide & E-UKS school-wide adalah kompatibilitas ek
   assert.equal(hasPermission(g, "reports.whatsapp.read.all"), true, "HEAD: WA hanya requireUser")
   const e = subjectFromPlan(planLegacyUser(legacy({ id: "e", role: "GURU", canViewEuks: true })))
   assert.equal(hasPermission(e, "euks.visits.read"), true)
-  assert.equal(hasPermission(e, "euks.profile.manage"), false)
-  assert.equal(hasPermission(e, "euks.visits.write"), false)
+  assert.equal(hasPermission(e, "euks.profile.update"), false)
+  assert.equal(hasPermission(e, "euks.visits.create"), false)
   const ee = subjectFromPlan(planLegacyUser(legacy({ id: "ee", role: "GURU", canEditEuks: true })))
-  assert.equal(hasPermission(ee, "euks.visits.write"), true)
-  assert.equal(hasPermission(ee, "euks.profile.manage"), false)
-  assert.equal(hasPermission(ee, "euks.complaint_options.manage"), false)
+  assert.equal(hasPermission(ee, "euks.visits.create"), true)
+  assert.equal(hasPermission(ee, "euks.profile.update"), false)
+  assert.equal(hasPermission(ee, "euks.complaint_options.create"), false)
+  assert.equal(hasPermission(ee, "euks.complaint_options.update"), false)
 })
 
 test("mapping: workbookSupervised tetap flag bisnis, tidak jadi grant", () => {
@@ -341,9 +343,9 @@ test("paritas: melaporkan LOST dan GAINED dua arah", () => {
   assert.deepEqual(lostReport.gained, [])
 
   const base = subjectFromPlan(planLegacyUser(guru))
-  const widened = { ...base, roles: [...base.roles, { id: "extra", key: "custom", name: "custom", permissionKeys: ["sarpras.items.write"] }] }
+  const widened = { ...base, roles: [...base.roles, { id: "extra", key: "custom", name: "custom", permissionKeys: ["sarpras.items.update"] }] }
   const gainedReport = compareParity([{ legacy: guru, subject: widened }], { allowTeachersAccessAllClasses: false })
-  assert.ok(gainedReport.gained.some((d) => d.decision.startsWith("sarpras.items.write")))
+  assert.ok(gainedReport.gained.some((d) => d.decision.startsWith("sarpras.items.update")))
   assert.deepEqual(gainedReport.lost, [])
 })
 

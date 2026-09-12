@@ -1,23 +1,21 @@
-import { redirect } from "next/navigation"
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { EuksVisitTable } from "@/components/e-uks/euks-visit-table"
-import { EuksAccessError, requireEuksViewer } from "@/lib/euks-access"
+import { pageCan, requirePagePermission } from "@/lib/page-guards"
 import { readEuksComplaintOptions, readEuksStudentOptions, readEuksVisits } from "@/lib/server-euks"
 
 export default async function EuksRiwayatKunjunganPage() {
-  let viewer
-  try {
-    viewer = await requireEuksViewer()
-  } catch (error) {
-    if (error instanceof EuksAccessError) redirect("/")
-    throw error
-  }
+  await requirePagePermission("euks.visits.read")
+  const [canCreate, canUpdate, canDelete, canReadComplaints] = await Promise.all([
+    pageCan("euks.visits.create"),
+    pageCan("euks.visits.update"),
+    pageCan("euks.visits.delete"),
+    pageCan("euks.complaint_options.read"),
+  ])
 
-  // Students are only needed by the form, so they are fetched for editors alone.
   const [visits, students, complaintOptions] = await Promise.all([
     readEuksVisits(),
-    viewer.capabilities.canEdit ? readEuksStudentOptions() : Promise.resolve([]),
-    viewer.capabilities.canEdit ? readEuksComplaintOptions() : Promise.resolve([]),
+    canCreate || canUpdate ? readEuksStudentOptions() : Promise.resolve([]),
+    canReadComplaints ? readEuksComplaintOptions() : Promise.resolve([]),
   ])
 
   return (
@@ -31,7 +29,9 @@ export default async function EuksRiwayatKunjunganPage() {
         visits={visits}
         students={students}
         complaintOptions={complaintOptions}
-        canEdit={viewer.capabilities.canEdit}
+        canCreate={canCreate}
+        canUpdate={canUpdate}
+        canDelete={canDelete}
       />
     </PageContainer>
   )

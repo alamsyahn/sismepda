@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { detectProfilePhotoType } from "@/lib/profile"
-import {
-  requireSarprasEditor,
-  requireSarprasViewer,
-  sarprasErrorResponse,
-} from "@/lib/sarpras-access"
+import { authFailureResponse } from "@/lib/api-errors"
+import { requireSarprasPermission } from "@/lib/sarpras-access"
 import {
   MAX_SARPRAS_PHOTO_BYTES,
   MAX_SARPRAS_PHOTOS_PER_ITEM,
@@ -14,7 +11,7 @@ import {
 /** Upload one photo for an item. Requires sarpras.edit. */
 export async function POST(request: Request) {
   try {
-    const viewer = await requireSarprasEditor()
+    const viewer = await requireSarprasPermission("sarpras.photos.create")
 
     const contentLength = Number(request.headers.get("content-length") ?? 0)
     if (contentLength > MAX_SARPRAS_PHOTO_BYTES + 64 * 1024) {
@@ -72,15 +69,14 @@ export async function POST(request: Request) {
     void viewer
     return NextResponse.json(created, { status: 201 })
   } catch (error) {
-    const { error: message, status } = sarprasErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    return authFailureResponse(error, "Data Sarpras tidak valid")
   }
 }
 
 /** Delete one photo. Requires sarpras.edit. */
 export async function DELETE(request: Request) {
   try {
-    await requireSarprasEditor()
+    await requireSarprasPermission("sarpras.photos.delete")
     const { searchParams } = new URL(request.url)
     const id = searchParams.get("id")
     if (!id) return NextResponse.json({ error: "Foto tidak valid" }, { status: 400 })
@@ -91,15 +87,14 @@ export async function DELETE(request: Request) {
     await prisma.sarprasPhoto.delete({ where: { id: photo.id } })
     return NextResponse.json({ ok: true })
   } catch (error) {
-    const { error: message, status } = sarprasErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    return authFailureResponse(error, "Data Sarpras tidak valid")
   }
 }
 
 /** List photo ids for one item. Viewers may read. */
 export async function GET(request: Request) {
   try {
-    await requireSarprasViewer()
+    await requireSarprasPermission("sarpras.photos.read")
     const { searchParams } = new URL(request.url)
     const itemId = searchParams.get("itemId")
     if (!itemId) return NextResponse.json({ error: "Barang tidak valid" }, { status: 400 })
@@ -111,7 +106,6 @@ export async function GET(request: Request) {
     })
     return NextResponse.json({ photos })
   } catch (error) {
-    const { error: message, status } = sarprasErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    return authFailureResponse(error, "Data Sarpras tidak valid")
   }
 }

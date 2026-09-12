@@ -138,20 +138,20 @@ export const COMPATIBILITY_BUNDLES: readonly CompatibilityBundle[] = [
     key: "legacy_bos_create",
     name: "Kompatibilitas: Tambah Entry BOS",
     description: `canCreateBos (menyiratkan lihat). ${BOS_CATEGORY_CREATE_NOTE}`,
-    permissionKeys: ["bos.read", "bos.entries.create"],
+    permissionKeys: ["bos.read", "bos.entries.create", "bos.categories.create"],
   },
   {
     key: "legacy_bos_edit",
     name: "Kompatibilitas: Edit BOS",
     description: "canEditBos (menyiratkan lihat): ubah entry dan anggaran.",
-    permissionKeys: ["bos.read", "bos.entries.update", "bos.budget.write"],
+    permissionKeys: ["bos.read", "bos.entries.update", "bos.budget.update"],
   },
   {
     key: "legacy_bos_categories",
     name: "Kompatibilitas: Kelola Kategori BOS",
     description:
       "canManageBosCategories (menyiratkan lihat): mengubah kategori. Tidak memberi pembuatan kategori — di HEAD itu milik bos.create.",
-    permissionKeys: ["bos.read", "bos.categories.manage"],
+    permissionKeys: ["bos.read", "bos.categories.update"],
   },
   {
     key: "legacy_bos_access",
@@ -171,10 +171,10 @@ export const COMPATIBILITY_BUNDLES: readonly CompatibilityBundle[] = [
     description: "canEditSarpras (menyiratkan lihat): CRUD lokasi/jenis/barang dan unggah/hapus foto.",
     permissionKeys: [
       "sarpras.read",
-      "sarpras.locations.write",
-      "sarpras.item_types.write",
-      "sarpras.items.write",
-      "sarpras.photos.write",
+      "sarpras.locations.create", "sarpras.locations.update", "sarpras.locations.delete",
+      "sarpras.item_types.create", "sarpras.item_types.update", "sarpras.item_types.delete",
+      "sarpras.items.create", "sarpras.items.update", "sarpras.items.delete",
+      "sarpras.photos.read", "sarpras.photos.create", "sarpras.photos.delete",
     ],
   },
   {
@@ -182,7 +182,14 @@ export const COMPATIBILITY_BUNDLES: readonly CompatibilityBundle[] = [
     name: "Kompatibilitas: Lihat E-UKS",
     description:
       "canViewEuks: profil unit, kunjungan, pantauan kesehatan, dan aset (pengurus/fasilitas/foto). Bukan pengaturan.",
-    permissionKeys: ["euks.overview.read", "euks.visits.read", "euks.monitoring.read"],
+    permissionKeys: [
+      "euks.content.read",
+      "euks.overview.read",
+      "euks.visits.read",
+      "euks.monitoring.read",
+      "euks.measurements.read",
+      "euks.sick_absences.read",
+    ],
   },
   {
     key: "legacy_euks_edit",
@@ -190,12 +197,18 @@ export const COMPATIBILITY_BUNDLES: readonly CompatibilityBundle[] = [
     description:
       "canEditEuks (menyiratkan lihat): kunjungan (buat/ubah/hapus), pengukuran (buat/hapus), tindak lanjut absen sakit, baca opsi keluhan.",
     permissionKeys: [
+      "euks.content.read",
       "euks.overview.read",
       "euks.visits.read",
       "euks.monitoring.read",
-      "euks.visits.write",
-      "euks.measurements.write",
-      "euks.sick_absences.write",
+      "euks.measurements.read",
+      "euks.sick_absences.read",
+      "euks.visits.create",
+      "euks.visits.update",
+      "euks.visits.delete",
+      "euks.measurements.create",
+      "euks.measurements.delete",
+      "euks.sick_absences.update",
       "euks.complaint_options.read",
     ],
   },
@@ -334,7 +347,11 @@ export function legacyEffectiveDecisions(
   const out = new Set<string>()
   if (!user.active) return out
 
-  const add = (key: string, scope: EffectiveScope | null = null) => {
+  const add = (...keys: string[]) => {
+    for (const key of keys) out.add(encodeDecision({ key, scope: null }))
+  }
+
+  const addScoped = (key: string, scope: EffectiveScope | null = null) => {
     out.add(encodeDecision({ key, scope }))
   }
 
@@ -345,9 +362,9 @@ export function legacyEffectiveDecisions(
       const definition = getPermission(key)
       if (!definition) continue
       if (definition.scope === "all" || definition.scope === "assigned_classes") {
-        add(`${definition.resource}.${definition.action}`, "all")
+        addScoped(`${definition.resource}.${definition.action}`, "all")
       } else if (definition.scope === "own") {
-        add(key, "own")
+        addScoped(key, "own")
       } else {
         add(key)
       }
@@ -360,16 +377,16 @@ export function legacyEffectiveDecisions(
   const classScope: EffectiveScope = context.allowTeachersAccessAllClasses
     ? "all"
     : "assigned_classes"
-  for (const family of CLASS_WIDENING_FAMILIES) add(family, classScope)
+  for (const family of CLASS_WIDENING_FAMILIES) addScoped(family, classScope)
 
   // /laporan-whatsapp: requireUser saja → seluruh kelas. Key-nya kini
   // berskala `all`, sehingga keputusannya dikodekan sebagai keluarga berskala.
-  add("reports.whatsapp.read", "all")
+  addScoped("reports.whatsapp.read", "all")
   // /guru/direktori, /guru/[id], foto guru: requireUser saja.
   add("teachers.directory.read")
   // /api/workbooks/links: own id.
-  add("workbook.links.read.own", "own")
-  add("workbook.links.update.own", "own")
+  addScoped("workbook.links.read.own", "own")
+  addScoped("workbook.links.update.own", "own")
 
   // lib/teacher-profile.ts canManageTeacherProfile
   if (user.canManageTeacherProfiles) {
@@ -391,33 +408,36 @@ export function legacyEffectiveDecisions(
     user.canManageBosCategories ||
     user.canManageBosAccess
   if (bosAny) add("bos.read")
-  if (user.canCreateBos) add("bos.entries.create")
+  if (user.canCreateBos) add("bos.entries.create", "bos.categories.create")
   if (user.canEditBos) {
     add("bos.entries.update")
-    add("bos.budget.write")
+    add("bos.budget.update")
   }
-  if (user.canManageBosCategories) add("bos.categories.manage")
+  if (user.canManageBosCategories) add("bos.categories.update")
   if (user.canManageBosAccess) add("bos.access.manage")
 
   // lib/sarpras.ts: edit implies view
   if (user.canViewSarpras || user.canEditSarpras) add("sarpras.read")
   if (user.canEditSarpras) {
-    add("sarpras.locations.write")
-    add("sarpras.item_types.write")
-    add("sarpras.items.write")
-    add("sarpras.photos.write")
+    add("sarpras.locations.create", "sarpras.locations.update", "sarpras.locations.delete")
+    add("sarpras.item_types.create", "sarpras.item_types.update", "sarpras.item_types.delete")
+    add("sarpras.items.create", "sarpras.items.update", "sarpras.items.delete")
+    add("sarpras.photos.read", "sarpras.photos.create", "sarpras.photos.delete")
   }
 
   // lib/euks.ts: edit implies view
   if (user.canViewEuks || user.canEditEuks) {
+    add("euks.content.read")
     add("euks.overview.read")
+    add("euks.measurements.read")
+    add("euks.sick_absences.read")
     add("euks.visits.read")
     add("euks.monitoring.read")
   }
   if (user.canEditEuks) {
-    add("euks.visits.write")
-    add("euks.measurements.write")
-    add("euks.sick_absences.write")
+    add("euks.visits.create", "euks.visits.update", "euks.visits.delete")
+    add("euks.measurements.read", "euks.measurements.create", "euks.measurements.delete")
+    add("euks.sick_absences.read", "euks.sick_absences.update")
     add("euks.complaint_options.read")
   }
 

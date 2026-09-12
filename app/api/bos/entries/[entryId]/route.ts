@@ -2,7 +2,8 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
-import { bosErrorResponse, requireBosPermission } from "@/lib/bos-access"
+import { requirePermission } from "@/lib/rbac-access"
+import { authFailureResponse } from "@/lib/api-errors"
 import { normalizeDocumentUrl } from "@/lib/bos"
 import { fromPrismaDate, parseSchoolDate, toPrismaDate } from "@/lib/school-date"
 
@@ -34,7 +35,7 @@ function normalizeDocuments(documents: Array<{ url: string; label: string | null
 /** Edit one BOS entry in place. Requires bos.edit. */
 export async function PATCH(request: Request, { params }: { params: Promise<{ entryId: string }> }) {
   try {
-    const viewer = await requireBosPermission("bos.edit")
+    const viewer = await requirePermission("bos.entries.update")
     const { entryId } = await params
     const body = payload.parse(await request.json())
 
@@ -104,13 +105,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ en
           ...(body.description === undefined ? {} : { description: body.description }),
           ...(occurredAt === undefined ? {} : { occurredAt }),
           ...(body.amount === undefined ? {} : { amount: body.amount }),
-          updatedById: viewer.id,
+          updatedById: viewer.user.id,
         },
       })
 
       await recordAuditLog(
         {
-          actorId: viewer.id,
+          actorId: viewer.user.id,
           action: "BOS_ENTRY_UPDATED",
           entity: "BosEntry",
           entityId: entry.id,
@@ -136,7 +137,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ en
 
     return NextResponse.json({ id: entry.id })
   } catch (error) {
-    const { error: message, status } = bosErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    if (error instanceof z.ZodError) return NextResponse.json({ error: "Data BOS tidak valid" }, { status: 400 })
+    return authFailureResponse(error, "Entry BOS gagal diperbarui")
   }
 }

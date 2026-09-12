@@ -25,12 +25,6 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
-import { canViewBos } from "@/lib/bos"
-import { canViewEuks } from "@/lib/euks"
-import { canViewSarpras } from "@/lib/sarpras"
-
-export type NavCapability = "bos" | "sarpras" | "euks"
-
 export type NavItem = {
   type?: "item"
   title: string
@@ -45,13 +39,6 @@ export type NavItem = {
    * pengguna tidak diarahkan ke halaman yang pasti menolaknya.
    */
   permissions?: readonly string[]
-  /** Modul yang belum bermigrasi ke RBAC (BOS/Sarpras/E-UKS). */
-  capability?: NavCapability
-  /**
-   * Khusus modul yang belum bermigrasi: item hanya untuk `role === "ADMIN"`.
-   * Dihapus ketika modul tersebut memakai permission-nya sendiri.
-   */
-  legacyAdminOnly?: boolean
   /** Route matching strategy for the active state. Defaults to "prefix". */
   match?: "exact" | "prefix"
 }
@@ -68,16 +55,10 @@ export type NavGroup = {
 export type NavEntry = NavItem | NavGroup
 
 export type NavViewer = {
-  /**
-   * Grant efektif pemakai, hasil `getAuthorizationContext()`. Menu tidak lagi
-   * membaca nama peran.
-   */
+  /** Grant efektif pemakai, hasil authorization context database terkini. */
   grants: ReadonlySet<string> | readonly string[]
-  /**
-   * Masih dibutuhkan modul yang belum bermigrasi (BOS/Sarpras/E-UKS), yang
-   * helper-nya memakai `role === "ADMIN"`. Modul inti tidak memakainya lagi.
-   */
-  role: "ADMIN" | "GURU"
+  /** Dipertahankan sementara untuk kompatibilitas pemanggil; bukan authority. */
+  role?: "ADMIN" | "GURU"
   canSuperviseWorkbooks?: boolean
   canViewWorkbookSupervision?: boolean
   canViewBos?: boolean
@@ -97,12 +78,6 @@ export function isNavGroup(entry: NavEntry): entry is NavGroup {
 
 /** Nav filtering mirrors the server-side guards; it never grants access on its own. */
 export function canSeeNavItem(item: NavItem, viewer: NavViewer): boolean {
-  // Modul yang belum bermigrasi masih memakai flag legacy-nya sendiri.
-  if (item.legacyAdminOnly && viewer.role !== "ADMIN") return false
-  if (item.capability === "bos") return canViewBos(viewer)
-  if (item.capability === "sarpras") return canViewSarpras(viewer)
-  if (item.capability === "euks") return canViewEuks(viewer)
-
   // Tanpa daftar permission, item dianggap tersedia bagi setiap sesi yang sah
   // (mis. "Profil Saya"). Item yang dijaga WAJIB mencantumkan key-nya.
   if (!item.permissions || item.permissions.length === 0) return true
@@ -290,7 +265,7 @@ export const mainNav: NavEntry[] = [
         href: "/e-uks",
         icon: Home,
         description: "Profil, pengurus, fasilitas, dan tren kesehatan UKS",
-        capability: "euks",
+        permissions: ["euks.content.read", "euks.overview.read"],
         match: "exact",
       },
       {
@@ -298,22 +273,28 @@ export const mainNav: NavEntry[] = [
         href: "/e-uks/pantauan-kesehatan",
         icon: Stethoscope,
         description: "Status gizi, riwayat sakit, dan pertumbuhan per siswa",
-        capability: "euks",
+        permissions: ["euks.monitoring.read"],
       },
       {
         title: "Riwayat Kunjungan UKS",
         href: "/e-uks/riwayat-kunjungan",
         icon: ClipboardPlus,
         description: "Catatan keluhan, tindakan, dan tindak lanjut kunjungan UKS",
-        capability: "euks",
+        permissions: ["euks.visits.read"],
       },
       {
         title: "Pengaturan E-UKS",
         href: "/e-uks/pengaturan",
         icon: SlidersHorizontal,
         description: "Kelola identitas, carousel, pengurus, dan fasilitas UKS",
-        capability: "euks",
-        legacyAdminOnly: true,
+        permissions: [
+          "euks.profile.update",
+          "euks.officers.create", "euks.officers.update", "euks.officers.delete",
+          "euks.facilities.create", "euks.facilities.update", "euks.facilities.delete",
+          "euks.hero_images.create", "euks.hero_images.update", "euks.hero_images.delete",
+          "euks.hero_logos.create", "euks.hero_logos.update", "euks.hero_logos.delete",
+          "euks.complaint_options.create", "euks.complaint_options.update",
+        ],
       },
     ],
   },
@@ -322,14 +303,14 @@ export const mainNav: NavEntry[] = [
     href: "/bos",
     icon: Wallet,
     description: "Pengelolaan dan monitoring penggunaan dana BOS",
-    capability: "bos",
+    permissions: ["bos.read"],
   },
   {
     title: "Sarpras",
     href: "/sarpras",
     icon: Boxes,
     description: "Inventaris dan kondisi sarana & prasarana sekolah",
-    capability: "sarpras",
+    permissions: ["sarpras.read"],
   },
   {
     type: "group",
@@ -368,7 +349,12 @@ export const accountNav: NavItem[] = [
     href: "/pengaturan",
     icon: Settings,
     description: "Preferensi aplikasi & akun",
-    permissions: ["school.settings.read"],
+    permissions: [
+      "school.settings.read", "school.settings.update", "school.class_access.manage",
+      "school.branding.update", "school.holidays.read", "school.holidays.create",
+      "school.holidays.update", "school.holidays.delete", "school.holidays.export",
+      "database.backup", "database.restore",
+    ],
   },
 ]
 

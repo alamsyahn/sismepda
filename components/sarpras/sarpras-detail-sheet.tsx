@@ -37,7 +37,12 @@ type Props = {
   item: SarprasItemRow | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  canEdit: boolean
+  capabilities: {
+    historyRead: boolean
+    photos: { read: boolean; create: boolean; delete: boolean }
+    itemUpdate: boolean
+    itemDelete: boolean
+  }
   onEdit: (item: SarprasItemRow) => void
   onDelete: (item: SarprasItemRow) => void
   onPreviewPhoto: (photoId: string, title: string) => void
@@ -49,7 +54,7 @@ export function SarprasDetailSheet({
   item,
   open,
   onOpenChange,
-  canEdit,
+  capabilities,
   onEdit,
   onDelete,
   onPreviewPhoto,
@@ -62,7 +67,7 @@ export function SarprasDetailSheet({
   const itemId = item?.id ?? null
 
   useEffect(() => {
-    if (!open || !itemId) {
+    if (!open || !itemId || !capabilities.historyRead) {
       setHistory(null)
       return
     }
@@ -79,7 +84,7 @@ export function SarprasDetailSheet({
     return () => {
       cancelled = true
     }
-  }, [open, itemId])
+  }, [open, itemId, capabilities.historyRead])
 
   async function uploadPhoto(file: File) {
     if (!item) return
@@ -201,7 +206,7 @@ export function SarprasDetailSheet({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium text-foreground">Foto</p>
-                  {canEdit ? (
+                  {capabilities.photos.create ? (
                     <label className="inline-flex cursor-pointer items-center gap-1.5 text-sm text-primary">
                       {uploading ? (
                         <Loader2 className="size-4 animate-spin" />
@@ -248,7 +253,7 @@ export function SarprasDetailSheet({
                             loading="lazy"
                           />
                         </button>
-                        {canEdit ? (
+                        {capabilities.photos.delete ? (
                           <button
                             type="button"
                             onClick={() => void removePhoto(photo.id)}
@@ -293,20 +298,20 @@ export function SarprasDetailSheet({
                 )}
               </div>
 
-              {canEdit ? (
+              {capabilities.itemUpdate || capabilities.itemDelete ? (
                 <div className="flex gap-2">
-                  <Button variant="outline" className="flex-1" onClick={() => onEdit(item)}>
+                  {capabilities.itemUpdate ? <Button variant="outline" className="flex-1" onClick={() => onEdit(item)}>
                     <Pencil className="size-4" />
                     Edit
-                  </Button>
-                  <Button
+                  </Button> : null}
+                  {capabilities.itemDelete ? <Button
                     variant="outline"
                     className="text-destructive"
                     onClick={() => onDelete(item)}
                     aria-label="Hapus barang"
                   >
                     <Trash2 className="size-4" />
-                  </Button>
+                  </Button> : null}
                 </div>
               ) : null}
             </div>

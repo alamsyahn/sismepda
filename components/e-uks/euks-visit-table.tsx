@@ -18,7 +18,9 @@ type Props = {
   visits: EuksVisitRow[]
   students: EuksStudentOption[]
   complaintOptions?: string[]
-  canEdit: boolean
+  canCreate: boolean
+  canUpdate: boolean
+  canDelete: boolean
 }
 
 /** School dates are stored as @db.Date, so they format in UTC like every other date column. */
@@ -37,7 +39,14 @@ function toDraft(visit: EuksVisitRow): VisitDraft {
   }
 }
 
-export function EuksVisitTable({ visits, students, complaintOptions = [], canEdit }: Props) {
+export function EuksVisitTable({
+  visits,
+  students,
+  complaintOptions = [],
+  canCreate,
+  canUpdate,
+  canDelete,
+}: Props) {
   const { today } = useSchoolTimeZone()
   const router = useRouter()
   const [formOpen, setFormOpen] = useState(false)
@@ -52,13 +61,13 @@ export function EuksVisitTable({ visits, students, complaintOptions = [], canEdi
   }
 
   function openEdit(visit: EuksVisitRow) {
-    if (!canEdit) return
+    if (!canUpdate) return
     setDraft(toDraft(visit))
     setFormOpen(true)
   }
 
   async function remove(visit: EuksVisitRow) {
-    if (!canEdit || deletingId) return
+    if (!canDelete || deletingId) return
     const confirmed = window.confirm(
       `Hapus kunjungan UKS ${visit.studentName} pada ${visitDate(visit.occurredAt)}?`,
     )
@@ -80,7 +89,7 @@ export function EuksVisitTable({ visits, students, complaintOptions = [], canEdi
 
   return (
     <section className="space-y-4">
-      {canEdit ? (
+      {canCreate ? (
         <div className="flex justify-end">
           <Button onClick={openCreate} className="shrink-0">
             <Plus className="size-4" />
@@ -102,13 +111,13 @@ export function EuksVisitTable({ visits, students, complaintOptions = [], canEdi
                   <TableHead className="min-w-40">Keluhan</TableHead>
                   <TableHead className="min-w-48">Tindakan yang Diberikan</TableHead>
                   <TableHead className="min-w-40">Tindak Lanjut</TableHead>
-                  {canEdit ? <TableHead className="w-20 text-right">Aksi</TableHead> : null}
+                  {canDelete ? <TableHead className="w-20 text-right">Aksi</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {!hasVisits ? (
                   <TableRow>
-                    <TableCell colSpan={canEdit ? 8 : 7} className="h-40">
+                    <TableCell colSpan={canDelete ? 8 : 7} className="h-40">
                       <div className="flex flex-col items-center justify-center gap-2 text-center">
                         <span className="flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
                           <HeartPulse className="size-5" />
@@ -116,7 +125,7 @@ export function EuksVisitTable({ visits, students, complaintOptions = [], canEdi
                         <p className="text-sm text-muted-foreground">
                           Belum ada kunjungan UKS yang tercatat.
                         </p>
-                        {canEdit ? (
+                        {canCreate ? (
                           <Button size="sm" variant="outline" onClick={openCreate}>
                             <Plus className="size-4" />
                             Input Kunjungan
@@ -130,13 +139,13 @@ export function EuksVisitTable({ visits, students, complaintOptions = [], canEdi
                     <TableRow
                       key={visit.id}
                       // Edit affordance appears on hover/focus instead of a permanent column.
-                      className={canEdit ? "group/row cursor-pointer" : undefined}
-                      tabIndex={canEdit ? 0 : undefined}
-                      role={canEdit ? "button" : undefined}
-                      aria-label={canEdit ? `Edit kunjungan ${visit.studentName}` : undefined}
-                      onClick={canEdit ? () => openEdit(visit) : undefined}
+                      className={canUpdate ? "group/row cursor-pointer" : undefined}
+                      tabIndex={canUpdate ? 0 : undefined}
+                      role={canUpdate ? "button" : undefined}
+                      aria-label={canUpdate ? `Edit kunjungan ${visit.studentName}` : undefined}
+                      onClick={canUpdate ? () => openEdit(visit) : undefined}
                       onKeyDown={
-                        canEdit
+                        canUpdate
                           ? (event) => {
                               if (event.key === "Enter" || event.key === " ") {
                                 event.preventDefault()
@@ -155,7 +164,7 @@ export function EuksVisitTable({ visits, students, complaintOptions = [], canEdi
                       <TableCell>
                         <span className="flex items-center gap-1.5">
                           <span className="text-foreground">{visit.studentName}</span>
-                          {canEdit ? (
+                          {canUpdate ? (
                             <Pencil className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-visible/row:opacity-100" />
                           ) : null}
                         </span>
@@ -174,7 +183,7 @@ export function EuksVisitTable({ visits, students, complaintOptions = [], canEdi
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      {canEdit ? (
+                      {canDelete ? (
                         <TableCell className="text-right">
                           <Button
                             size="sm"
@@ -199,7 +208,7 @@ export function EuksVisitTable({ visits, students, complaintOptions = [], canEdi
         </CardContent>
       </Card>
 
-      {canEdit ? (
+      {canCreate || canUpdate ? (
         <EuksVisitDialog
           open={formOpen}
           onOpenChange={setFormOpen}

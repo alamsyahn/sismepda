@@ -3,7 +3,7 @@ import { z } from "zod"
 
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
-import { euksErrorResponse, requireEuksAdmin } from "@/lib/euks-access"
+import { euksErrorResponse, requireEuksPermission } from "@/lib/euks-access"
 import { normalizeLabel } from "@/lib/euks-settings"
 
 /**
@@ -46,7 +46,7 @@ const logoSelect = {
 
 export async function POST(request: Request) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.hero_logos.create")
     const body = createPayload.parse(await request.json())
 
     const last = await prisma.euksHeroLogo.findFirst({
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.hero_logos.update")
     const body = updatePayload.parse(await request.json())
 
     const existing = await prisma.euksHeroLogo.findUnique({
@@ -156,7 +156,7 @@ export async function PATCH(request: Request) {
  */
 export async function DELETE(request: Request) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.hero_logos.delete")
     const body = deletePayload.parse(await request.json())
 
     const existing = await prisma.euksHeroLogo.findUnique({

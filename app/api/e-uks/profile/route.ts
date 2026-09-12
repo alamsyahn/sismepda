@@ -3,7 +3,7 @@ import { z } from "zod"
 
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
-import { euksErrorResponse, requireEuksAdmin } from "@/lib/euks-access"
+import { euksErrorResponse, requireEuksPermission } from "@/lib/euks-access"
 import {
   PROFILE_CONTACT_MAX,
   PROFILE_DESCRIPTION_MAX,
@@ -42,7 +42,7 @@ const payload = z.object({
 
 export async function PUT(request: Request) {
   try {
-    const viewer = await requireEuksAdmin()
+    const viewer = await requireEuksPermission("euks.profile.update")
     const body = payload.parse(await request.json())
 
     const before = await prisma.euksProfile.findUnique({ where: { id: PROFILE_ID } })

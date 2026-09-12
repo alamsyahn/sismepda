@@ -73,25 +73,27 @@ export async function readBosOverview() {
 
 export type BosOverview = Awaited<ReturnType<typeof readBosOverview>>
 
-/** Every account that can be granted BOS rights, for the access page. */
+/** Current RBAC memberships relevant to the fixed BOS delegation surface. */
 export async function readBosAccessScope() {
-  return prisma.user.findMany({
-    where: { role: { in: ["ADMIN", "GURU"] } },
+  const users = await prisma.user.findMany({
     select: {
       id: true,
       name: true,
       nip: true,
-      role: true,
       active: true,
       position: true,
-      canViewBos: true,
-      canCreateBos: true,
-      canEditBos: true,
-      canManageBosCategories: true,
-      canManageBosAccess: true,
+      rbacRoles: {
+        select: { role: { select: { key: true, isProtected: true } } },
+      },
     },
     orderBy: [{ active: "desc" }, { name: "asc" }],
   })
+
+  return users.map(({ rbacRoles, ...user }) => ({
+    ...user,
+    protected: rbacRoles.some(({ role }) => role.isProtected),
+    bundleKeys: rbacRoles.map(({ role }) => role.key).filter((key) => key.startsWith("legacy_bos_")),
+  }))
 }
 
 export type BosAccessRow = Awaited<ReturnType<typeof readBosAccessScope>>[number]

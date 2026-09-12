@@ -8,12 +8,17 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { bosPermissionColumns, bosPermissionLabels, canViewBos, type BosPermission } from "@/lib/bos"
 import type { BosAccessRow } from "@/lib/server-bos"
+import { BOS_BUNDLE_PERMISSION_SETS, type BosBundleKey } from "@/lib/bos-access-service"
 
-type Field = (typeof bosPermissionColumns)[BosPermission]
-
-const permissions = Object.keys(bosPermissionLabels) as BosPermission[]
+const labels: Record<BosBundleKey, string> = {
+  legacy_bos_view: "Lihat BOS",
+  legacy_bos_create: "Tambah Entry + Kategori",
+  legacy_bos_edit: "Edit Entry + Anggaran",
+  legacy_bos_categories: "Ubah Kategori",
+  legacy_bos_access: "Kelola Akses BOS",
+}
+const bundles = Object.keys(BOS_BUNDLE_PERMISSION_SETS) as BosBundleKey[]
 
 export function BosAccessManager({ users }: { users: BosAccessRow[] }) {
   const router = useRouter()
@@ -24,115 +29,61 @@ export function BosAccessManager({ users }: { users: BosAccessRow[] }) {
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase()
     if (!keyword) return rows
-    return rows.filter(
-      (row) => row.name.toLowerCase().includes(keyword) || row.nip?.includes(keyword),
-    )
+    return rows.filter((row) => row.name.toLowerCase().includes(keyword) || row.nip?.includes(keyword))
   }, [rows, query])
 
-  async function toggle(row: BosAccessRow, field: Field, value: boolean) {
-    const key = `${row.id}:${field}`
+  async function toggle(row: BosAccessRow, bundleKey: BosBundleKey, assigned: boolean) {
+    const key = `${row.id}:${bundleKey}`
     setPending(key)
-    setRows((current) => current.map((item) => (item.id === row.id ? { ...item, [field]: value } : item)))
+    setRows((current) => current.map((item) => item.id === row.id ? {
+      ...item,
+      bundleKeys: assigned
+        ? [...new Set([...item.bundleKeys, bundleKey])]
+        : item.bundleKeys.filter((candidate: string) => candidate !== bundleKey),
+    } : item))
     try {
       const response = await fetch("/api/bos/access", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: row.id, [field]: value }),
+        body: JSON.stringify({ userId: row.id, bundleKey, assigned }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? "Akses BOS gagal disimpan")
       toast.success(`Akses BOS ${row.name} diperbarui`)
       router.refresh()
     } catch (error) {
-      setRows((current) =>
-        current.map((item) => (item.id === row.id ? { ...item, [field]: !value } : item)),
-      )
+      setRows(users)
       toast.error(error instanceof Error ? error.message : "Akses BOS gagal disimpan")
     } finally {
       setPending(null)
     }
   }
 
-  const grantedCount = rows.filter((row) => canViewBos(row)).length
+  const grantedCount = rows.filter((row) => row.bundleKeys.length > 0).length
 
   return (
     <div className="space-y-4">
-      <Card className="border-border/70">
-        <CardContent className="p-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Cari nama atau NIP..."
-              aria-label="Cari pengguna"
-              className="pl-9"
-            />
-          </div>
-        </CardContent>
-      </Card>
+      <Card className="border-border/70"><CardContent className="space-y-3 p-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari nama atau NIP..." aria-label="Cari pengguna" className="pl-9" />
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Hak efektif adalah gabungan (OR) semua role pengguna. Mencabut satu bundle hanya menghapus role bundle tersebut; hak yang sama dari role lain tetap berlaku.
+        </p>
+      </CardContent></Card>
 
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="min-w-52">Nama</TableHead>
-                  {permissions.map((permission) => (
-                    <TableHead key={permission} className="min-w-32 text-center">
-                      {bosPermissionLabels[permission]}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={permissions.length + 1} className="h-32 text-center text-muted-foreground">
-                      Tidak ada pengguna yang sesuai dengan pencarian.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filtered.map((row) => {
-                    const isAdmin = row.role === "ADMIN"
-                    return (
-                      <TableRow key={row.id} className={row.active ? undefined : "opacity-65"}>
-                        <TableCell className="font-medium text-foreground">
-                          {row.name}
-                          <span className="ml-2 text-xs text-muted-foreground">
-                            {isAdmin ? "Administrator" : row.position ?? "Guru"}
-                            {row.active ? "" : " · Nonaktif"}
-                          </span>
-                        </TableCell>
-                        {permissions.map((permission) => {
-                          const field = bosPermissionColumns[permission]
-                          return (
-                            <TableCell key={permission} className="text-center">
-                              <Switch
-                                // Admin selalu lolos guard, jadi toggle-nya tidak bermakna.
-                                checked={isAdmin ? true : row[field]}
-                                disabled={isAdmin || pending === `${row.id}:${field}`}
-                                onCheckedChange={(value) => toggle(row, field, value === true)}
-                                aria-label={`${bosPermissionLabels[permission]} untuk ${row.name}`}
-                              />
-                            </TableCell>
-                          )
-                        })}
-                      </TableRow>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <Card><CardContent className="p-0"><div className="overflow-x-auto"><Table>
+        <TableHeader><TableRow><TableHead className="min-w-52">Nama</TableHead>{bundles.map((key) => <TableHead key={key} className="min-w-36 text-center">{labels[key]}</TableHead>)}</TableRow></TableHeader>
+        <TableBody>{filtered.length === 0 ? <TableRow><TableCell colSpan={bundles.length + 1} className="h-32 text-center text-muted-foreground">Tidak ada pengguna yang sesuai dengan pencarian.</TableCell></TableRow> : filtered.map((row) => (
+          <TableRow key={row.id} className={row.active ? undefined : "opacity-65"}>
+            <TableCell className="font-medium text-foreground">{row.name}<span className="ml-2 text-xs text-muted-foreground">{row.position ?? "Pengguna"}{row.active ? "" : " · Nonaktif"}{row.protected ? " · Terlindungi" : ""}</span></TableCell>
+            {bundles.map((bundleKey) => <TableCell key={bundleKey} className="text-center"><Switch checked={row.bundleKeys.includes(bundleKey)} disabled={row.protected || pending === `${row.id}:${bundleKey}`} onCheckedChange={(value) => toggle(row, bundleKey, value === true)} aria-label={`${labels[bundleKey]} untuk ${row.name}`} /></TableCell>)}
+          </TableRow>
+        ))}</TableBody>
+      </Table></div></CardContent></Card>
 
-      <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Users className="size-4" />
-        {grantedCount} dari {rows.length} pengguna dapat membuka modul BOS. Administrator selalu punya akses penuh.
-      </p>
+      <p className="flex items-center gap-2 text-sm text-muted-foreground"><Users className="size-4" />{grantedCount} dari {rows.length} pengguna memiliki sedikitnya satu bundle BOS.</p>
     </div>
   )
 }

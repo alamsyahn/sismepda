@@ -50,7 +50,7 @@ test("satu role memberi tepat permission miliknya", () => {
   assert.equal(hasPermission(actor, "bos.read"), true)
   assert.equal(hasPermission(actor, "bos.entries.create"), true)
   assert.equal(hasPermission(actor, "bos.entries.update"), false)
-  assert.equal(hasPermission(actor, "bos.budget.write"), false)
+  assert.equal(hasPermission(actor, "bos.budget.update"), false)
 })
 
 test("beberapa role digabung sebagai union", () => {
@@ -125,11 +125,13 @@ test("update tidak menyiratkan delete", () => {
 })
 
 test("manage bukan wildcard: tidak memberi read maupun write keluarga lain", () => {
-  const actor = subject([role("r", ["euks.officers.manage"])])
-  assert.equal(hasPermission(actor, "euks.officers.manage"), true)
+  const actor = subject([role("r", ["euks.officers.update"])])
+  assert.equal(hasPermission(actor, "euks.officers.update"), true)
+  assert.equal(hasPermission(actor, "euks.officers.create"), false)
+  assert.equal(hasPermission(actor, "euks.officers.delete"), false)
   assert.equal(hasPermission(actor, "euks.overview.read"), false)
-  assert.equal(hasPermission(actor, "euks.visits.write"), false)
-  assert.equal(hasPermission(actor, "euks.facilities.manage"), false)
+  assert.equal(hasPermission(actor, "euks.visits.create"), false)
+  assert.equal(hasPermission(actor, "euks.facilities.update"), false)
 })
 
 test("tidak ada key wildcard yang bisa lolos", () => {
@@ -283,13 +285,13 @@ test("system admin memperoleh scope all untuk setiap keluarga berskala", () => {
 // --- dependency -------------------------------------------------------------
 
 test("dependency yang hilang terdeteksi saat menyusun role", () => {
-  const missing = findMissingDependencies(["euks.visits.write"])
+  const missing = findMissingDependencies(["euks.visits.create"])
   assert.deepEqual(missing, ["euks.complaint_options.read", "euks.visits.read"])
 })
 
 test("dependency terpenuhi tidak menghasilkan keluhan", () => {
   const missing = findMissingDependencies([
-    "euks.visits.write",
+    "euks.visits.create",
     "euks.visits.read",
     "euks.complaint_options.read",
   ])
@@ -297,8 +299,8 @@ test("dependency terpenuhi tidak menghasilkan keluhan", () => {
 })
 
 test("dependency tidak diberikan diam-diam oleh evaluator", () => {
-  const actor = subject([role("r", ["euks.visits.write"])])
-  assert.equal(hasPermission(actor, "euks.visits.write"), true)
+  const actor = subject([role("r", ["euks.visits.create"])])
+  assert.equal(hasPermission(actor, "euks.visits.create"), true)
   assert.equal(
     hasPermission(actor, "euks.complaint_options.read"),
     false,
@@ -307,7 +309,7 @@ test("dependency tidak diberikan diam-diam oleh evaluator", () => {
 })
 
 test("dependency UKS tidak menarik students.master.read", () => {
-  const visitWrite = getPermission("euks.visits.write")
+  const visitWrite = getPermission("euks.visits.create")
   assert.ok(visitWrite)
   assert.equal(
     (visitWrite.dependsOn ?? []).includes("students.master.read"),
