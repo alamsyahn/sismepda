@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table"
 import { StatusRadioGroup, type StatusOption } from "@/components/absensi/status-toggle"
 import { ProfileNameLink } from "@/components/profile/profile-name-link"
+import { studentRowId } from "@/lib/attendance-draft"
 import {
   ABSENCE_REASONS,
   PRIMARY_STATUS_ORDER,
@@ -74,6 +75,12 @@ type EditorProps = {
     variant: NoteInputVariant,
     element: HTMLInputElement | null,
   ) => void
+  /**
+   * Dipanggil tepat sebelum berpindah ke Profil Siswa, supaya halaman ini dapat
+   * menyimpan draft dan posisi kembali. Hanya nama siswa yang menjadi tautan —
+   * baris/kartu sengaja tidak dibuat clickable agar tidak salah navigasi.
+   */
+  onProfileOpen: (studentId: string) => void
 }
 
 export function AttendanceEditor(props: EditorProps) {
@@ -288,18 +295,23 @@ function DesktopTable(props: EditorProps) {
 }
 
 function DesktopRow(props: RowProps) {
-  const { student, notes, finalized, onNote, onNoteBlur, onNoteFinalize, onNoteEdit, registerNoteInput } = props
+  const { student, notes, finalized, onNote, onNoteBlur, onNoteFinalize, onNoteEdit, registerNoteInput, onProfileOpen } = props
   const { inputRef, status, primary, handlePrimary, handleReason } = useRowHandlers(props)
   const { reason, showError, copy } = useNoteState(student.id, status, props)
 
   return (
-    <TableRow className="align-top">
+    <TableRow id={studentRowId(student.id, "desktop")} className="align-top">
       <TableCell className="py-3 text-center font-medium tabular-nums text-muted-foreground">
         {String(student.no).padStart(2, "0")}
       </TableCell>
       <TableCell className="py-3 font-mono text-sm text-muted-foreground">{student.nis ?? "-"}</TableCell>
       <TableCell className="py-3 font-medium text-foreground">
-        <ProfileNameLink type="student" id={student.id} name={student.name} />
+        <ProfileNameLink
+          type="student"
+          id={student.id}
+          name={student.name}
+          onNavigate={() => onProfileOpen(student.id)}
+        />
       </TableCell>
       <TableCell className="py-3">
         <div className="space-y-1.5">
@@ -359,18 +371,26 @@ function MobileCards(props: EditorProps) {
 }
 
 function MobileCard(props: RowProps) {
-  const { student, notes, finalized, onNote, onNoteBlur, onNoteFinalize, onNoteEdit, registerNoteInput } = props
+  const { student, notes, finalized, onNote, onNoteBlur, onNoteFinalize, onNoteEdit, registerNoteInput, onProfileOpen } = props
   const { inputRef, status, primary, handlePrimary, handleReason } = useRowHandlers(props)
   const { reason, showError, copy } = useNoteState(student.id, status, props)
 
   return (
-    <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
+    <div
+      id={studentRowId(student.id, "mobile")}
+      className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm"
+    >
       <div className="flex items-baseline gap-2">
         <span className="text-sm font-semibold tabular-nums text-muted-foreground">
           {String(student.no).padStart(2, "0")}
         </span>
         <span className="font-semibold text-foreground text-pretty">
-          <ProfileNameLink type="student" id={student.id} name={student.name} />
+          <ProfileNameLink
+            type="student"
+            id={student.id}
+            name={student.name}
+            onNavigate={() => onProfileOpen(student.id)}
+          />
         </span>
       </div>
       <p className="text-xs text-muted-foreground">

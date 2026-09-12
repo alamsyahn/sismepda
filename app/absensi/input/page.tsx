@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import {
   CalendarOff,
   CheckCheck,
@@ -50,6 +51,18 @@ import {
   type InputStatus,
   type PrimaryStatus,
 } from "@/lib/attendance-input"
+import {
+  ATTENDANCE_DRAFT_KEY,
+  ATTENDANCE_RETURN_KEY,
+  applyDraft,
+  attendanceInputHref,
+  draftDiffersFromServer,
+  parseDraft,
+  parseReturnPosition,
+  serializeDraft,
+  serializeReturnPosition,
+  studentRowId,
+} from "@/lib/attendance-draft"
 import { formatSchoolDate, parseSchoolDate } from "@/lib/school-date"
 import { ProfileNameLink } from "@/components/profile/profile-name-link"
 import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
@@ -61,6 +74,7 @@ function emptyCounts(): Record<InputStatus, number> {
 }
 
 export default function AbsensiInputPage() {
+  const router = useRouter()
   const { timeZone, today } = useSchoolTimeZone()
   const [date, setDate] = useState<string>(() => today())
   const [dateReady, setDateReady] = useState(false)
@@ -84,6 +98,9 @@ export default function AbsensiInputPage() {
   const noteInputs = useRef<Record<string, { desktop: HTMLInputElement | null; mobile: HTMLInputElement | null }>>({})
   const [dirty, setDirty] = useState(false)
   const [hasSaved, setHasSaved] = useState(false)
+  // Siswa yang harus digulirkan kembali ke layar setelah kembali dari Profil
+  // Siswa. Diproses setelah daftar selesai dirender, bukan saat membaca URL.
+  const [returnStudentId, setReturnStudentId] = useState<string | null>(null)
   const [lastSaved, setLastSaved] = useState<{ time: string; by: { id: string; name: string } } | null>(null)
 
   // Dialog state
@@ -126,20 +143,45 @@ export default function AbsensiInputPage() {
         setClasses(data.classes)
         setHoliday(data.holiday)
         setSelectedClass(requested?.id ?? "")
-        setStatuses(nextStatuses)
-        setNotes(nextNotes)
-        setAbsentPending({})
+
+        // Membuka Profil Siswa meninggalkan halaman ini sepenuhnya, sehingga
+        // isian yang belum disimpan hanya bisa pulih dari draft sessionStorage.
+        // Draft dipakai sebagai lapisan di atas data server, dan hanya untuk
+        // kelas/tanggal yang sama — data server tidak pernah ditimpa otomatis.
+        const server = { statuses: nextStatuses, notes: nextNotes, absentPending: {} }
+        const draft = requested
+          ? parseDraft(window.sessionStorage.getItem(ATTENDANCE_DRAFT_KEY), requested.id, date)
+          : null
+        const restored = applyDraft(server, draft, Object.keys(nextStatuses))
+
+        setStatuses(restored.statuses)
+        setNotes(restored.notes)
+        setAbsentPending(restored.absentPending)
         setTouchedNotes({})
         // Keterangan yang dimuat dari server sudah lengkap: tampilkan langsung
         // sebagai ringkasan agar pengguna tidak mengira harus mengetik ulang.
         setFinalizedNotes(
           Object.fromEntries(
-            Object.entries(nextNotes)
+            Object.entries(restored.notes)
               .filter(([, note]) => canFinalizeNote(note))
               .map(([studentId]) => [studentId, true]),
           ),
         )
         setShowAllErrors(false)
+        // Draft yang berbeda dari server berarti masih ada perubahan tertunda.
+        setDirty(draftDiffersFromServer(server, restored))
+
+        // Posisi kembali hanya berlaku sekali; dibersihkan agar kunjungan
+        // berikutnya tidak ikut menggulir tanpa diminta.
+        if (requested) {
+          const position = parseReturnPosition(
+            window.sessionStorage.getItem(ATTENDANCE_RETURN_KEY),
+            requested.id,
+            date,
+          )
+          window.sessionStorage.removeItem(ATTENDANCE_RETURN_KEY)
+          setReturnStudentId(position?.studentId ?? null)
+        }
         setHasSaved(Boolean(requested?.attendanceDays.length))
         setLastSaved(requested?.attendanceDays[0]?.updatedAt
           ? { time: formatJam(requested.attendanceDays[0].updatedAt, timeZone), by: requested.attendanceDays[0].submittedBy }
@@ -183,6 +225,54 @@ export default function AbsensiInputPage() {
     return () => window.removeEventListener("beforeunload", handler)
   }, [dirty])
 
+  /**
+   * Menyimpan isian yang belum ditekan Simpan ke sessionStorage. Draft di-scope
+   * per kelas + tanggal supaya konteks lain tidak pernah ikut terisi, dan hanya
+   * hidup di tab browser — tidak ada perubahan schema/database untuk fitur ini.
+   */
+  const persistDraft = useCallback(() => {
+    if (!selectedClass) return
+    window.sessionStorage.setItem(
+      ATTENDANCE_DRAFT_KEY,
+      serializeDraft({ classId: selectedClass, date, statuses, notes, absentPending }),
+    )
+  }, [selectedClass, date, statuses, notes, absentPending])
+
+  const clearDraft = useCallback(() => {
+    window.sessionStorage.removeItem(ATTENDANCE_DRAFT_KEY)
+  }, [])
+
+  /**
+   * Menyimpan draft dan posisi kembali sebelum berpindah ke Profil Siswa,
+   * lalu tombol Back mengembalikan kelas, isian, dan posisi baris yang sama.
+   */
+  const handleProfileOpen = useCallback(
+    (studentId: string) => {
+      persistDraft()
+      window.sessionStorage.setItem(
+        ATTENDANCE_RETURN_KEY,
+        serializeReturnPosition({ classId: selectedClass, date, studentId }),
+      )
+    },
+    [persistDraft, selectedClass, date],
+  )
+
+  /**
+   * Mengembalikan posisi baca setelah daftar siswa selesai dirender. Memakai id
+   * elemen per siswa, bukan scrollY, agar tetap tepat walau tinggi baris berubah
+   * (mis. baris yang terbuka karena Tidak Hadir).
+   */
+  useEffect(() => {
+    if (!returnStudentId) return
+    if (!visibleRoster.some((student) => student.id === returnStudentId)) return
+    const element =
+      document.getElementById(studentRowId(returnStudentId, "desktop"))?.offsetParent
+        ? document.getElementById(studentRowId(returnStudentId, "desktop"))
+        : document.getElementById(studentRowId(returnStudentId, "mobile"))
+    element?.scrollIntoView({ behavior: "smooth", block: "center" })
+    setReturnStudentId(null)
+  }, [returnStudentId, visibleRoster])
+
   const applyClass = useCallback((id: string) => {
     const cls = classes.find((c) => c.id === id)
     const option = cls ? { submitted: cls.attendanceDays.length > 0, submittedAt: cls.attendanceDays[0]?.updatedAt, submittedBy: cls.attendanceDays[0]?.submittedBy } : undefined
@@ -196,6 +286,15 @@ export default function AbsensiInputPage() {
       nextNotes[s.id] = record?.note ?? ""
     }
     setSelectedClass(id)
+    // Kelas yang sedang dibuka ikut menjadi kelas "yang diminta", supaya efek
+    // pemuatan (mis. saat tanggal berganti) tidak melompat balik ke kelas dari
+    // URL awal.
+    setRequestedClass(id)
+    // URL menyimpan konteks kelas/tanggal supaya halaman bisa dibuka ulang atau
+    // dikembalikan lewat Back tanpa jatuh ke keadaan "kelas belum dipilih".
+    // replace(), bukan push(): berganti kelas bukan langkah navigasi tersendiri
+    // sehingga tidak perlu menambah entri history.
+    router.replace(attendanceInputHref(id, date), { scroll: false })
     setStatuses(nextStatuses)
     setNotes(nextNotes)
     setAbsentPending({})
@@ -209,6 +308,8 @@ export default function AbsensiInputPage() {
     )
     setShowAllErrors(false)
     setDirty(false)
+    // Draft milik kelas sebelumnya tidak lagi relevan setelah kelas berganti.
+    clearDraft()
     // Kata kunci dari kelas sebelumnya hampir pasti tidak cocok di kelas baru,
     // dan daftar yang tampak kosong tanpa sebab lebih membingungkan daripada
     // kehilangan kata kunci.
@@ -220,7 +321,7 @@ export default function AbsensiInputPage() {
       setHasSaved(false)
       setLastSaved(null)
     }
-  }, [classes, timeZone])
+  }, [classes, clearDraft, date, router, timeZone])
 
   const handleClassChange = useCallback(
     (id: string) => {
@@ -464,13 +565,16 @@ export default function AbsensiInputPage() {
       setSavedAt(time)
       setHasSaved(true)
       setDirty(false)
+      // Isian sudah masuk database: draft sementara tidak boleh tertinggal dan
+      // menimpa data server pada kunjungan berikutnya.
+      clearDraft()
       setLastSaved({ time, by: data.submittedBy })
       setSuccessOpen(true)
       toast.success("Absensi tersimpan", {
         description: `${classOption?.name ?? ""} • pukul ${time}`,
       })
     } catch (error) { setSaving(false); toast.error(error instanceof Error ? error.message : "Absensi gagal disimpan") }
-  }, [classOption, selectedClass, date, roster, statuses, notes, timeZone])
+  }, [classOption, clearDraft, selectedClass, date, roster, statuses, notes, timeZone])
 
   const confirmLeave = useCallback(() => {
     setUnsavedOpen(false)
@@ -654,6 +758,7 @@ export default function AbsensiInputPage() {
                 onNoteFinalize={handleNoteFinalize}
                 onNoteEdit={handleNoteEdit}
                 registerNoteInput={registerNoteInput}
+                onProfileOpen={handleProfileOpen}
               />
             )}
           </div>

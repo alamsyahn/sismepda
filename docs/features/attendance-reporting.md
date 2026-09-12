@@ -17,6 +17,30 @@ keyword, otherwise the new class looks empty for no visible reason. A `siswa`
 query parameter pre-fills the box, which is how the E-UKS sick-absence table
 jumps straight to one student alongside `classId` and `date`.
 
+### Navigating to a student profile and back
+
+Picking a class calls `router.replace()` with `?classId=…&date=…` (replace, not
+push, so switching classes does not pile up history entries). Opening the page
+with `classId` selects that class and loads its attendance immediately.
+
+Only the student's name is a link to the profile — rows and cards stay
+non-clickable to avoid accidental navigation. Opening a profile is a full page
+navigation, so the editor unmounts and unsaved input would be lost. Before
+navigating, `ProfileNameLink`'s `onNavigate` hook makes the page write two
+`sessionStorage` entries (`lib/attendance-draft.ts`):
+
+- the **draft** (statuses, notes, pending absences), scoped to class + date;
+- the **return position** (the clicked `studentId`).
+
+On the way back, the draft is layered over the freshly fetched server data —
+only for students still on the roster, and only when class and date match, so
+server data is never silently overwritten. A restored draft that differs from
+the server marks the form dirty again. The return position is consumed once:
+after the roster renders, the row element (`student-<studentId>` on desktop,
+`student-mobile-<studentId>` on mobile) is scrolled into view with
+`block: "center"`, then cleared. The draft is dropped after a successful save
+and when switching classes. Nothing here touches the schema or database.
+
 ### Status selection UI
 
 The form presents three primary statuses only — **Belum Diisi, Hadir, Tidak
