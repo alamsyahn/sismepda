@@ -1,6 +1,6 @@
 import { Prisma } from "@/app/generated/prisma/client"
 import { databaseSchema } from "@/lib/database-config"
-import { getClassAccess } from "@/lib/class-access"
+import { requireClassScopeFor } from "@/lib/rbac-class-access"
 import { prisma } from "@/lib/prisma"
 import {
   buildClassifiedBuckets,
@@ -12,11 +12,9 @@ import {
   type TrendResponse,
   type ValidAttendanceStatus,
 } from "@/lib/attendance-trend"
-import type { requireUser } from "@/lib/auth-guards"
 import { differenceInSchoolDays, eachSchoolDate, fromPrismaDate, parseSchoolDate, todayInSchoolTimeZone, toPrismaDate } from "@/lib/school-date"
 import { readHolidayDates } from "@/lib/server-holidays"
 
-type User = Awaited<ReturnType<typeof requireUser>>
 const MAX_RANGE_DAYS = 800
 
 function qualifiedTable(table: string) {
@@ -26,7 +24,6 @@ function qualifiedTable(table: string) {
 }
 
 export async function readAttendanceTrend(
-  user: User,
   params: { granularity?: string | null; from?: string | null; to?: string | null; classId?: string | null },
   timeZone: string,
 ): Promise<{ ok: true; data: TrendResponse } | { ok: false; status: number; error: string }> {
@@ -51,9 +48,9 @@ export async function readAttendanceTrend(
     return { ok: false, status: 400, error: "Rentang tanggal terlalu panjang" }
   }
 
-  const access = await getClassAccess(user)
+  const scope = await requireClassScopeFor("attendance.dashboard", "read")
   const allowedClasses = await prisma.schoolClass.findMany({
-    where: access.where,
+    where: scope.where,
     select: { id: true, students: { where: { active: true }, select: { id: true } } },
   })
   const allowedIds = allowedClasses.map((item) => item.id)

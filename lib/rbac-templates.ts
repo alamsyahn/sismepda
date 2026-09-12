@@ -58,10 +58,11 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "attendance.write.assigned_classes",
       "attendance.export.assigned_classes",
       "students.profile.read.assigned_classes",
-      "students.violations.write.assigned_classes",
+      "students.violations.read.assigned_classes",
+      "students.violations.create.assigned_classes",
       "teachers.directory.read",
       "workbook.links.read.own",
-      "workbook.links.write.own",
+      "workbook.links.update.own",
     ],
   },
   {

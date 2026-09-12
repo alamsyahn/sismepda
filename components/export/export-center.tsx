@@ -10,8 +10,22 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
-type Role = "ADMIN" | "GURU"
 type Option = { name: string; grade: string }
+
+/**
+ * Kemampuan ekspor yang benar-benar dimiliki pemakai, dihitung di server.
+ *
+ * Per jenis berkas, bukan satu bendera "admin": seseorang bisa saja boleh
+ * mengekspor wali kelas tanpa boleh mengekspor data siswa. Ini hanya mengatur
+ * tampilan — keputusannya tetap ditegakkan ulang di endpoint export.
+ */
+export type ExportAbilities = {
+  readonly students: boolean
+  readonly teachers: boolean
+  readonly homerooms: boolean
+  readonly holidays: boolean
+  readonly attendance: boolean
+}
 
 function FieldSelect({
   label,
@@ -59,7 +73,7 @@ function ExportCard({
   )
 }
 
-export function ExportCenter({ role, classes }: { role: Role; classes: Option[] }) {
+export function ExportCenter({ abilities, classes }: { abilities: ExportAbilities; classes: Option[] }) {
   const { today } = useSchoolTimeZone()
   const schoolToday = today()
   const [delimiter, setDelimiter] = useState(",")
@@ -79,8 +93,7 @@ export function ExportCenter({ role, classes }: { role: Role; classes: Option[] 
       <CsvDelimiterField value={delimiter} onChange={setDelimiter} description="Delimiter ini digunakan untuk seluruh file yang di-export dari halaman ini." />
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {role === "ADMIN" ? (
-          <>
+        {abilities.students ? (
             <ExportCard icon={Users} title="Data Siswa" description="Daftar identitas, kelas, dan status siswa.">
               <div className="grid gap-3 sm:grid-cols-2">
                 <FieldSelect label="Kelas" value={studentClass} onChange={setStudentClass} options={classOptions} />
@@ -88,24 +101,30 @@ export function ExportCenter({ role, classes }: { role: Role; classes: Option[] 
               </div>
               <ExportButton type="students" params={{ delimiter, class: studentClass, status: studentStatus }} />
             </ExportCard>
+        ) : null}
 
+        {abilities.teachers ? (
             <ExportCard icon={Contact} title="Data Guru" description="Daftar akun guru, kontak, dan penugasan wali kelas.">
               <FieldSelect label="Status" value={teacherStatus} onChange={setTeacherStatus} options={[{ value: "all", label: "Semua status" }, { value: "active", label: "Aktif" }, { value: "inactive", label: "Nonaktif" }]} />
               <ExportButton type="teachers" params={{ delimiter, status: teacherStatus }} />
             </ExportCard>
+        ) : null}
 
+        {abilities.homerooms ? (
             <ExportCard icon={UserRoundCog} title="Data Wali Kelas" description="Daftar kelas beserta guru yang ditugaskan sebagai wali kelas.">
               <FieldSelect label="Penugasan" value={assignment} onChange={setAssignment} options={[{ value: "all", label: "Semua kelas" }, { value: "assigned", label: "Sudah ditentukan" }, { value: "unassigned", label: "Belum ditentukan" }]} />
               <ExportButton type="homerooms" params={{ delimiter, assignment }} />
             </ExportCard>
+        ) : null}
 
+        {abilities.holidays ? (
             <ExportCard icon={CalendarOff} title="Kalender Hari Libur" description="Daftar tanggal yang ditandai sebagai hari libur sekolah.">
               <div className="space-y-2"><Label htmlFor="export-year">Tahun</Label><Input id="export-year" type="number" min={2000} max={2100} value={year} onChange={(event) => setYear(event.target.value)} /></div>
               <ExportButton type="holidays" params={{ delimiter, year }} />
             </ExportCard>
-          </>
         ) : null}
 
+        {abilities.attendance ? (
         <ExportCard icon={BookOpenCheck} title="Rekap Siswa" description="Akumulasi status kehadiran siswa dan status pada tanggal yang dipilih.">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2"><Label htmlFor="student-recap-date">Tanggal status</Label><Input id="student-recap-date" type="date" value={recapDate} onChange={(event) => setRecapDate(event.target.value)} /></div>
@@ -113,7 +132,9 @@ export function ExportCenter({ role, classes }: { role: Role; classes: Option[] 
           </div>
           <ExportButton type="attendance_students" params={{ delimiter, date: recapDate, class: recapClass }} />
         </ExportCard>
+        ) : null}
 
+        {abilities.attendance ? (
         <ExportCard icon={School} title="Rekap Kelas" description="Ringkasan absensi dan status input setiap kelas pada satu tanggal.">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2"><Label htmlFor="class-recap-date">Tanggal rekap</Label><Input id="class-recap-date" type="date" value={recapDate} onChange={(event) => setRecapDate(event.target.value)} /></div>
@@ -121,6 +142,7 @@ export function ExportCenter({ role, classes }: { role: Role; classes: Option[] 
           </div>
           <ExportButton type="attendance_classes" params={{ delimiter, date: recapDate, grade }} />
         </ExportCard>
+        ) : null}
       </div>
     </>
   )

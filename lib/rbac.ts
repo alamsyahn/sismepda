@@ -144,7 +144,8 @@ export const CLASS_WIDENING_FAMILIES: readonly string[] = [
   "attendance.write",
   "attendance.export",
   "students.profile.read",
-  "students.violations.write",
+  "students.violations.read",
+  "students.violations.create",
 ]
 
 export type ClassScopeInput = {

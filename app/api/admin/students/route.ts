@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { requireAdmin } from "@/lib/auth-guards"
+import { requirePermission } from "@/lib/rbac-access"
+import { ApiError, authFailureResponse } from "@/lib/api-errors"
 import { prisma } from "@/lib/prisma"
 import { sortClasses } from "@/lib/class-order"
 import { fromPrismaDate, parseSchoolDate, toPrismaDate } from "@/lib/school-date"
@@ -73,7 +74,7 @@ function studentResponse(studentData: {
 
 export async function GET() {
   try {
-    await requireAdmin()
+    await requirePermission("students.master.read")
     const [classes, students] = await Promise.all([
       prisma.schoolClass.findMany({ select: { name: true }, orderBy: { name: "asc" } }),
       prisma.student.findMany({
@@ -85,8 +86,8 @@ export async function GET() {
       classes: sortClasses(classes).map((item) => item.name),
       students: students.map(studentResponse),
     })
-  } catch {
-    return NextResponse.json({ error: "Tidak diizinkan" }, { status: 403 })
+  } catch (error) {
+    return authFailureResponse(error, "Data siswa gagal dimuat")
   }
 }
 
@@ -103,16 +104,16 @@ const studentUpdate = z.object({
 
 export async function PATCH(request: Request) {
   try {
-    await requireAdmin()
+    await requirePermission("students.master.update")
     const body = studentUpdate.parse(await request.json())
     const existing = await prisma.student.findUnique({ where: { id: body.id }, select: { nis: true, nisn: true } })
-    if (!existing) return NextResponse.json({ error: "Siswa tidak ditemukan" }, { status: 404 })
+    if (!existing) throw new ApiError(404, "Siswa tidak ditemukan")
     identifiers.parse({ nis: body.nis === undefined ? existing.nis ?? "" : body.nis ?? "", nisn: body.nisn === undefined ? existing.nisn ?? "" : body.nisn ?? "" })
 
     const schoolClass = body.className
       ? await prisma.schoolClass.findUnique({ where: { name: body.className }, select: { id: true } })
       : null
-    if (body.className && !schoolClass) return NextResponse.json({ error: "Kelas tidak ditemukan" }, { status: 400 })
+    if (body.className && !schoolClass) throw new ApiError(400, "Kelas tidak ditemukan")
 
     const updated = await prisma.student.update({
       where: { id: body.id },
@@ -129,18 +130,10 @@ export async function PATCH(request: Request) {
     })
     return NextResponse.json(studentResponse(updated))
   } catch (error) {
-    const duplicate = isDuplicateError(error)
-    const badBirthDate = error instanceof Error && error.message === "INVALID_BIRTH_DATE"
-    return NextResponse.json(
-      {
-        error: duplicate
-          ? "NIS atau NISN sudah digunakan siswa lain"
-          : badBirthDate
-            ? "Tanggal lahir tidak valid"
-            : "Data siswa tidak valid",
-      },
-      { status: duplicate ? 409 : 400 },
-    )
+    if (isDuplicateError(error)) return NextResponse.json({ error: "NIS atau NISN sudah digunakan siswa lain" }, { status: 409 })
+    if (error instanceof Error && error.message === "INVALID_BIRTH_DATE") return NextResponse.json({ error: "Tanggal lahir tidak valid" }, { status: 400 })
+    if (error instanceof z.ZodError) return NextResponse.json({ error: "Data siswa tidak valid" }, { status: 400 })
+    return authFailureResponse(error, "Data siswa gagal disimpan")
   }
 }
 
@@ -148,13 +141,13 @@ const studentDelete = z.object({ id: z.string().min(1), confirmationIdentifier: 
 
 export async function DELETE(request: Request) {
   try {
-    await requireAdmin()
+    await requirePermission("students.master.delete")
     const body = studentDelete.parse(await request.json())
     const existing = await prisma.student.findUnique({ where: { id: body.id }, select: { nis: true, nisn: true } })
-    if (!existing) return NextResponse.json({ error: "Siswa tidak ditemukan" }, { status: 404 })
+    if (!existing) throw new ApiError(404, "Siswa tidak ditemukan")
     const expectedIdentifier = existing.nis ?? existing.nisn
     if (expectedIdentifier !== body.confirmationIdentifier) {
-      return NextResponse.json({ error: "Konfirmasi identitas siswa tidak sesuai" }, { status: 400 })
+      throw new ApiError(400, "Konfirmasi identitas siswa tidak sesuai")
     }
     const deletedAttendances = await prisma.$transaction(async (tx) => {
       const result = await tx.attendance.deleteMany({ where: { studentId: body.id } })
@@ -162,17 +155,20 @@ export async function DELETE(request: Request) {
       return result.count
     })
     return NextResponse.json({ id: body.id, deletedAttendances })
-  } catch {
-    return NextResponse.json({ error: "Siswa gagal dihapus permanen" }, { status: 400 })
+  } catch (error) {
+    if (error instanceof z.ZodError) return NextResponse.json({ error: "Data hapus tidak valid" }, { status: 400 })
+    return authFailureResponse(error, "Siswa gagal dihapus permanen")
   }
 }
 
 export async function POST(request: Request) {
   try {
-    await requireAdmin()
     const body = await request.json()
     const parsedImport = csvImport.safeParse(body)
+    // Impor massal dan penambahan satuan adalah dua kewenangan berbeda: impor
+    // menulis banyak baris sekaligus dan dapat menimpa data yang sudah ada.
     if (parsedImport.success) {
+      await requirePermission("students.master.import")
       const result = await prisma.$transaction(async (tx) => {
         const classNames = [...new Set(parsedImport.data.rows.map((row) => row.className))]
         const [classes, existingStudents] = await Promise.all([
@@ -244,6 +240,7 @@ export async function POST(request: Request) {
       return NextResponse.json(result, { status: 201 })
     }
 
+    await requirePermission("students.master.create")
     const rows = z.array(student).parse(Array.isArray(body) ? body : [body])
     let count = 0
     for (const row of rows) {
@@ -263,20 +260,13 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ count }, { status: 201 })
   } catch (error) {
-    const duplicate = isDuplicateError(error)
-    const conflict = error instanceof Error && error.message === "IDENTIFIER_CONFLICT"
-    const badBirthDate = error instanceof Error && error.message === "INVALID_BIRTH_DATE"
-    return NextResponse.json(
-      {
-        error: conflict
-          ? "NIS dan NISN mengarah ke dua siswa yang berbeda"
-          : duplicate
-            ? "NIS atau NISN sudah terdaftar"
-            : badBirthDate
-              ? "Tanggal lahir tidak valid"
-              : "Data siswa tidak valid",
-      },
-      { status: duplicate || conflict ? 409 : 400 },
-    )
+    if (error instanceof Error && error.message === "IDENTIFIER_CONFLICT") {
+      return NextResponse.json({ error: "NIS dan NISN mengarah ke dua siswa yang berbeda" }, { status: 409 })
+    }
+    if (isDuplicateError(error)) return NextResponse.json({ error: "NIS atau NISN sudah terdaftar" }, { status: 409 })
+    if (error instanceof Error && error.message === "INVALID_BIRTH_DATE") return NextResponse.json({ error: "Tanggal lahir tidak valid" }, { status: 400 })
+    if (error instanceof Error && error.message === "CLASS_NOT_FOUND") return NextResponse.json({ error: "Kelas tidak ditemukan" }, { status: 400 })
+    if (error instanceof z.ZodError) return NextResponse.json({ error: "Data siswa tidak valid" }, { status: 400 })
+    return authFailureResponse(error, "Data siswa gagal disimpan")
   }
 }

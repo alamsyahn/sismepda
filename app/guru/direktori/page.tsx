@@ -1,11 +1,11 @@
-import { requireUser } from "@/lib/auth-guards"
+import { requirePagePermission } from "@/lib/page-guards"
 import { readTeacherDirectory } from "@/lib/server-teacher-profile"
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { TeacherDirectory } from "@/components/guru/teacher-directory"
 import { fromPrismaDate } from "@/lib/school-date"
 
 export default async function TeacherDirectoryPage() {
-  await requireUser()
+  await requirePagePermission("teachers.directory.read")
   const teachers = await readTeacherDirectory()
 
   return (

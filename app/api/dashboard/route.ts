@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server"
-import { requireUser } from "@/lib/auth-guards"
 import { prisma } from "@/lib/prisma"
 import { formatSchoolDate, formatSchoolTime, fromPrismaDate, parseSchoolDate, schoolMinutesOfDay, todayInSchoolTimeZone, toPrismaDate } from "@/lib/school-date"
 import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import { sortClasses } from "@/lib/class-order"
-import { getClassAccess } from "@/lib/class-access"
+import { requireClassScopeFor } from "@/lib/rbac-class-access"
+import { authFailureResponse } from "@/lib/api-errors"
 import { isClassRecapComplete } from "@/lib/attendance-save"
 import { readHolidayFor, readHolidayRules } from "@/lib/server-holidays"
 import { resolveHoliday } from "@/lib/holiday-rules"
@@ -17,13 +17,12 @@ function timeLimitMinutes(value: string) {
 export async function GET(request: Request) {
   try {
     const timeZone = await readSchoolTimeZone()
-    const user = await requireUser()
-    const access = await getClassAccess(user)
+    const scope = await requireClassScopeFor("attendance.dashboard", "read")
     const dateParam = new URL(request.url).searchParams.get("date")
     const schoolDate = dateParam === null ? todayInSchoolTimeZone(undefined, timeZone) : parseSchoolDate(dateParam)
     if (!schoolDate) return NextResponse.json({ error: "Tanggal tidak valid" }, { status: 400 })
     const date = toPrismaDate(schoolDate)
-    const classWhere = access.where
+    const classWhere = scope.where
     const holiday = await readHolidayFor(schoolDate)
     const rows = await prisma.schoolClass.findMany({
       where: classWhere,
@@ -73,5 +72,7 @@ export async function GET(request: Request) {
     for (const day of trendDays) { const key = fromPrismaDate(day.date); if (holidayDates.has(key)) continue; const item = byDate.get(key) ?? { date: key, hadir: 0, dispensasi: 0, total: 0 }; item.hadir += day.attendances.filter((a) => a.status === "HADIR").length; item.dispensasi += day.attendances.filter((a) => a.status === "DISPENSASI").length; item.total += day.attendances.length; byDate.set(key, item) }
     const weeklyTrend = [...byDate.values()].filter((item) => item.total > 0).slice(0, 6).reverse().map((item) => ({ date: item.date, day: formatSchoolDate(item.date, { weekday: "short" }).replace(".", ""), hadir: item.hadir, dispensasi: item.dispensasi, total: item.total }))
     return NextResponse.json({ classes, absentStudents, recentActivity, weeklyTrend, holiday })
-  } catch { return NextResponse.json({ error: "Tidak diizinkan" }, { status: 403 }) }
+  } catch (error) {
+    return authFailureResponse(error, "Dashboard gagal dimuat")
+  }
 }

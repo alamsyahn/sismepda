@@ -39,15 +39,23 @@ function readStoredGroups(): Record<string, boolean> {
   }
 }
 
-export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
+/**
+ * Sidebar.
+ *
+ * `grants` dihitung di server dari database dan diturunkan sebagai prop. Menu
+ * TIDAK lagi membaca peran dari sesi/JWT: tanpa grants, tidak ada fallback
+ * "GURU" saat sesi masih dimuat — menu yang dijaga cukup tidak tampil.
+ */
+export function SidebarNav({ onNavigate, grants, roleNames }: { onNavigate?: () => void; grants: readonly string[]; roleNames: readonly string[] }) {
   const pathname = usePathname()
   const { data: session } = useSession()
   const branding = useAppBranding()
-  const role = session?.user.role ?? "GURU"
 
   const viewer = useMemo(
     () => ({
-      role,
+      grants,
+      // Masih dibutuhkan modul BOS/Sarpras/E-UKS yang belum bermigrasi.
+      role: session?.user.role ?? "GURU",
       canSuperviseWorkbooks: session?.user.canSuperviseWorkbooks,
       canViewWorkbookSupervision: session?.user.canViewWorkbookSupervision,
       canViewBos: session?.user.canViewBos,
@@ -61,7 +69,8 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
       canEditEuks: session?.user.canEditEuks,
     }),
     [
-      role,
+      grants,
+      session?.user.role,
       session?.user.canSuperviseWorkbooks,
       session?.user.canViewWorkbookSupervision,
       session?.user.canViewBos,
@@ -161,7 +170,9 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             </Avatar>
             <div className="min-w-0 flex-1 leading-tight">
               <p className="truncate text-sm font-semibold text-sidebar-foreground">{session?.user.name}</p>
-              <p className="truncate text-xs text-muted-foreground">{role === "ADMIN" ? "Administrator" : "Guru"}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {roleNames.length > 0 ? roleNames.join(", ") : "Tanpa role"}
+              </p>
             </div>
           </Link>
           <button onClick={() => signOut({ redirectTo: "/login" })} className="ml-auto cursor-pointer text-muted-foreground hover:text-destructive" aria-label="Keluar"><LogOut className="size-4" /></button>

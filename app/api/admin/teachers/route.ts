@@ -1,7 +1,9 @@
 import { hash } from "bcryptjs"
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { requireAdmin } from "@/lib/auth-guards"
+import { requirePermission, requireUser } from "@/lib/rbac-access"
+import { ApiError, authFailureResponse } from "@/lib/api-errors"
+import { assertTargetNotPrivileged, teacherPopulationWhere } from "@/lib/teacher-population"
 import { prisma } from "@/lib/prisma"
 
 const optionalNip = z.string().trim().max(30).refine((value) => !value || /^\d+$/.test(value), "NIP hanya boleh berisi angka")
@@ -47,25 +49,38 @@ const teacherSelect = {
 
 export async function GET() {
   try {
-    await requireAdmin()
+    await requirePermission("teachers.accounts.read")
     return NextResponse.json(await prisma.user.findMany({
-      where: { role: "GURU" },
+      // Populasi guru berasal dari isTeacher, bukan lagi role === "GURU".
+      where: teacherPopulationWhere(),
       select: teacherSelect,
       orderBy: [{ active: "desc" }, { name: "asc" }],
     }))
-  } catch {
-    return NextResponse.json({ error: "Tidak diizinkan" }, { status: 403 })
+  } catch (error) {
+    return authFailureResponse(error, "Data guru gagal dimuat")
   }
 }
 
 export async function PATCH(request: Request) {
   try {
-    await requireAdmin()
     const body = teacherUpdate.parse(await request.json())
-    const existing = await prisma.user.findFirstOrThrow({
-      where: { id: body.id, role: "GURU" },
+
+    // Kewenangan dipecah per jenis perubahan: menyunting data akun tidak
+    // otomatis memberi hak mereset sandi/e-mail atau mengaktifkan akun.
+    await requirePermission("teachers.accounts.update")
+    if (body.password !== undefined || body.email !== undefined) {
+      await requirePermission("accounts.credentials.manage")
+    }
+    if (body.active !== undefined) {
+      await requirePermission("accounts.status.manage")
+    }
+    await assertTargetNotPrivileged(body.id)
+
+    const existing = await prisma.user.findFirst({
+      where: { id: body.id, ...teacherPopulationWhere() },
       select: { nip: true, email: true },
     })
+    if (!existing) throw new ApiError(404, "Guru tidak ditemukan")
     const nip = body.nip === undefined ? existing.nip : body.nip || null
     const email = body.email === undefined ? existing.email : body.email ? body.email.toLowerCase() : null
     if (!nip && !email) {
@@ -87,10 +102,9 @@ export async function PATCH(request: Request) {
     return NextResponse.json(updated)
   } catch (error) {
     const duplicate = typeof error === "object" && error !== null && "code" in error && error.code === "P2002"
-    return NextResponse.json(
-      { error: duplicate ? "NIP atau email sudah digunakan akun lain" : "Data guru tidak valid" },
-      { status: duplicate ? 409 : 400 },
-    )
+    if (duplicate) return NextResponse.json({ error: "NIP atau email sudah digunakan akun lain" }, { status: 409 })
+    if (error instanceof z.ZodError) return NextResponse.json({ error: "Data guru tidak valid" }, { status: 400 })
+    return authFailureResponse(error, "Data guru gagal disimpan")
   }
 }
 
@@ -98,18 +112,19 @@ const teacherDelete = z.object({ id: z.string().min(1), confirmationIdentifier: 
 
 export async function DELETE(request: Request) {
   try {
-    const admin = await requireAdmin()
+    await requirePermission("teachers.accounts.delete")
+    const admin = await requireUser()
     const body = teacherDelete.parse(await request.json())
-    const existing = await prisma.user.findUnique({
-      where: { id: body.id },
-      select: { nip: true, email: true, role: true },
+    await assertTargetNotPrivileged(body.id)
+
+    const existing = await prisma.user.findFirst({
+      where: { id: body.id, ...teacherPopulationWhere() },
+      select: { nip: true, email: true },
     })
-    if (!existing || existing.role !== "GURU") {
-      return NextResponse.json({ error: "Guru tidak ditemukan" }, { status: 404 })
-    }
+    if (!existing) throw new ApiError(404, "Guru tidak ditemukan")
     const confirmation = body.confirmationIdentifier.toLowerCase()
     if (confirmation !== existing.nip && confirmation !== existing.email?.toLowerCase()) {
-      return NextResponse.json({ error: "Konfirmasi NIP/email tidak sesuai" }, { status: 400 })
+      throw new ApiError(400, "Konfirmasi NIP/email tidak sesuai")
     }
 
     const reassignedSubmissions = await prisma.$transaction(async (tx) => {
@@ -119,14 +134,17 @@ export async function DELETE(request: Request) {
       return result.count
     })
     return NextResponse.json({ id: body.id, reassignedSubmissions })
-  } catch {
-    return NextResponse.json({ error: "Guru gagal dihapus permanen" }, { status: 400 })
+  } catch (error) {
+    if (error instanceof z.ZodError) return NextResponse.json({ error: "Data hapus tidak valid" }, { status: 400 })
+    return authFailureResponse(error, "Guru gagal dihapus permanen")
   }
 }
 
 export async function POST(request: Request) {
   try {
-    await requireAdmin()
+    await requirePermission("teachers.accounts.create")
+    // Membuat akun berarti menetapkan kredensial awal.
+    await requirePermission("accounts.credentials.manage")
     const body = await request.json()
     const rows = z.array(teacherCreate).parse(Array.isArray(body) ? body : [body])
     const prepared = await Promise.all(rows.map(async (row) => ({
@@ -136,14 +154,16 @@ export async function POST(request: Request) {
       phone: row.phone || null,
       passwordHash: await hash(row.password, 12),
       role: "GURU" as const,
+      // Identitas bisnis baru: akun guru yang dibuat lewat layar ini memang
+      // record guru. Kolom legacy tetap diisi sampai fase kontraksi.
+      isTeacher: true,
     })))
     await prisma.$transaction(prepared.map((data) => prisma.user.create({ data })))
     return NextResponse.json({ count: prepared.length }, { status: 201 })
   } catch (error) {
     const duplicate = typeof error === "object" && error !== null && "code" in error && error.code === "P2002"
-    return NextResponse.json(
-      { error: duplicate ? "NIP atau email sudah terdaftar" : "Data guru tidak valid" },
-      { status: duplicate ? 409 : 400 },
-    )
+    if (duplicate) return NextResponse.json({ error: "NIP atau email sudah terdaftar" }, { status: 409 })
+    if (error instanceof z.ZodError) return NextResponse.json({ error: "Data guru tidak valid" }, { status: 400 })
+    return authFailureResponse(error, "Guru gagal dibuat")
   }
 }

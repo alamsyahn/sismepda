@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
-import { requireTeacherManager, teacherErrorResponse } from "@/lib/teacher-access"
+import { requireTeacherManager } from "@/lib/teacher-access"
+import { authFailureResponse } from "@/lib/api-errors"
+import { teacherPopulationWhere } from "@/lib/teacher-population"
 import { parseSchoolDate, toPrismaDate } from "@/lib/school-date"
 
 const optionalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal(""))
@@ -19,7 +21,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ te
     await requireTeacherManager()
     const { teacherId } = await params
     const body = profileUpdate.parse(await request.json())
-    const teacher = await prisma.user.findFirst({ where: { id: teacherId, role: { in: ["ADMIN", "GURU"] } }, select: { id: true } })
+    const teacher = await prisma.user.findFirst({ where: { id: teacherId, ...teacherPopulationWhere() }, select: { id: true } })
     if (!teacher) return NextResponse.json({ error: "Guru tidak ditemukan" }, { status: 404 })
 
     const teachingSinceValue = body.teachingSince ? parseSchoolDate(body.teachingSince) : null
@@ -56,7 +58,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ te
 
     return NextResponse.json({ id: teacherId })
   } catch (error) {
-    const { error: message, status } = teacherErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    if (error instanceof z.ZodError) return NextResponse.json({ error: "Data guru tidak valid" }, { status: 400 })
+    return authFailureResponse(error, "Data kepegawaian gagal disimpan")
   }
 }

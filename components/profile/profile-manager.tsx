@@ -29,7 +29,8 @@ export type ProfileData = {
   nip: string | null
   email: string | null
   phone: string | null
-  role: "ADMIN" | "GURU"
+  /// Semua role yang dipegang. Kosong ditampilkan sebagai "Tanpa role".
+  roleNames: readonly string[]
   photoUrl: string | null
 }
 
@@ -312,7 +313,15 @@ export function ProfileManager({ initialProfile }: { initialProfile: ProfileData
             </Avatar>
             <div>
               <p className="font-semibold">{previewName(salutation, name) || profile.name}</p>
-              <Badge variant="secondary" className="mt-1">{profile.role === "ADMIN" ? "Administrator" : "Guru"}</Badge>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {profile.roleNames.length > 0 ? (
+                  profile.roleNames.map((roleName) => (
+                    <Badge key={roleName} variant="secondary">{roleName}</Badge>
+                  ))
+                ) : (
+                  <Badge variant="outline">Tanpa role</Badge>
+                )}
+              </div>
             </div>
           </div>
 

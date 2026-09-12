@@ -1,12 +1,7 @@
 import { strict as assert } from "node:assert"
 import { test } from "node:test"
 
-import {
-  LEGACY_ADMIN_PREFILTER_ROUTES,
-  isLegacyAdminPrefilterRoute,
-  isPublicRoute,
-  routePolicy,
-} from "../lib/route-policy"
+import { isPublicRoute, routePolicy } from "../lib/route-policy"
 
 test("halaman login publik", () => {
   assert.equal(routePolicy("/login"), "public")
@@ -29,17 +24,12 @@ test("entri publik tidak mempublikasikan subtree di bawahnya", () => {
   assert.equal(isPublicRoute("/app-logo/besar", "GET"), false)
 })
 
-test("prefilter admin legacy mencocokkan rute dan subtree-nya", () => {
-  for (const route of LEGACY_ADMIN_PREFILTER_ROUTES) {
-    assert.equal(isLegacyAdminPrefilterRoute(route), true)
-    assert.equal(isLegacyAdminPrefilterRoute(`${route}/detail`), true)
+test("modul inti tidak lagi ditapis di lapisan ini", () => {
+  // Tapis berbasis role di dalam JWT dihapus pada Phase 4: halaman-halaman ini
+  // kini dijaga requirePermission() di server, sehingga pencabutan/pemberian
+  // hak berlaku pada request berikutnya tanpa logout.
+  for (const path of ["/siswa", "/guru", "/wali-kelas/input", "/supervisi-buku-kerja/kelola"]) {
+    assert.equal(routePolicy(path), "authenticated", `${path} tetap wajib login`)
+    assert.equal(isPublicRoute(path), false, `${path} tidak boleh publik`)
   }
-})
-
-test("halaman gabungan dicocokkan persis agar profil tetap terbuka untuk guru", () => {
-  assert.equal(isLegacyAdminPrefilterRoute("/siswa"), true)
-  assert.equal(isLegacyAdminPrefilterRoute("/guru"), true)
-  // Profil dan direktori bukan halaman admin.
-  assert.equal(isLegacyAdminPrefilterRoute("/siswa/abc123"), false)
-  assert.equal(isLegacyAdminPrefilterRoute("/guru/direktori"), false)
 })

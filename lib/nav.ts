@@ -29,7 +29,7 @@ import { canViewBos } from "@/lib/bos"
 import { canViewEuks } from "@/lib/euks"
 import { canViewSarpras } from "@/lib/sarpras"
 
-export type NavCapability = "workbookSupervision" | "bos" | "sarpras" | "euks"
+export type NavCapability = "bos" | "sarpras" | "euks"
 
 export type NavItem = {
   type?: "item"
@@ -37,9 +37,21 @@ export type NavItem = {
   href: string
   icon: LucideIcon
   description: string
-  roles: Array<"ADMIN" | "GURU">
-  /** When set, the item also requires this capability (ADMIN always passes). */
+  /**
+   * Permission yang membuat menu ini terlihat. Item tampil bila pemakai
+   * memegang MINIMAL SATU key di sini.
+   *
+   * Menu bukan batas keamanan: daftar ini hanya mencerminkan guard server agar
+   * pengguna tidak diarahkan ke halaman yang pasti menolaknya.
+   */
+  permissions?: readonly string[]
+  /** Modul yang belum bermigrasi ke RBAC (BOS/Sarpras/E-UKS). */
   capability?: NavCapability
+  /**
+   * Khusus modul yang belum bermigrasi: item hanya untuk `role === "ADMIN"`.
+   * Dihapus ketika modul tersebut memakai permission-nya sendiri.
+   */
+  legacyAdminOnly?: boolean
   /** Route matching strategy for the active state. Defaults to "prefix". */
   match?: "exact" | "prefix"
 }
@@ -56,6 +68,15 @@ export type NavGroup = {
 export type NavEntry = NavItem | NavGroup
 
 export type NavViewer = {
+  /**
+   * Grant efektif pemakai, hasil `getAuthorizationContext()`. Menu tidak lagi
+   * membaca nama peran.
+   */
+  grants: ReadonlySet<string> | readonly string[]
+  /**
+   * Masih dibutuhkan modul yang belum bermigrasi (BOS/Sarpras/E-UKS), yang
+   * helper-nya memakai `role === "ADMIN"`. Modul inti tidak memakainya lagi.
+   */
   role: "ADMIN" | "GURU"
   canSuperviseWorkbooks?: boolean
   canViewWorkbookSupervision?: boolean
@@ -76,18 +97,18 @@ export function isNavGroup(entry: NavEntry): entry is NavGroup {
 
 /** Nav filtering mirrors the server-side guards; it never grants access on its own. */
 export function canSeeNavItem(item: NavItem, viewer: NavViewer): boolean {
-  if (!item.roles.includes(viewer.role)) return false
-  if (item.capability === "workbookSupervision") {
-    return (
-      viewer.role === "ADMIN" ||
-      viewer.canSuperviseWorkbooks === true ||
-      viewer.canViewWorkbookSupervision === true
-    )
-  }
+  // Modul yang belum bermigrasi masih memakai flag legacy-nya sendiri.
+  if (item.legacyAdminOnly && viewer.role !== "ADMIN") return false
   if (item.capability === "bos") return canViewBos(viewer)
   if (item.capability === "sarpras") return canViewSarpras(viewer)
   if (item.capability === "euks") return canViewEuks(viewer)
-  return true
+
+  // Tanpa daftar permission, item dianggap tersedia bagi setiap sesi yang sah
+  // (mis. "Profil Saya"). Item yang dijaga WAJIB mencantumkan key-nya.
+  if (!item.permissions || item.permissions.length === 0) return true
+
+  const grants = viewer.grants instanceof Set ? viewer.grants : new Set(viewer.grants)
+  return item.permissions.some((key) => grants.has(key))
 }
 
 /**
@@ -165,7 +186,7 @@ export const dashboardItem: NavItem = {
   href: "/",
   icon: LayoutDashboard,
   description: "Ringkasan absensi harian",
-  roles: ["ADMIN", "GURU"],
+  permissions: ["attendance.dashboard.read.assigned_classes", "attendance.dashboard.read.all"],
   match: "exact",
 }
 
@@ -182,28 +203,28 @@ export const mainNav: NavEntry[] = [
         href: "/absensi/input",
         icon: ClipboardCheck,
         description: "Catat kehadiran siswa harian",
-        roles: ["ADMIN", "GURU"],
+        permissions: ["attendance.read.assigned_classes", "attendance.read.all"],
       },
       {
         title: "Rekap Sekolah",
         href: "/rekap-sekolah",
         icon: Building2,
         description: "Statistik kehadiran seluruh sekolah",
-        roles: ["ADMIN", "GURU"],
+        permissions: ["attendance.reports.read.assigned_classes", "attendance.reports.read.all"],
       },
       {
         title: "Rekap Kelas",
         href: "/rekap-kelas",
         icon: BookOpen,
         description: "Rincian absensi per kelas",
-        roles: ["ADMIN", "GURU"],
+        permissions: ["attendance.reports.read.assigned_classes", "attendance.reports.read.all"],
       },
       {
         title: "Rekap Siswa",
         href: "/rekap-siswa",
         icon: Users,
         description: "Riwayat kehadiran per siswa",
-        roles: ["ADMIN", "GURU"],
+        permissions: ["attendance.reports.read.assigned_classes", "attendance.reports.read.all"],
       },
     ],
   },
@@ -218,21 +239,21 @@ export const mainNav: NavEntry[] = [
         href: "/siswa",
         icon: UserCog,
         description: "Kelola identitas, kelas, dan status siswa",
-        roles: ["ADMIN"],
+        permissions: ["students.master.read"],
       },
       {
         title: "Guru",
         href: "/guru",
         icon: Contact,
         description: "Kelola akun, profil, dan status guru",
-        roles: ["ADMIN"],
+        permissions: ["teachers.accounts.read"],
       },
       {
         title: "Wali Kelas",
         href: "/wali-kelas/input",
         icon: UserRoundCog,
         description: "Tentukan wali kelas tiap kelas",
-        roles: ["ADMIN"],
+        permissions: ["homerooms.read"],
       },
     ],
   },
@@ -247,15 +268,14 @@ export const mainNav: NavEntry[] = [
         href: "/guru/direktori",
         icon: IdCard,
         description: "Profil lengkap, jadwal, dan data kepegawaian guru",
-        roles: ["ADMIN", "GURU"],
+        permissions: ["teachers.directory.read"],
       },
       {
         title: "Supervisi Buku Kerja",
         href: "/supervisi-buku-kerja",
         icon: ClipboardList,
         description: "Pantau kelengkapan Buku Kerja seluruh guru",
-        roles: ["ADMIN", "GURU"],
-        capability: "workbookSupervision",
+        permissions: ["workbook.supervision.read"],
       },
     ],
   },
@@ -270,7 +290,6 @@ export const mainNav: NavEntry[] = [
         href: "/e-uks",
         icon: Home,
         description: "Profil, pengurus, fasilitas, dan tren kesehatan UKS",
-        roles: ["ADMIN", "GURU"],
         capability: "euks",
         match: "exact",
       },
@@ -279,7 +298,6 @@ export const mainNav: NavEntry[] = [
         href: "/e-uks/pantauan-kesehatan",
         icon: Stethoscope,
         description: "Status gizi, riwayat sakit, dan pertumbuhan per siswa",
-        roles: ["ADMIN", "GURU"],
         capability: "euks",
       },
       {
@@ -287,7 +305,6 @@ export const mainNav: NavEntry[] = [
         href: "/e-uks/riwayat-kunjungan",
         icon: ClipboardPlus,
         description: "Catatan keluhan, tindakan, dan tindak lanjut kunjungan UKS",
-        roles: ["ADMIN", "GURU"],
         capability: "euks",
       },
       {
@@ -295,8 +312,8 @@ export const mainNav: NavEntry[] = [
         href: "/e-uks/pengaturan",
         icon: SlidersHorizontal,
         description: "Kelola identitas, carousel, pengurus, dan fasilitas UKS",
-        roles: ["ADMIN"],
         capability: "euks",
+        legacyAdminOnly: true,
       },
     ],
   },
@@ -305,7 +322,6 @@ export const mainNav: NavEntry[] = [
     href: "/bos",
     icon: Wallet,
     description: "Pengelolaan dan monitoring penggunaan dana BOS",
-    roles: ["ADMIN", "GURU"],
     capability: "bos",
   },
   {
@@ -313,7 +329,6 @@ export const mainNav: NavEntry[] = [
     href: "/sarpras",
     icon: Boxes,
     description: "Inventaris dan kondisi sarana & prasarana sekolah",
-    roles: ["ADMIN", "GURU"],
     capability: "sarpras",
   },
   {
@@ -327,14 +342,14 @@ export const mainNav: NavEntry[] = [
         href: "/laporan-whatsapp",
         icon: MessageCircleMore,
         description: "Salin laporan absensi untuk WhatsApp",
-        roles: ["ADMIN", "GURU"],
+        permissions: ["reports.whatsapp.read.all"],
       },
       {
         title: "Export Data",
         href: "/export-data",
         icon: FileDown,
         description: "Download data dan rekap dalam CSV",
-        roles: ["ADMIN", "GURU"],
+        permissions: ["students.master.export", "teachers.accounts.export", "homerooms.export", "school.holidays.export", "attendance.export.assigned_classes", "attendance.export.all"],
       },
     ],
   },
@@ -347,14 +362,13 @@ export const accountNav: NavItem[] = [
     href: "/profil",
     icon: CircleUserRound,
     description: "Kelola data diri dan keamanan akun",
-    roles: ["ADMIN", "GURU"],
   },
   {
     title: "Pengaturan",
     href: "/pengaturan",
     icon: Settings,
     description: "Preferensi aplikasi & akun",
-    roles: ["ADMIN"],
+    permissions: ["school.settings.read"],
   },
 ]
 

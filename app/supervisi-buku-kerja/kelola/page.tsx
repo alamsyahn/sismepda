@@ -1,17 +1,11 @@
-import { redirect } from "next/navigation"
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { SupervisionScopeManager } from "@/components/supervisi/supervision-scope-manager"
-import { requireUser } from "@/lib/auth-guards"
-import { prisma } from "@/lib/prisma"
+import { requirePagePermission } from "@/lib/page-guards"
 import { readSupervisionScope } from "@/lib/server-workbook"
 
 export default async function SupervisiScopePage() {
-  const sessionUser = await requireUser()
-  const caller = await prisma.user.findUnique({
-    where: { id: sessionUser.id },
-    select: { role: true },
-  })
-  if (caller?.role !== "ADMIN") redirect("/supervisi-buku-kerja")
+  // Mengatur cakupan supervisi adalah kewenangan tersendiri, bukan "admin".
+  await requirePagePermission("workbook.scope.manage")
 
   const teachers = await readSupervisionScope()
 

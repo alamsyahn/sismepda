@@ -2,7 +2,9 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
-import { requireWorkbookSupervisor, workbookErrorResponse } from "@/lib/workbook-access"
+import { requireWorkbookSupervisor } from "@/lib/workbook-access"
+import { authFailureResponse } from "@/lib/api-errors"
+import { teacherPopulationWhere } from "@/lib/teacher-population"
 import { statusLabels } from "@/lib/workbook"
 
 const payload = z.object({
@@ -19,7 +21,7 @@ export async function PATCH(request: Request) {
 
     const [teacher, item] = await Promise.all([
       prisma.user.findFirst({
-        where: { id: body.teacherId, role: { in: ["ADMIN", "GURU"] } },
+        where: { id: body.teacherId, ...teacherPopulationWhere() },
         select: { id: true, name: true },
       }),
       prisma.workbookItem.findUnique({
@@ -81,7 +83,6 @@ export async function PATCH(request: Request) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "Data status supervisi tidak valid" }, { status: 400 })
     }
-    const { error: message, status } = workbookErrorResponse(error)
-    return NextResponse.json({ error: message }, { status })
+    return authFailureResponse(error, "Status supervisi gagal disimpan")
   }
 }

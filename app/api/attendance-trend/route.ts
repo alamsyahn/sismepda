@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server"
-import { requireUser } from "@/lib/auth-guards"
+import { authFailureResponse } from "@/lib/api-errors"
 import { readAttendanceTrend } from "@/lib/server-attendance-trend"
 import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 
 export async function GET(request: Request) {
   try {
-    const [user, timeZone] = await Promise.all([requireUser(), readSchoolTimeZone()])
+    const timeZone = await readSchoolTimeZone()
     const params = new URL(request.url).searchParams
-    const result = await readAttendanceTrend(user, {
+    const result = await readAttendanceTrend({
       granularity: params.get("granularity"),
       from: params.get("from"),
       to: params.get("to"),
@@ -16,10 +16,6 @@ export async function GET(request: Request) {
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
     return NextResponse.json(result.data)
   } catch (error) {
-    const unauthorized = error instanceof Error && error.message === "UNAUTHORIZED"
-    return NextResponse.json(
-      { error: unauthorized ? "Sesi tidak valid" : "Tren ketidakhadiran gagal dimuat" },
-      { status: unauthorized ? 401 : 500 },
-    )
+    return authFailureResponse(error, "Tren ketidakhadiran gagal dimuat")
   }
 }

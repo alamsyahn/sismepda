@@ -1,7 +1,7 @@
 import { ProfileManager, type ProfileData } from "@/components/profile/profile-manager"
 import { WorkbookLinksCard } from "@/components/profile/workbook-links-card"
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
-import { requireUser } from "@/lib/auth-guards"
+import { getAuthorizationContext, requireUser } from "@/lib/rbac-access"
 import { prisma } from "@/lib/prisma"
 import { profilePhotoUrl } from "@/lib/profile"
 import { readOwnWorkbookLinks } from "@/lib/server-workbook"
@@ -17,19 +17,19 @@ export default async function ProfilePage() {
         nip: true,
         email: true,
         phone: true,
-        role: true,
         photoUpdatedAt: true,
       },
     }),
     readOwnWorkbookLinks(sessionUser.id),
   ])
+  const { roles } = await getAuthorizationContext()
   const profile: ProfileData = {
     id: user.id,
     name: user.name,
     nip: user.nip,
     email: user.email,
     phone: user.phone,
-    role: user.role,
+    roleNames: roles.map((role) => role.name),
     photoUrl: profilePhotoUrl(user.photoUpdatedAt),
   }
 

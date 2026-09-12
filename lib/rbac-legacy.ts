@@ -96,12 +96,13 @@ export const COMPATIBILITY_BUNDLES: readonly CompatibilityBundle[] = [
       "attendance.export.assigned_classes",
       // HEAD: /laporan-whatsapp hanya requireUser() tanpa scope kelas —
       // setiap akun terautentikasi melihat absen harian seluruh kelas.
-      "reports.whatsapp.read",
+      "reports.whatsapp.read.all",
       "students.profile.read.assigned_classes",
-      "students.violations.write.assigned_classes",
+      "students.violations.read.assigned_classes",
+      "students.violations.create.assigned_classes",
       "teachers.directory.read",
       "workbook.links.read.own",
-      "workbook.links.write.own",
+      "workbook.links.update.own",
     ],
   },
   {
@@ -110,9 +111,9 @@ export const COMPATIBILITY_BUNDLES: readonly CompatibilityBundle[] = [
     description: "canManageTeacherProfiles: mengubah kepegawaian, jadwal, dan tugas tambahan guru.",
     permissionKeys: [
       "teachers.directory.read",
-      "teachers.profile.write",
-      "teachers.duties.write",
-      "teachers.schedule.write",
+      "teachers.profile.update",
+      "teachers.duties.manage",
+      "teachers.schedule.manage",
     ],
   },
   {
@@ -125,7 +126,7 @@ export const COMPATIBILITY_BUNDLES: readonly CompatibilityBundle[] = [
     key: "legacy_workbook_supervisor",
     name: "Kompatibilitas: Supervisi Buku Kerja",
     description: "canSuperviseWorkbooks (menyiratkan lihat).",
-    permissionKeys: ["workbook.supervision.read", "workbook.supervision.write"],
+    permissionKeys: ["workbook.supervision.read", "workbook.supervision.review"],
   },
   {
     key: "legacy_bos_view",
@@ -361,25 +362,26 @@ export function legacyEffectiveDecisions(
     : "assigned_classes"
   for (const family of CLASS_WIDENING_FAMILIES) add(family, classScope)
 
-  // /laporan-whatsapp: requireUser saja.
-  add("reports.whatsapp.read")
+  // /laporan-whatsapp: requireUser saja → seluruh kelas. Key-nya kini
+  // berskala `all`, sehingga keputusannya dikodekan sebagai keluarga berskala.
+  add("reports.whatsapp.read", "all")
   // /guru/direktori, /guru/[id], foto guru: requireUser saja.
   add("teachers.directory.read")
   // /api/workbooks/links: own id.
   add("workbook.links.read.own", "own")
-  add("workbook.links.write.own", "own")
+  add("workbook.links.update.own", "own")
 
   // lib/teacher-profile.ts canManageTeacherProfile
   if (user.canManageTeacherProfiles) {
-    add("teachers.profile.write")
-    add("teachers.duties.write")
-    add("teachers.schedule.write")
+    add("teachers.profile.update")
+    add("teachers.duties.manage")
+    add("teachers.schedule.manage")
   }
 
   // lib/workbook.ts
   const supervise = user.canSuperviseWorkbooks
   if (supervise || user.canViewWorkbookSupervision) add("workbook.supervision.read")
-  if (supervise) add("workbook.supervision.write")
+  if (supervise) add("workbook.supervision.review")
 
   // lib/bos.ts hasBosPermission: any right implies bos.view
   const bosAny =

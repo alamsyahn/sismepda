@@ -1,19 +1,17 @@
-import { requireUser } from "@/lib/auth-guards"
 import { prisma } from "@/lib/prisma"
 import type { ClassRecord } from "@/lib/dashboard-data"
 import type { AbsenceRankingRow } from "@/components/dashboard/absence-ranking"
 import { sortClasses } from "@/lib/class-order"
-import { getClassAccess } from "@/lib/class-access"
+import { requireClassScopeFor } from "@/lib/rbac-class-access"
 import { isClassRecapComplete } from "@/lib/attendance-save"
 import { formatSchoolTime, fromPrismaDate, toPrismaDate } from "@/lib/school-date"
 import { readHolidayFor } from "@/lib/server-holidays"
 
 export async function getClassRecords(date: Date, timeZone: string): Promise<ClassRecord[]> {
   const prismaDate = toPrismaDate(fromPrismaDate(date))
-  const user = await requireUser()
-  const access = await getClassAccess(user)
+  const scope = await requireClassScopeFor("attendance.dashboard", "read")
   const rows = await prisma.schoolClass.findMany({
-    where: access.where,
+    where: scope.where,
     include: { students: { where: { active: true } }, homeroomUser: true, attendanceDays: { where: { date: prismaDate }, include: { attendances: true } } },
     orderBy: { name: "asc" },
   })
@@ -31,12 +29,11 @@ export async function getClassRecords(date: Date, timeZone: string): Promise<Cla
 }
 
 export async function getAbsenceRanking(): Promise<AbsenceRankingRow[]> {
-  const user = await requireUser()
-  const access = await getClassAccess(user)
+  const scope = await requireClassScopeFor("attendance.dashboard", "read")
   const students = await prisma.student.findMany({
     where: {
       active: true,
-      schoolClass: access.where,
+      schoolClass: scope.where,
     },
     select: {
       id: true,

@@ -1,11 +1,9 @@
 import type { AttendanceStatus } from "@/app/generated/prisma/client"
-import { getClassAccess } from "@/lib/class-access"
+import { requireClassScopeFor } from "@/lib/rbac-class-access"
 import { prisma } from "@/lib/prisma"
 import { summarizeStudentAttendance } from "@/lib/student-profile"
 import { clampProfilePage, parseProfileDateRange } from "@/lib/student-profile-query"
 import { summarizeViolationPoints } from "@/lib/student-violation-points"
-
-type UserIdentity = { id: string; role: "ADMIN" | "GURU" }
 
 export type StudentHistoryFilter = {
   from?: string
@@ -16,10 +14,16 @@ export type StudentHistoryFilter = {
 
 const allowedStatuses = new Set<AttendanceStatus>(["HADIR", "SAKIT", "IZIN", "ALFA", "DISPENSASI"])
 
-export async function readStudentProfile(user: UserIdentity, studentId: string, filter: StudentHistoryFilter, timeZone: string) {
-  const access = await getClassAccess(user)
+/**
+ * Profil satu siswa.
+ *
+ * Scope kelas ikut masuk ke dalam query, sehingga deep-link ke siswa di luar
+ * kewenangan menghasilkan `null` (→ 404) alih-alih membocorkan datanya.
+ */
+export async function readStudentProfile(studentId: string, filter: StudentHistoryFilter, timeZone: string) {
+  const scope = await requireClassScopeFor("students.profile", "read")
   const student = await prisma.student.findFirst({
-    where: { id: studentId, schoolClass: access.where },
+    where: { id: studentId, schoolClass: scope.where },
     select: {
       id: true,
       name: true,

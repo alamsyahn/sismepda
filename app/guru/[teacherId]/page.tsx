@@ -2,10 +2,8 @@ import Image from "next/image"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeft, BookOpen, CalendarClock, GraduationCap, IdCard, Layers, Mail, Phone, ShieldCheck, UserRound } from "lucide-react"
-import { requireUser } from "@/lib/auth-guards"
-import { prisma } from "@/lib/prisma"
+import { pageCan, requirePagePermission } from "@/lib/page-guards"
 import { readSubjectsAndClasses, readTeacherProfile } from "@/lib/server-teacher-profile"
-import { canManageTeacherProfile } from "@/lib/teacher-profile"
 import { PageContainer } from "@/components/layout/page-container"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -17,16 +15,14 @@ import { formatSchoolDate, fromPrismaDate } from "@/lib/school-date"
 const employmentLabels: Record<string, string> = { PNS: "PNS", PPPK: "PPPK", HONORER: "Honorer" }
 
 export default async function TeacherProfilePage({ params }: { params: Promise<{ teacherId: string }> }) {
-  const sessionUser = await requireUser()
+  await requirePagePermission("teachers.directory.read")
   const { teacherId } = await params
-  const [profile, viewer] = await Promise.all([
-    readTeacherProfile(teacherId),
-    prisma.user.findUnique({ where: { id: sessionUser.id }, select: { role: true, canManageTeacherProfiles: true } }),
-  ])
-  if (!profile || !viewer) notFound()
+  const profile = await readTeacherProfile(teacherId)
+  if (!profile) notFound()
 
   const { teacher, schedule, load, classSubjects } = profile
-  const canManage = canManageTeacherProfile(viewer)
+  // Penyuntingan kepegawaian adalah kewenangan tersendiri, bukan flag pada akun.
+  const canManage = await pageCan("teachers.profile.update")
   const contactPhone = teacher.phone?.replace(/[^\d]/g, "")
 
   return (

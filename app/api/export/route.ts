@@ -1,16 +1,27 @@
 import { NextResponse } from "next/server"
-import { requireUser } from "@/lib/auth-guards"
 import { sortClasses } from "@/lib/class-order"
 import { formatSchoolTime, fromPrismaDate, parseSchoolDate, schoolYearRange, todayInSchoolTimeZone, toPrismaDate } from "@/lib/school-date"
 import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import { csvDownload, exportDelimiter, isExportType, type ExportType } from "@/lib/export-data"
 import { prisma } from "@/lib/prisma"
-import { getClassAccess } from "@/lib/class-access"
+import { requireClassScopeFor, type ClassScope } from "@/lib/rbac-class-access"
+import { ApiError, authFailureResponse } from "@/lib/api-errors"
+import { requirePermission } from "@/lib/rbac-access"
 import { HOLIDAY_KIND_LABELS, WEEKDAY_NAMES, isWeekdayIndex } from "@/lib/holiday-rules"
 
-type User = Awaited<ReturnType<typeof requireUser>>
-
-const adminExports = new Set<ExportType>(["students", "teachers", "homerooms", "holidays"])
+/**
+ * Permission yang dituntut tiap jenis ekspor.
+ *
+ * Menggantikan pemeriksaan `role === "ADMIN"` tunggal: tiap berkas punya
+ * kewenangan sendiri, dan ekspor tidak pernah tersirat dari izin membaca layar
+ * yang bersangkutan.
+ */
+const EXPORT_PERMISSIONS: Record<Exclude<ExportType, "attendance_students" | "attendance_classes">, string> = {
+  students: "students.master.export",
+  teachers: "teachers.accounts.export",
+  homerooms: "homerooms.export",
+  holidays: "school.holidays.export",
+}
 
 function normalized(value: string | null): string {
   return value?.trim() ?? ""
@@ -105,14 +116,14 @@ async function exportHolidays(params: URLSearchParams, delimiter: string) {
   ], delimiter)
 }
 
-async function exportStudentAttendance(params: URLSearchParams, delimiter: string, user: User, timeZone: string) {
+async function exportStudentAttendance(params: URLSearchParams, delimiter: string, scope: ClassScope, timeZone: string) {
   const input = params.get("date")
   const dateValue = input === null ? todayInSchoolTimeZone(undefined, timeZone) : parseSchoolDate(input)
-  if (!dateValue) throw new Error("INVALID_SCHOOL_DATE")
+  if (!dateValue) throw new ApiError(400, "Tanggal tidak valid")
   const date = toPrismaDate(dateValue)
   const className = normalized(params.get("class"))
   const query = normalized(params.get("query"))
-  const classWhere = (await getClassAccess(user)).where
+  const classWhere = scope.where
   const students = await prisma.student.findMany({
     where: {
       active: true,
@@ -133,14 +144,14 @@ async function exportStudentAttendance(params: URLSearchParams, delimiter: strin
   ], delimiter)
 }
 
-async function exportClassAttendance(params: URLSearchParams, delimiter: string, user: User, timeZone: string) {
+async function exportClassAttendance(params: URLSearchParams, delimiter: string, scope: ClassScope, timeZone: string) {
   const input = params.get("date")
   const dateValue = input === null ? todayInSchoolTimeZone(undefined, timeZone) : parseSchoolDate(input)
-  if (!dateValue) throw new Error("INVALID_SCHOOL_DATE")
+  if (!dateValue) throw new ApiError(400, "Tanggal tidak valid")
   const date = toPrismaDate(dateValue)
   const grade = normalized(params.get("grade"))
   const query = normalized(params.get("query"))
-  const classWhere = (await getClassAccess(user)).where
+  const classWhere = scope.where
   const classes = sortClasses(await prisma.schoolClass.findMany({
     where: {
       ...classWhere,
@@ -167,21 +178,29 @@ async function exportClassAttendance(params: URLSearchParams, delimiter: string,
 export async function GET(request: Request) {
   try {
     const timeZone = await readSchoolTimeZone()
-    const user = await requireUser()
     const params = new URL(request.url).searchParams
     const type = params.get("type")
     if (!isExportType(type)) return NextResponse.json({ error: "Jenis data export tidak valid" }, { status: 400 })
-    if (adminExports.has(type) && user.role !== "ADMIN") return NextResponse.json({ error: "Tidak diizinkan" }, { status: 403 })
     const delimiter = exportDelimiter(params.get("delimiter"))
 
-    if (type === "students") return exportStudents(params, delimiter, timeZone)
-    if (type === "teachers") return exportTeachers(params, delimiter, timeZone)
-    if (type === "homerooms") return exportHomerooms(params, delimiter, timeZone)
-    if (type === "holidays") return exportHolidays(params, delimiter)
-    if (type === "attendance_students") return exportStudentAttendance(params, delimiter, user, timeZone)
-    return exportClassAttendance(params, delimiter, user, timeZone)
+    // Ekspor absensi memakai scope operasi export sendiri, sehingga penyaringan
+    // kelas benar-benar ikut ke dalam berkas yang dihasilkan — bukan sekadar
+    // menyembunyikan tombolnya di UI.
+    if (type === "attendance_students") {
+      const scope = await requireClassScopeFor("attendance", "export")
+      return await exportStudentAttendance(params, delimiter, scope, timeZone)
+    }
+    if (type === "attendance_classes") {
+      const scope = await requireClassScopeFor("attendance", "export")
+      return await exportClassAttendance(params, delimiter, scope, timeZone)
+    }
+
+    await requirePermission(EXPORT_PERMISSIONS[type])
+    if (type === "students") return await exportStudents(params, delimiter, timeZone)
+    if (type === "teachers") return await exportTeachers(params, delimiter, timeZone)
+    if (type === "homerooms") return await exportHomerooms(params, delimiter, timeZone)
+    return await exportHolidays(params, delimiter)
   } catch (error) {
-    if (error instanceof Error && error.message === "INVALID_SCHOOL_DATE") return NextResponse.json({ error: "Tanggal tidak valid" }, { status: 400 })
-    return NextResponse.json({ error: "Export data gagal atau tidak diizinkan" }, { status: 403 })
+    return authFailureResponse(error, "Export data gagal")
   }
 }

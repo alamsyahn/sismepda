@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
-import { requireAdmin } from "@/lib/auth-guards"
+import { requirePermission, requireUser } from "@/lib/rbac-access"
+import { ApiError, authFailureResponse } from "@/lib/api-errors"
+import { teacherPopulationWhere } from "@/lib/teacher-population"
 import { recordAuditLog } from "@/lib/audit-log"
 
 const payload = z.object({
@@ -14,11 +16,12 @@ const payload = z.object({
 /** Only administrators manage who is supervised and who may supervise. */
 export async function PATCH(request: Request) {
   try {
-    const admin = await requireAdmin()
+    await requirePermission("workbook.scope.manage")
+    const admin = await requireUser()
     const body = payload.parse(await request.json())
 
     const teacher = await prisma.user.findFirst({
-      where: { id: body.teacherId, role: { in: ["ADMIN", "GURU"] } },
+      where: { id: body.teacherId, ...teacherPopulationWhere() },
       select: {
         id: true,
         name: true,
@@ -27,7 +30,7 @@ export async function PATCH(request: Request) {
         canViewWorkbookSupervision: true,
       },
     })
-    if (!teacher) return NextResponse.json({ error: "Guru tidak ditemukan" }, { status: 404 })
+    if (!teacher) throw new ApiError(404, "Guru tidak ditemukan")
 
     const data = {
       ...(body.workbookSupervised !== undefined ? { workbookSupervised: body.workbookSupervised } : {}),
@@ -36,9 +39,7 @@ export async function PATCH(request: Request) {
         ? { canViewWorkbookSupervision: body.canViewWorkbookSupervision }
         : {}),
     }
-    if (Object.keys(data).length === 0) {
-      return NextResponse.json({ error: "Tidak ada perubahan yang dikirim" }, { status: 400 })
-    }
+    if (Object.keys(data).length === 0) throw new ApiError(400, "Tidak ada perubahan yang dikirim")
 
     const updated = await prisma.$transaction(async (tx) => {
       const result = await tx.user.update({
@@ -79,15 +80,9 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json(updated)
   } catch (error) {
-    if (error instanceof Error && error.message === "UNAUTHORIZED") {
-      return NextResponse.json({ error: "Sesi tidak valid" }, { status: 401 })
-    }
-    if (error instanceof Error && error.message === "FORBIDDEN") {
-      return NextResponse.json({ error: "Hanya administrator yang dapat mengubah pengaturan ini" }, { status: 403 })
-    }
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "Data pengaturan tidak valid" }, { status: 400 })
     }
-    return NextResponse.json({ error: "Pengaturan supervisi gagal disimpan" }, { status: 500 })
+    return authFailureResponse(error, "Pengaturan supervisi gagal disimpan")
   }
 }

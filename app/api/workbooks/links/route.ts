@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { requireUser } from "@/lib/auth-guards"
+import { requirePermission, requireUser } from "@/lib/rbac-access"
+import { ApiError, authFailureResponse } from "@/lib/api-errors"
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
 import { readOwnWorkbookLinks } from "@/lib/server-workbook"
@@ -15,10 +16,11 @@ const payload = z.object({
 
 export async function GET() {
   try {
+    await requirePermission("workbook.links.read.own")
     const sessionUser = await requireUser()
     return NextResponse.json({ links: await readOwnWorkbookLinks(sessionUser.id) })
-  } catch {
-    return NextResponse.json({ error: "Sesi tidak valid" }, { status: 401 })
+  } catch (error) {
+    return authFailureResponse(error, "Tautan Buku Kerja gagal dimuat")
   }
 }
 
@@ -28,6 +30,8 @@ export async function GET() {
  */
 export async function PUT(request: Request) {
   try {
+    await requirePermission("workbook.links.update.own")
+    // Identitas pemilik selalu dari sesi server, tidak pernah dari body.
     const sessionUser = await requireUser()
     const body = payload.parse(await request.json())
 
@@ -37,15 +41,10 @@ export async function PUT(request: Request) {
     const updates: Array<{ workbookId: string; workbookName: string; url: string | null }> = []
     for (const link of body.links) {
       const workbookName = workbookById.get(link.workbookId)
-      if (!workbookName) {
-        return NextResponse.json({ error: "Buku Kerja tidak ditemukan" }, { status: 404 })
-      }
+      if (!workbookName) throw new ApiError(404, "Buku Kerja tidak ditemukan")
       const url = normalizeWorkbookUrl(link.url)
       if (url === undefined) {
-        return NextResponse.json(
-          { error: `Tautan ${workbookName} harus berupa URL http atau https yang valid` },
-          { status: 400 },
-        )
+        throw new ApiError(400, `Tautan ${workbookName} harus berupa URL http atau https yang valid`)
       }
       updates.push({ workbookId: link.workbookId, workbookName, url })
     }
@@ -86,12 +85,9 @@ export async function PUT(request: Request) {
 
     return NextResponse.json({ links: await readOwnWorkbookLinks(sessionUser.id) })
   } catch (error) {
-    if (error instanceof Error && error.message === "UNAUTHORIZED") {
-      return NextResponse.json({ error: "Sesi tidak valid" }, { status: 401 })
-    }
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "Data tautan tidak valid" }, { status: 400 })
     }
-    return NextResponse.json({ error: "Tautan Buku Kerja gagal disimpan" }, { status: 500 })
+    return authFailureResponse(error, "Tautan Buku Kerja gagal disimpan")
   }
 }

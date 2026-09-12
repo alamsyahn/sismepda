@@ -50,36 +50,12 @@ export function isPublicRoute(path: string, method = "GET"): boolean {
 }
 
 /**
- * Permukaan yang masih dijaga prefilter berbasis `User.role` di dalam JWT.
+ * Modul inti (absensi, rekap, siswa, guru, wali kelas, buku kerja) TIDAK lagi
+ * memiliki tapis otorisasi di lapisan ini.
  *
- * PENINGGALAN LEGACY, bukan model target. Daftar ini tetap ada selama Phase 2
- * karena halaman-halaman tersebut BELUM memiliki guard server sendiri:
- * menghapusnya sekarang akan membuka rute terlindungi, sedangkan
- * menggantinya dengan guard RBAC akan mengunci semua orang selama `UserRole`
- * belum di-backfill (Phase 3).
- *
- * Daftar ini dihapus pada Phase 4, ketika tiap halaman memanggil
- * `requirePermission()` dengan key spesifik dan database menjadi satu-satunya
- * otoritas. Sampai saat itu, ia hanya boleh MEMPERSEMPIT akses, tidak pernah
- * memperluas: keputusan akhir tetap di server.
+ * Sebelumnya ada daftar rute yang ditapis berdasarkan `User.role` di dalam JWT.
+ * Daftar itu dihapus pada Phase 4: setiap halaman tersebut kini memanggil
+ * `requirePermission()` di server, sehingga otoritasnya adalah database saat
+ * ini. Menapis ulang di sini memakai klaim token akan membuat pencabutan/
+ * pemberian hak baru berlaku hanya setelah pengguna keluar-masuk.
  */
-export const LEGACY_ADMIN_PREFILTER_ROUTES: readonly string[] = [
-  "/siswa/input",
-  "/siswa/kelola",
-  "/guru/input",
-  "/guru/kelola",
-  "/wali-kelas/input",
-  "/pengaturan",
-  "/supervisi-buku-kerja/kelola",
-]
-
-/// Halaman gabungan yang dicocokkan persis, agar profil siswa/guru
-/// (`/siswa/<id>`, `/guru/<id>`, `/guru/direktori`) tetap terbuka untuk guru.
-export const LEGACY_ADMIN_PREFILTER_EXACT_ROUTES: readonly string[] = ["/siswa", "/guru"]
-
-export function isLegacyAdminPrefilterRoute(path: string): boolean {
-  if (LEGACY_ADMIN_PREFILTER_EXACT_ROUTES.includes(path)) return true
-  return LEGACY_ADMIN_PREFILTER_ROUTES.some(
-    (route) => path === route || path.startsWith(`${route}/`),
-  )
-}

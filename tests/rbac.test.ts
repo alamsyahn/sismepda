@@ -119,8 +119,8 @@ test("read tidak menyiratkan export", () => {
 })
 
 test("update tidak menyiratkan delete", () => {
-  const actor = subject([role("r", ["students.master.write"])])
-  assert.equal(hasPermission(actor, "students.master.write"), true)
+  const actor = subject([role("r", ["students.master.update"])])
+  assert.equal(hasPermission(actor, "students.master.update"), true)
   assert.equal(hasPermission(actor, "students.master.delete"), false)
 })
 

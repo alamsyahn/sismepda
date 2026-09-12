@@ -1,24 +1,22 @@
-import { requireUser } from "@/lib/auth-guards"
-import { prisma } from "@/lib/prisma"
-import { canManageTeacherProfile } from "@/lib/teacher-profile"
+/**
+ * Guard pengelolaan data kepegawaian guru.
+ *
+ * Sejak Phase 4 keputusan berasal dari permission RBAC, bukan flag
+ * `canManageTeacherProfiles` pada `User`.
+ */
+import { requirePermission, requireUser } from "@/lib/rbac-access"
 
 export class TeacherAccessError extends Error {
   constructor(readonly status: number, message: string) {
     super(message)
+    this.name = "TeacherAccessError"
   }
 }
 
-/** Resolve the caller and confirm they may edit teacher employment data. */
+/// Pemanggil yang boleh mengubah data kepegawaian guru.
 export async function requireTeacherManager() {
-  const sessionUser = await requireUser()
-  const user = await prisma.user.findUnique({
-    where: { id: sessionUser.id },
-    select: { id: true, role: true, canManageTeacherProfiles: true },
-  })
-  if (!user || !canManageTeacherProfile(user)) {
-    throw new TeacherAccessError(403, "Tidak diizinkan mengubah data kepegawaian guru")
-  }
-  return user
+  await requirePermission("teachers.profile.update")
+  return requireUser()
 }
 
 export function teacherErrorResponse(error: unknown) {

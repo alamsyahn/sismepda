@@ -11,6 +11,7 @@ import { readAttendanceStatusColors } from "@/lib/server-attendance-status-color
 import { DEFAULT_STATUS_COLORS } from "@/lib/attendance-status-colors"
 import { SchoolTimeZoneProvider } from "@/components/school-time-zone-provider"
 import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
+import { readNavGrants } from "@/lib/server-nav-grants"
 import "./globals.css"
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -44,6 +45,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const navIdentity = await readNavGrants()
   const statusColors = await readAttendanceStatusColors()
   const timeZone = await readSchoolTimeZone()
   let branding = defaultSiteBranding
@@ -74,7 +76,7 @@ export default async function RootLayout({
                 hasAppLogo: branding.hasAppLogo,
               }}
             >
-              <AppShell>{children}</AppShell>
+              <AppShell grants={navIdentity.grants} roleNames={navIdentity.roleNames}>{children}</AppShell>
             </AppBrandingProvider>
           </SessionProvider>
           <Toaster position="top-center" />

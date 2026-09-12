@@ -25,7 +25,7 @@ uses today.
 
 Physical names avoid the existing PostgreSQL enum `"Role"` (`prisma/migrations/20260711170000_init`). The Prisma model is `RbacRole`; the other tables use their model names. The legacy enum keeps its physical type: its Prisma symbol was renamed to `LegacyRole` with `@@map("Role")`, so `User.role` and the PostgreSQL type are untouched.
 
-**Implementation status.** Phase 2 landed the schema, catalog, evaluator and server resolver (`prisma/migrations/20260912160000_add_rbac_foundation`, `lib/rbac-permissions.ts`, `lib/rbac-templates.ts`, `lib/rbac.ts`, `lib/rbac-access.ts`, `prisma/seed-rbac.ts`). No surface consumes them yet and `UserRole` is empty: legacy `User.role` and the boolean flags remain the live authority until Phase 3 backfills membership and Phase 4 moves each surface onto `requirePermission()`.
+**Implementation status.** Phases 2–4 have landed. The **core modules** (dashboard, attendance, recap/export, students, teachers, homerooms, workbook, navigation) now authorize exclusively through `requirePermission()` / `requireClassScopeFor()` against the current database. `User.role` and the boolean capability columns are still written by existing UIs and still read by the **not-yet-migrated modules** (BOS, Sarpras, E-UKS, settings, database backup) via `lib/*-access.ts`; they are no longer consulted by any core guard.
 
 ```text
 RbacRole            id cuid PK · key text unique (lowercase, stable) · name text
@@ -58,12 +58,12 @@ Invariants:
 - `manage` is a distinct action for administrative configuration of a resource (e.g. `rbac.roles.manage`, `euks.officers.manage`). It is not CRUD shorthand and implies nothing else.
 - Nothing is implied: `read` does not imply `export`; `write` does not imply `read`; `manage` does not imply `read`. Role templates must list every key explicitly. Legacy rules such as "edit implies view" are reproduced by templates, not by the evaluator.
 - Scopes never bleed between actions. `attendance.read.all` + `attendance.write.assigned_classes` never yields `attendance.write.all`. Each operation resolves its own scope: `all` if the user has `<family>.<action>.all`, else `assigned_classes` if the user has `<family>.<action>.assigned_classes`, else deny.
-- `own` scope (`profile.*`, `workbook.links.write.own`) is satisfied by the session user id only; never by a client-supplied id.
+- `own` scope (`profile.*`, `workbook.links.update.own`) is satisfied by the session user id only; never by a client-supplied id.
 
 ## Class scope
 
 - `assigned_classes` = classes where `SchoolClass.homeroomUserId = user.id` (database relation, resolved per request, applied as a Prisma `where` on `SchoolClass`/`Student.schoolClass`/`AttendanceDay.schoolClass`).
-- `SchoolSetting.allowTeachersAccessAllClasses` widens `assigned_classes` to all classes only for the attendance family that already used it (`attendance.read/write/export`, `students.profile.read`, `students.violations.write`) and only when `user.isTeacher = true`. It never widens any other family and never grants a permission the user lacks.
+- `SchoolSetting.allowTeachersAccessAllClasses` widens `assigned_classes` to all classes only for the attendance family that already used it (`attendance.read/write/export`, `students.profile.read`, `students.violations.read/create`) and only when `user.isTeacher = true`. It never widens any other family and never grants a permission the user lacks.
 - Lists, aggregates and exports are filtered query-side with the resolved `where`; no client-side filtering.
 - Client-supplied `classId`/`studentId` is validated against the resolved scope through the entity's own class relation (`Student.classId`, `AttendanceDay.classId`), never through a class id echoed by the client.
 - E-UKS, BOS, Sarpras, teachers, workbook are school-wide: their permissions carry no class scope and are unaffected by homeroom assignment.
@@ -104,28 +104,28 @@ Every key below corresponds to at least one surface in the inventory. Keys are g
 | `attendance.read` | `assigned_classes`, `all` | `GET /api/attendance` (roster/day for input page) |
 | `attendance.write` | `assigned_classes`, `all` | `POST /api/attendance`, `/absensi/input` |
 | `attendance.export` | `assigned_classes`, `all` | `/export-data`, `GET /api/export?type=attendance_students|attendance_classes`, `GET /api/class-recap/export` |
-| `reports.whatsapp.read` | — | `/laporan-whatsapp`, `getWhatsAppReportClasses` (school-wide in HEAD; see ambiguity A3) |
+| `reports.whatsapp.read.all` | — | `/laporan-whatsapp`, `getWhatsAppReportClasses` (school-wide in HEAD; see ambiguity A3) |
 | `students.master.read` | — | `/siswa`, `GET /api/admin/students` |
-| `students.master.write` | — | `/siswa/input`, `POST/PATCH /api/admin/students` |
+| `students.master.create` / `students.master.update` / `students.master.import` | — | `/siswa/input`, `POST/PATCH /api/admin/students` (bulk CSV import is a separate right from single create) |
 | `students.master.delete` | — | `DELETE /api/admin/students` |
 | `students.master.export` | — | `GET /api/export?type=students` |
 | `students.profile.read` | `assigned_classes`, `all` | `/siswa/[studentId]`, `readStudentProfile` |
-| `students.violations.write` | `assigned_classes`, `all` | `POST /api/students/[studentId]/violation-points` |
+| `students.violations.create` | `assigned_classes`, `all` | `POST /api/students/[studentId]/violation-points` |
 | `teachers.accounts.read` | — | `/guru`, `GET /api/admin/teachers` |
-| `teachers.accounts.write` | — | `/guru/input`, `POST/PATCH /api/admin/teachers` (create, credentials, status, password reset) |
+| `teachers.accounts.create` / `teachers.accounts.update` / `accounts.credentials.manage` / `accounts.status.manage` | — | `/guru/input`, `POST/PATCH /api/admin/teachers` (create, credentials, status, password reset) |
 | `teachers.accounts.delete` | — | `DELETE /api/admin/teachers` |
 | `teachers.accounts.export` | — | `GET /api/export?type=teachers` |
 | `teachers.directory.read` | — | `/guru/direktori`, `/guru/[teacherId]` (view), `GET /api/teachers/[teacherId]/photo`, `readTeacherDirectory`, `readTeacherProfile` |
-| `teachers.profile.write` | — | `PATCH /api/teachers/[teacherId]` (employment, position, TMT, subjects) |
-| `teachers.duties.write` | — | `POST/DELETE /api/teachers/[teacherId]/duties` |
-| `teachers.schedule.write` | — | `POST/DELETE /api/teachers/[teacherId]/schedule` |
+| `teachers.profile.update` | — | `PATCH /api/teachers/[teacherId]` (employment, position, TMT, subjects) |
+| `teachers.duties.manage` | — | `POST/DELETE /api/teachers/[teacherId]/duties` |
+| `teachers.schedule.manage` | — | `POST/DELETE /api/teachers/[teacherId]/schedule` |
 | `homerooms.read` | — | `GET /api/admin/homerooms` |
-| `homerooms.write` | — | `/wali-kelas/input`, `PUT /api/admin/homerooms` |
+| `homerooms.assign` | — | `/wali-kelas/input`, `PUT /api/admin/homerooms` |
 | `homerooms.export` | — | `GET /api/export?type=homerooms` |
 | `workbook.links.read.own` | `own` | `GET /api/workbooks/links`, `/profil` workbook panel |
-| `workbook.links.write.own` | `own` | `PUT /api/workbooks/links` |
+| `workbook.links.update.own` | `own` | `PUT /api/workbooks/links` |
 | `workbook.supervision.read` | — | `/supervisi-buku-kerja`, `readSupervisionOverview` |
-| `workbook.supervision.write` | — | `PATCH /api/workbooks/status` |
+| `workbook.supervision.review` | — | `PATCH /api/workbooks/status` |
 | `workbook.scope.manage` | — | `/supervisi-buku-kerja/kelola`, `PATCH /api/workbooks/scope` (`workbookSupervised` + legacy supervision flags) |
 | `bos.read` | — | `/bos`, page loaders |
 | `bos.entries.create` | — | `POST /api/bos/entries`, `POST /api/bos/categories` (inline category creation while entering) |
@@ -174,9 +174,9 @@ Not created (no operation exists in HEAD): `euks.export`, `bos.export`, `sarpras
 | Role key | Name | Permissions |
 |---|---|---|
 | `system_admin` | Admin Sistem | bypass (protected) |
-| `guru` | Guru | `attendance.dashboard.read.assigned_classes`, `attendance.reports.read.assigned_classes`, `attendance.read.assigned_classes`, `attendance.write.assigned_classes`, `attendance.export.assigned_classes`, `reports.whatsapp.read`, `students.profile.read.assigned_classes`, `students.violations.write.assigned_classes`, `teachers.directory.read`, `workbook.links.read.own`, `workbook.links.write.own` |
-| `pengawas` | Pengawas | `attendance.dashboard.read.all`, `attendance.reports.read.all`, `attendance.export.all`, `students.profile.read.all`, `teachers.directory.read`, `workbook.supervision.read`, `workbook.supervision.write` |
-| `kepala_sekolah` | Kepala Sekolah | `attendance.dashboard.read.all`, `attendance.reports.read.all`, `attendance.export.all`, `reports.whatsapp.read`, `students.profile.read.all`, `teachers.directory.read`, `workbook.supervision.read`, `bos.read`, `sarpras.read`, `euks.overview.read`, `euks.visits.read`, `euks.monitoring.read` |
+| `guru` | Guru | `attendance.dashboard.read.assigned_classes`, `attendance.reports.read.assigned_classes`, `attendance.read.assigned_classes`, `attendance.write.assigned_classes`, `attendance.export.assigned_classes`, `reports.whatsapp.read.all`, `students.profile.read.assigned_classes`, `students.violations.create.assigned_classes`, `teachers.directory.read`, `workbook.links.read.own`, `workbook.links.update.own` |
+| `pengawas` | Pengawas | `attendance.dashboard.read.all`, `attendance.reports.read.all`, `attendance.export.all`, `students.profile.read.all`, `teachers.directory.read`, `workbook.supervision.read`, `workbook.supervision.review` |
+| `kepala_sekolah` | Kepala Sekolah | `attendance.dashboard.read.all`, `attendance.reports.read.all`, `attendance.export.all`, `reports.whatsapp.read.all`, `students.profile.read.all`, `teachers.directory.read`, `workbook.supervision.read`, `bos.read`, `sarpras.read`, `euks.overview.read`, `euks.visits.read`, `euks.monitoring.read` |
 | `pengurus_uks` | Pengurus UKS | all `euks.*` |
 | `pengurus_bos` | Pengurus BOS | `bos.read`, `bos.entries.create`, `bos.entries.update`, `bos.budget.write`, `bos.categories.manage` |
 | `pengurus_sarpras` | Pengurus Sarpras | `sarpras.read`, `sarpras.locations.write`, `sarpras.item_types.write`, `sarpras.items.write`, `sarpras.photos.write` |
@@ -218,7 +218,7 @@ Legacy access is reproduced with a small set of **compatibility bundles** (non-s
 | `workbookSupervised`, homeroom, `allowTeachersAccessAllClasses`, `active`, password, identity | preserved as-is; none becomes a grant |
 | inactive account | mapped like an active one, `active` stays `false`, `requireUser()` keeps denying |
 
-`legacy_guru` includes `reports.whatsapp.read` and `attendance.*.assigned_classes` because at HEAD `/laporan-whatsapp` only calls `requireUser()` and class scope comes from `lib/class-access.ts`. `isTeacher = true` for **all** ADMIN and GURU accounts is population compatibility (HEAD selects `role IN (ADMIN, GURU)` as the teacher population), not a claim that every administrator is a teacher. Any boolean `can*` column on `User` without an entry in `FLAG_TO_BUNDLE` aborts the backfill with an actionable error; nothing is ever mapped to `system_admin` as a fallback.
+`legacy_guru` includes `reports.whatsapp.read.all` and `attendance.*.assigned_classes` because at HEAD `/laporan-whatsapp` only calls `requireUser()` and class scope came from the former `lib/class-access.ts` (removed in Phase 4). `isTeacher = true` for **all** ADMIN and GURU accounts is population compatibility (HEAD selects `role IN (ADMIN, GURU)` as the teacher population), not a claim that every administrator is a teacher. Any boolean `can*` column on `User` without an entry in `FLAG_TO_BUNDLE` aborts the backfill with an actionable error; nothing is ever mapped to `system_admin` as a fallback.
 
 **Parity.** `compareParity()` computes, per user, the old effective decision set (from the legacy helper logic, including class scope and the global teacher setting) and the new effective decision set (from RBAC memberships) as `operation@scope` strings and reports `LOST` and `GAINED` both ways. `apply` refuses to write when pre-write parity is not empty, and writes `COMPLETED` only after post-write parity (recomputed from database rows) is empty. Intentional security deltas are reported separately, never folded into "identical": fresh DB authority per request (TD-008), potential memberships on inactive accounts, key-based `system_admin` bypass that does not survive cloning, and population-level `isTeacher`.
 
@@ -234,7 +234,15 @@ Phases are executed serially; each is a separate commit with its own validation.
 
 1. **Phase 2 – schema & catalog (done).** `RbacRole`, `Permission`, `UserRole`, `RolePermission`, `User.isTeacher` added additively; catalog and templates seeded idempotently; `User.role` and all boolean columns untouched. Evaluator (`lib/rbac.ts` pure + `lib/rbac-access.ts` DB-backed) exists but no surface is wired to it. The `authorized` prefilter now derives public/authenticated policy from `lib/route-policy.ts` (fail closed for unknown paths); its legacy `ADMIN` checks stay until Phase 4, because the pages they cover (`/siswa`, `/guru`, `/pengaturan`, …) still have no server-side guard of their own.
 2. **Phase 3 – backfill (done, local only; production apply is a Phase 4 cutover step).** Implemented in `lib/rbac-legacy.ts` (pure mapping + parity), `lib/rbac-backfill.ts` (tooling), `prisma/rbac-backfill-legacy.ts` (CLI, `npm run db:rbac-backfill`), `lib/rbac-readiness.ts`, migration `20260912180000_add_rbac_migration_markers` (`RbacMigration`, `RbacMigrationItem`). See "Seed vs backfill", "Compatibility mapping" and "Readiness" below.
-3. **Phase 4 – enforcement.** Replace `requireAdmin`, `lib/*-access.ts`, `getClassAccess` role check, `auth.ts authorized` gate, export type gate and `lib/nav.ts` with permission checks; remove capability copies from the JWT; add the no-module landing. Dual-run: legacy columns are still written by existing UIs during this phase but never read by guards.
+3. **Phase 4 – core enforcement (done).** Core surfaces now call `requirePermission()` / `requireClassScopeFor()`:
+   - `lib/class-access.ts` **deleted**, replaced by `lib/rbac-class-access.ts` — scope resolves **per operation**, so `attendance.read.all` never widens `attendance.write` or `attendance.export`. A narrow scope always yields `{ homeroomUserId }`, never `{}`.
+   - `lib/api-errors.ts` maps failures to honest status codes (401 unauthenticated/inactive, 403 forbidden, 404 concealment, 400/409 validation/conflict, 503 RBAC not ready, 500 otherwise). Route handlers no longer collapse unexpected errors into 403.
+   - `lib/page-guards.ts` guards server pages (redirect to `/login` or to the safe landing). Client-component pages are guarded by a server `layout.tsx`.
+   - Root `/` renders `components/layout/safe-landing.tsx` — no dashboard query runs at all for users without `attendance.dashboard.read.*`.
+   - `auth.ts` no longer filters core routes by the JWT role; only public-vs-authenticated policy remains (`lib/route-policy.ts`, fail closed).
+   - `lib/nav.ts` filters by permission key instead of role name; empty groups disappear and there is no `GURU` fallback while the session loads. Grants are computed server-side (`lib/server-nav-grants.ts`) and passed down as props. Role display is multi-badge with a "Tanpa role" state.
+   - Teacher population comes from `User.isTeacher` (`lib/teacher-population.ts`), which also refuses account operations against holders of a **protected** role unless the caller is a system admin.
+   Still legacy at the end of Phase 4: BOS, Sarpras, E-UKS, `/pengaturan`, database backup, and the `requireAdmin` helper they use.
 4. **Phase 5 – admin UI.** Role management, assignment, RBAC audit viewer; retire `/bos/akses`, `/sarpras/akses`, workbook scope flags and `canManageTeacherProfiles` editing.
 5. **Phase 6 – cleanup.** Drop `User.role`, boolean capability columns and the `"Role"` enum in a separate migration after a full release cycle with RBAC live.
 
@@ -253,14 +261,14 @@ Legend — **Current guard**: `U` = `requireUser()` (session + `active` re-read)
 | `/absensi/input` (client) | Proxy → `/api/attendance` | — | `attendance.write.*` |
 | `/rekap-sekolah` | `U`+`CA` via `getClassRecords` | attendance aggregates | `attendance.dashboard.read.*` |
 | `/rekap-kelas`, `/rekap-siswa` (client) | Proxy → APIs | — | `attendance.reports.read.*` |
-| `/laporan-whatsapp` | `U` (no class scope) | all classes' daily absentees | `reports.whatsapp.read` (A3) |
+| `/laporan-whatsapp` | `U` (no class scope) | all classes' daily absentees | `reports.whatsapp.read.all` (A3) |
 | `/export-data` | `U`+`CA` | class options | `attendance.export.*` (+ master exports by their own keys) |
 | `/siswa`, `/siswa/input`, `/siswa/kelola`(redirect) | Proxy adminOnly, page `None` | — | `students.master.read` / `.write` |
 | `/siswa/[studentId]` | `U`+`CA` | profile, history, violations | `students.profile.read.*` |
 | `/guru`, `/guru/input`, `/guru/kelola`(redirect) | Proxy adminOnly, page `None` | — | `teachers.accounts.read` / `.write` |
 | `/guru/direktori` | `U` | teacher directory | `teachers.directory.read` |
-| `/guru/[teacherId]` | `U`; editors shown if ADMIN or `canManageTeacherProfiles` | teacher profile | `teachers.directory.read`; editors by `teachers.profile.write` |
-| `/wali-kelas/input` (client) | Proxy adminOnly → `/api/admin/homerooms` | — | `homerooms.write` |
+| `/guru/[teacherId]` | `U`; editors shown if ADMIN or `canManageTeacherProfiles` | teacher profile | `teachers.directory.read`; editors by `teachers.profile.update` |
+| `/wali-kelas/input` (client) | Proxy adminOnly → `/api/admin/homerooms` | — | `homerooms.assign` |
 | `/profil` | `U` | own user row | authenticated |
 | `/pengaturan` (client) | Proxy adminOnly → `/api/admin/*` | — | `school.settings.read` |
 | `/supervisi-buku-kerja` | `Dom(workbook viewer)` | supervision overview | `workbook.supervision.read` |
@@ -291,7 +299,7 @@ Legend — **Current guard**: `U` = `requireUser()` (session + `active` re-read)
 | `/api/export` | GET | `U`; `students/teachers/homerooms/holidays` need JWT ADMIN; attendance types `CA` | per type: `students.master.export`, `teachers.accounts.export`, `homerooms.export`, `school.holidays.export`, `attendance.export.*` |
 | `/api/admin/students` | GET / POST, PATCH / DELETE | `A` | `students.master.read` / `.write` / `.delete` |
 | `/api/admin/teachers` | GET / POST, PATCH / DELETE | `A`; targets `role=GURU` only | `teachers.accounts.read` / `.write` / `.delete`; target selection by `isTeacher` |
-| `/api/admin/homerooms` | GET / PUT | `A` | `homerooms.read` / `homerooms.write` |
+| `/api/admin/homerooms` | GET / PUT | `A` | `homerooms.read` / `homerooms.assign` |
 | `/api/admin/settings` | GET / PUT | `A` | `school.settings.read` / `.write` (+`school.class_access.write`, `school.branding.write` per field) |
 | `/api/admin/holidays` | GET / POST, PATCH, DELETE | `A` | `school.holidays.read` / `.write` |
 | `/api/admin/database` | GET / POST | `A` | `database.backup` / `database.restore` |
@@ -299,12 +307,12 @@ Legend — **Current guard**: `U` = `requireUser()` (session + `active` re-read)
 | `/api/profile/password` | PATCH | `U` (own id) | authenticated |
 | `/api/profile/photo` | GET, PUT, DELETE | `U` (own id) | authenticated |
 | `/api/teachers/[teacherId]/photo` | GET | `U` | `teachers.directory.read` |
-| `/api/teachers/[teacherId]` | PATCH | `Dom(teacher manager)` | `teachers.profile.write` |
-| `/api/teachers/[teacherId]/duties` | POST, DELETE | `Dom(teacher manager)` | `teachers.duties.write` |
-| `/api/teachers/[teacherId]/schedule` | POST, DELETE | `Dom(teacher manager)` | `teachers.schedule.write` |
-| `/api/students/[studentId]/violation-points` | POST | `U`+`CA` (student looked up inside scope) | `students.violations.write.*` |
+| `/api/teachers/[teacherId]` | PATCH | `Dom(teacher manager)` | `teachers.profile.update` |
+| `/api/teachers/[teacherId]/duties` | POST, DELETE | `Dom(teacher manager)` | `teachers.duties.manage` |
+| `/api/teachers/[teacherId]/schedule` | POST, DELETE | `Dom(teacher manager)` | `teachers.schedule.manage` |
+| `/api/students/[studentId]/violation-points` | POST | `U`+`CA` (student looked up inside scope) | `students.violations.create.*` |
 | `/api/workbooks/links` | GET / PUT | `U` (own id) | `workbook.links.read.own` / `.write.own` |
-| `/api/workbooks/status` | PATCH | `Dom(workbook supervisor)` | `workbook.supervision.write` |
+| `/api/workbooks/status` | PATCH | `Dom(workbook supervisor)` | `workbook.supervision.review` |
 | `/api/workbooks/scope` | PATCH | `A` | `workbook.scope.manage` (business flag) + `rbac.assignments.manage` (legacy flags) |
 | `/api/bos/entries` | POST | `Dom(bos.create)` | `bos.entries.create` |
 | `/api/bos/entries/[entryId]` | PATCH | `Dom(bos.edit)` | `bos.entries.update` |
@@ -350,8 +358,8 @@ No server actions (`"use server"`) exist in HEAD.
 | `lib/server-teacher-profile.ts`, `lib/server-workbook.ts`, `lib/server-bos.ts`, `lib/server-sarpras.ts`, `app/api/admin/homerooms` | teacher population = `role IN (ADMIN, GURU)` or `role = GURU` | `isTeacher = true` |
 | `lib/server-euks.ts readAssignableTeachers` | `active: true` (all users) | `isTeacher = true` |
 | `prisma/seed.ts` | creates initial admin only on an empty database; seeds catalog, templates and compatibility bundles; never touches existing accounts | done (Phase 3) |
-| `scripts/ensure-local-test-user.ts` | forces `role = ADMIN` (dev only) | assigns `system_admin` (Phase 4) |
-| `scripts/seed-bos-test-users.ts`, `scripts/generate-euks-test-data.ts` | dev-only, set/select boolean capabilities | update in Phase 4 |
+| `scripts/ensure-local-test-user.ts` | forces `role = ADMIN` (dev only) | assigns `system_admin` (Phase 5) |
+| `scripts/seed-bos-test-users.ts`, `scripts/generate-euks-test-data.ts` | dev-only, set/select boolean capabilities | update in Phase 5 |
 | `Dockerfile` / `compose.yaml` migrator | `prisma migrate deploy && prisma db seed` on every deploy | unchanged; seed must stay idempotent |
 | `prisma/migrations/20260711170000_init` | `CREATE TYPE "Role" AS ENUM ('ADMIN','GURU')`; `User.role NOT NULL DEFAULT 'GURU'` | dropped in Phase 6 |
 | `AuditLog` | exists; used by workbook, BOS, Sarpras, E-UKS; `User` entity exists for access changes | reused for RBAC entities |

@@ -279,7 +279,7 @@ test("mapping: pengecualian kategori BOS — canManageBosCategories tidak member
 
 test("mapping: WhatsApp school-wide & E-UKS school-wide adalah kompatibilitas eksplisit", () => {
   const g = subjectFromPlan(planLegacyUser(guru))
-  assert.equal(hasPermission(g, "reports.whatsapp.read"), true, "HEAD: WA hanya requireUser")
+  assert.equal(hasPermission(g, "reports.whatsapp.read.all"), true, "HEAD: WA hanya requireUser")
   const e = subjectFromPlan(planLegacyUser(legacy({ id: "e", role: "GURU", canViewEuks: true })))
   assert.equal(hasPermission(e, "euks.visits.read"), true)
   assert.equal(hasPermission(e, "euks.profile.manage"), false)

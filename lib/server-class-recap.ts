@@ -1,18 +1,21 @@
-import { getClassAccess } from "@/lib/class-access"
+import { requireClassScopeFor, type ClassScope } from "@/lib/rbac-class-access"
 import { buildClassRecap, localDateKey, parseClassRecapRange } from "@/lib/class-recap-period"
 import { prisma } from "@/lib/prisma"
 import { formatSchoolDate, fromPrismaDate } from "@/lib/school-date"
-import type { requireUser } from "@/lib/auth-guards"
 import { readHolidayDates } from "@/lib/server-holidays"
 
-type User = Awaited<ReturnType<typeof requireUser>>
-
-export async function readClassPeriodRecap(user: User, classId: string, from: string, to: string) {
+/**
+ * Rekap satu kelas untuk satu periode.
+ *
+ * Scope diterima dari pemanggil supaya operasi yang berbeda memakai kewenangan
+ * masing-masing: layar rekap memakai `attendance.reports.read`, sedangkan
+ * unduhan memakai `attendance.export`. Export TIDAK menumpang izin baca.
+ */
+export async function readClassPeriodRecap(scope: ClassScope, classId: string, from: string, to: string) {
   const range = parseClassRecapRange(from, to)
   if (!range.ok) return { ok: false as const, status: 400, error: range.error }
-  const access = await getClassAccess(user)
   const schoolClass = await prisma.schoolClass.findFirst({
-    where: { id: classId, ...access.where },
+    where: { id: classId, ...scope.where },
     select: {
       id: true, name: true, grade: true,
       homeroomUser: { select: { name: true } },
@@ -54,7 +57,7 @@ export async function readClassPeriodRecap(user: User, classId: string, from: st
   }
 }
 
-export async function readAccessibleClassOptions(user: User) {
-  const access = await getClassAccess(user)
-  return prisma.schoolClass.findMany({ where: access.where, select: { id: true, name: true }, orderBy: [{ grade: "asc" }, { name: "asc" }] })
+export async function readAccessibleClassOptions() {
+  const scope = await requireClassScopeFor("attendance.reports", "read")
+  return prisma.schoolClass.findMany({ where: scope.where, select: { id: true, name: true }, orderBy: [{ grade: "asc" }, { name: "asc" }] })
 }

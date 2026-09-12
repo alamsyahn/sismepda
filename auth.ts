@@ -7,7 +7,7 @@ import { canViewBos, hasBosPermission } from "@/lib/bos"
 import { canViewSarpras } from "@/lib/sarpras"
 import { canViewEuks } from "@/lib/euks"
 import { clearLoginFailures, consumeLoginAttempt } from "@/lib/login-rate-limit"
-import { isLegacyAdminPrefilterRoute, isPublicRoute } from "@/lib/route-policy"
+import { isPublicRoute } from "@/lib/route-policy"
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
@@ -168,12 +168,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return true
       }
       if (!loggedIn) return false
-      // Tapis awal legacy berbasis role di dalam JWT. Ini hanya MEMPERSEMPIT;
-      // halaman-halaman ini belum punya guard server sendiri, jadi daftarnya
-      // dipertahankan sampai Phase 4 memindahkannya ke requirePermission().
-      if (isLegacyAdminPrefilterRoute(path) && auth?.user.role !== "ADMIN") {
-        return Response.redirect(new URL("/", request.nextUrl))
-      }
+      // Tidak ada lagi tapis otorisasi berbasis role di dalam JWT untuk modul
+      // inti: /siswa, /guru, /wali-kelas, /supervisi-buku-kerja/kelola kini
+      // dijaga requirePermission() di server, dengan database sebagai satu-
+      // satunya otoritas. Menapis di sini memakai klaim token yang basi akan
+      // menghalangi grant baru berlaku tanpa logout.
       // Modul BOS: tapis awal berbasis sesi. Guard sebenarnya tetap di
       // requireBosPermission() pada setiap halaman dan route handler.
       if (path === "/bos" || path.startsWith("/bos/")) {

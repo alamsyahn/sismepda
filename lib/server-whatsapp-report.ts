@@ -1,11 +1,13 @@
-import { requireUser } from "@/lib/auth-guards"
+import { requirePermission } from "@/lib/rbac-access"
 import { sortClasses } from "@/lib/class-order"
 import { prisma } from "@/lib/prisma"
 import type { WhatsAppReportClass, WhatsAppReportStudent } from "@/lib/whatsapp-report"
 import { fromPrismaDate, toPrismaDate } from "@/lib/school-date"
 
 export async function getWhatsAppReportClasses(date: Date): Promise<WhatsAppReportClass[]> {
-  await requireUser()
+  // School-wide: laporan ini merangkum seluruh kelas, sehingga dijaga
+  // permission eksplisit, bukan sekadar "sudah login".
+  await requirePermission("reports.whatsapp.read.all")
   const prismaDate = toPrismaDate(fromPrismaDate(date))
 
   const rows = await prisma.schoolClass.findMany({

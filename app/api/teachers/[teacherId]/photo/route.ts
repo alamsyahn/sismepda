@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server"
-import { requireUser } from "@/lib/auth-guards"
+import { requirePermission } from "@/lib/rbac-access"
+import { authFailureResponse } from "@/lib/api-errors"
 import { prisma } from "@/lib/prisma"
+import { teacherPopulationWhere } from "@/lib/teacher-population"
 
 export async function GET(_request: Request, { params }: { params: Promise<{ teacherId: string }> }) {
   try {
-    await requireUser()
+    // Foto adalah bagian direktori guru, dijaga permission yang sama.
+    await requirePermission("teachers.directory.read")
     const { teacherId } = await params
     const teacher = await prisma.user.findFirst({
-      where: { id: teacherId, role: { in: ["ADMIN", "GURU"] } },
+      where: { id: teacherId, ...teacherPopulationWhere() },
       select: { photoData: true, photoMimeType: true },
     })
     if (!teacher?.photoData || !teacher.photoMimeType) {
@@ -22,10 +25,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tea
       },
     })
   } catch (error) {
-    const unauthorized = error instanceof Error && error.message === "UNAUTHORIZED"
-    return NextResponse.json(
-      { error: unauthorized ? "Sesi tidak valid" : "Foto guru gagal dimuat" },
-      { status: unauthorized ? 401 : 500 },
-    )
+    return authFailureResponse(error, "Foto guru gagal dimuat")
   }
 }

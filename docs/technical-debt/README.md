@@ -72,15 +72,15 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Direction:** Derive and explicitly select the configured schema for dump/restore, parse archive identifiers structurally, and combine this with the TD-002 table allowlist.
 - **Exit criteria:** Database-backed tests successfully backup and restore both `public` and a named schema, reject cross-schema/unknown-table archives, and verify rollback on failure.
 
-## TD-008 — ADMIN role can remain stale in an existing JWT
+## TD-008 — Stale JWT role still authorizes the not-yet-migrated modules
 
-- **Area / severity:** Authorization — **High**
-- **Current condition:** `requireUser()` re-reads only `active` and returns the session/JWT user; `requireAdmin()` authorizes using that JWT role. Role changes are refreshed only on an Auth.js session update trigger. Phase 2 added a database-current alternative (`lib/rbac-access.ts`: `requireUser()`, `getAuthorizationContext()`, `requirePermission()`, `requireSystemAdmin()`), verified to reflect committed grants and revocations on the next request without logout — but **no surface consumes it yet**, so the stale-JWT path above is still the live authority.
-- **Evidence:** `auth.ts` (JWT/session callbacks and 30-day maximum age); `lib/auth-guards.ts:4-15`.
-- **Impact:** A user demoted from ADMIN can retain ADMIN-only access until the token is refreshed or expires, although deactivation takes effect immediately.
-- **Reason:** Active-state revocation and granular capabilities were made database-current, but global role authorization still trusts session state.
-- **Direction:** Resolved by the RBAC enforcement phase in [architecture/rbac.md](../architecture/rbac.md): permissions are read from `UserRole` on every guarded request and the JWT carries identity only. The same phase removes the JWT-capability copies used by the `authorized` prefilter.
-- **Exit criteria:** Integration tests prove ADMIN→GURU demotion immediately blocks existing sessions from every ADMIN page and API while legitimate sessions continue to work.
+- **Area / severity:** Authorization — **Medium** (was High; core modules resolved in Phase 4)
+- **Current condition:** Core modules (dashboard, attendance, recap/export, students, teachers, homerooms, workbook, navigation) authorize through `lib/rbac-access.ts` against the current database and no longer read the JWT role. The remaining consumers of the stale path are `lib/auth-guards.ts` (`requireAdmin()`) and the capability guards in `lib/bos-access.ts`, `lib/euks-access.ts`, `lib/sarpras-access.ts`, used by BOS, Sarpras, E-UKS, `/pengaturan`, branding and database backup. Those capability guards re-read their boolean rights from PostgreSQL, but the ADMIN escape hatch inside them still comes from the JWT role.
+- **Evidence:** `auth.ts` (JWT/session callbacks, 30-day maximum age); `lib/auth-guards.ts:4-15`; `app/api/admin/{database,holidays,settings}/route.ts`.
+- **Impact:** A user demoted from ADMIN can retain ADMIN-only access to those remaining surfaces until the token refreshes or expires. Deactivation still takes effect immediately, and every core surface now reflects demotion on the next request.
+- **Reason:** Enforcement was migrated module by module; the modules above are scheduled after the core.
+- **Direction:** Migrate the remaining modules onto `requirePermission()` and delete `lib/auth-guards.ts`, then drop the capability copies from the JWT (see [architecture/rbac.md](../architecture/rbac.md), Phase 5+).
+- **Exit criteria:** No source file outside `lib/rbac-*.ts` reads `user.role` or a `can*` column for an authorization decision, and an integration test proves demotion immediately blocks every remaining ADMIN-only page and API on an existing session.
 
 ## TD-009 — Teacher deletion is blocked by recorded violation points
 

@@ -12,7 +12,7 @@ import { useAppBranding } from "@/components/layout/app-branding-provider"
 // Rute yang memakai layout autentikasi tersendiri (tanpa sidebar & topbar).
 const BARE_ROUTES = ["/login"]
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, grants, roleNames }: { children: React.ReactNode; grants: readonly string[]; roleNames: readonly string[] }) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
   const branding = useAppBranding()
@@ -25,14 +25,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-svh bg-background lg:flex">
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-sidebar-border bg-sidebar lg:block">
-        <SidebarNav />
+        <SidebarNav grants={grants} roleNames={roleNames} />
       </aside>
 
       {/* Mobile drawer */}
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="left" className="w-64 gap-0 overflow-hidden border-sidebar-border bg-sidebar p-0">
           <SheetTitle className="sr-only">Menu navigasi</SheetTitle>
-          <SidebarNav onNavigate={() => setOpen(false)} />
+          <SidebarNav grants={grants} roleNames={roleNames} onNavigate={() => setOpen(false)} />
         </SheetContent>
       </Sheet>
 
