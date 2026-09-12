@@ -41,9 +41,11 @@ import { DateFilter } from "@/components/date-filter"
 import { AttendanceEditor } from "@/components/absensi/attendance-editor"
 import { StatusSummary } from "@/components/absensi/status-summary"
 import {
+  canFinalizeNote,
   currentJam,
   filterRosterByName,
   formatJam,
+  noteAfterStatusChange,
   studentsMissingNote,
   type InputStatus,
   type PrimaryStatus,
@@ -74,6 +76,10 @@ export default function AbsensiInputPage() {
   const [absentPending, setAbsentPending] = useState<Record<string, boolean>>({})
   // Field keterangan yang pernah ditinggalkan dalam keadaan kosong.
   const [touchedNotes, setTouchedNotes] = useState<Record<string, boolean>>({})
+  // Keterangan yang sudah difinalisasi secara LOKAL (tampil sebagai ringkasan
+  // read-only). Belum berarti tersimpan ke database — penyimpanan tetap lewat
+  // tombol Simpan.
+  const [finalizedNotes, setFinalizedNotes] = useState<Record<string, boolean>>({})
   const [showAllErrors, setShowAllErrors] = useState(false)
   const noteInputs = useRef<Record<string, { desktop: HTMLInputElement | null; mobile: HTMLInputElement | null }>>({})
   const [dirty, setDirty] = useState(false)
@@ -124,6 +130,15 @@ export default function AbsensiInputPage() {
         setNotes(nextNotes)
         setAbsentPending({})
         setTouchedNotes({})
+        // Keterangan yang dimuat dari server sudah lengkap: tampilkan langsung
+        // sebagai ringkasan agar pengguna tidak mengira harus mengetik ulang.
+        setFinalizedNotes(
+          Object.fromEntries(
+            Object.entries(nextNotes)
+              .filter(([, note]) => canFinalizeNote(note))
+              .map(([studentId]) => [studentId, true]),
+          ),
+        )
         setShowAllErrors(false)
         setHasSaved(Boolean(requested?.attendanceDays.length))
         setLastSaved(requested?.attendanceDays[0]?.updatedAt
@@ -185,6 +200,13 @@ export default function AbsensiInputPage() {
     setNotes(nextNotes)
     setAbsentPending({})
     setTouchedNotes({})
+    setFinalizedNotes(
+      Object.fromEntries(
+        Object.entries(nextNotes)
+          .filter(([, note]) => canFinalizeNote(note))
+          .map(([studentId]) => [studentId, true]),
+      ),
+    )
     setShowAllErrors(false)
     setDirty(false)
     // Kata kunci dari kelas sebelumnya hampir pasti tidak cocok di kelas baru,
@@ -222,17 +244,40 @@ export default function AbsensiInputPage() {
     [],
   )
 
-  const handleStatus = useCallback((studentId: string, status: InputStatus) => {
-    // Memilih alasan mengakhiri keadaan "Tidak Hadir tanpa alasan".
-    setAbsentPending((prev) => {
-      if (!prev[studentId]) return prev
-      const next = { ...prev }
-      delete next[studentId]
-      return next
-    })
-    setStatuses((prev) => ({ ...prev, [studentId]: status }))
-    setDirty(true)
-  }, [])
+  const handleStatus = useCallback(
+    (studentId: string, status: InputStatus) => {
+      // Memilih alasan mengakhiri keadaan "Tidak Hadir tanpa alasan".
+      setAbsentPending((prev) => {
+        if (!prev[studentId]) return prev
+        const next = { ...prev }
+        delete next[studentId]
+        return next
+      })
+      // Berganti alasan (mis. Izin -> Sakit) mengosongkan keterangan lama dan
+      // mengembalikan field ke mode edit, karena keterangannya tidak lagi relevan.
+      if ((statuses[studentId] ?? "belum") !== status) {
+        setNotes((current) => ({
+          ...current,
+          [studentId]: noteAfterStatusChange(statuses[studentId] ?? "belum", status, current[studentId]),
+        }))
+        setFinalizedNotes((current) => {
+          if (!current[studentId]) return current
+          const next = { ...current }
+          delete next[studentId]
+          return next
+        })
+        setTouchedNotes((current) => {
+          if (!current[studentId]) return current
+          const next = { ...current }
+          delete next[studentId]
+          return next
+        })
+      }
+      setStatuses((prev) => ({ ...prev, [studentId]: status }))
+      setDirty(true)
+    },
+    [statuses],
+  )
 
   /**
    * Perpindahan status utama. "Tidak Hadir" belum menyimpan status apa pun —
@@ -260,6 +305,12 @@ export default function AbsensiInputPage() {
       delete next[studentId]
       return next
     })
+    setFinalizedNotes((prev) => {
+      if (!prev[studentId]) return prev
+      const next = { ...prev }
+      delete next[studentId]
+      return next
+    })
     setStatuses((prev) => ({ ...prev, [studentId]: primary }))
     setNotes((prev) => (prev[studentId] ? { ...prev, [studentId]: "" } : prev))
     setDirty(true)
@@ -279,9 +330,53 @@ export default function AbsensiInputPage() {
     setDirty(true)
   }, [])
 
-  const handleNoteBlur = useCallback((studentId: string) => {
-    setTouchedNotes((prev) => ({ ...prev, [studentId]: true }))
+  /**
+   * Finalisasi lokal: field berubah menjadi ringkasan read-only. Hanya menandai
+   * kelengkapan di layar — datanya belum masuk database, sehingga tidak ada
+   * kata "Tersimpan" di UI. Isian kosong ditolak dan tetap dalam mode edit.
+   */
+  const handleNoteFinalize = useCallback(
+    (studentId: string) => {
+      if (!canFinalizeNote(notes[studentId])) {
+        setTouchedNotes((prev) => ({ ...prev, [studentId]: true }))
+        return false
+      }
+      // Menyimpan versi yang sudah dirapikan supaya ringkasan tidak menampilkan
+      // spasi menggantung dan payload konsisten dengan yang dilihat pengguna.
+      setNotes((prev) => ({ ...prev, [studentId]: (prev[studentId] ?? "").trim() }))
+      setFinalizedNotes((prev) => ({ ...prev, [studentId]: true }))
+      setTouchedNotes((prev) => {
+        if (!prev[studentId]) return prev
+        const next = { ...prev }
+        delete next[studentId]
+        return next
+      })
+      return true
+    },
+    [notes],
+  )
+
+  const handleNoteEdit = useCallback((studentId: string) => {
+    setFinalizedNotes((prev) => {
+      if (!prev[studentId]) return prev
+      const next = { ...prev }
+      delete next[studentId]
+      return next
+    })
   }, [])
+
+  /**
+   * Blur ikut memfinalisasi ketika isinya valid, supaya pengguna yang langsung
+   * pindah ke siswa lain tidak merasa isiannya hilang. Blur dalam keadaan kosong
+   * tetap menandai field sebagai pernah disentuh agar errornya muncul.
+   */
+  const handleNoteBlur = useCallback(
+    (studentId: string) => {
+      if (handleNoteFinalize(studentId)) return
+      setTouchedNotes((prev) => ({ ...prev, [studentId]: true }))
+    },
+    [handleNoteFinalize],
+  )
 
   const handleAllPresent = useCallback(() => {
     setStatuses((prev) => {
@@ -297,6 +392,7 @@ export default function AbsensiInputPage() {
     })
     setAbsentPending({})
     setTouchedNotes({})
+    setFinalizedNotes({})
     setShowAllErrors(false)
     setDirty(true)
   }, [roster])
@@ -314,6 +410,7 @@ export default function AbsensiInputPage() {
     })
     setAbsentPending({})
     setTouchedNotes({})
+    setFinalizedNotes({})
     setShowAllErrors(false)
     setDirty(true)
     setClearOpen(false)
@@ -338,6 +435,8 @@ export default function AbsensiInputPage() {
     // Siswa bermasalah bisa sedang tersembunyi oleh pencarian; tanpa ini tombol
     // Simpan akan menolak menyimpan tanpa menunjukkan penyebabnya.
     if (!filterRosterByName([target], search).length) setSearch("")
+    // Siswa bermasalah pasti belum terfinalisasi (keterangannya kosong), jadi
+    // inputnya selalu dalam mode edit dan dapat difokuskan.
     const entry = noteInputs.current[target.id]
     const element = entry?.desktop?.offsetParent ? entry.desktop : entry?.mobile
     if (element) {
@@ -547,10 +646,13 @@ export default function AbsensiInputPage() {
                 touched={touchedNotes}
                 showAllErrors={showAllErrors}
                 absentPending={absentPending}
+                finalized={finalizedNotes}
                 onPrimary={handlePrimary}
                 onStatus={handleStatus}
                 onNote={handleNote}
                 onNoteBlur={handleNoteBlur}
+                onNoteFinalize={handleNoteFinalize}
+                onNoteEdit={handleNoteEdit}
                 registerNoteInput={registerNoteInput}
               />
             )}

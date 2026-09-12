@@ -3,7 +3,9 @@ import assert from "node:assert/strict"
 import {
   ABSENCE_REASONS,
   absenceNoteCopy,
+  canFinalizeNote,
   isNoteMissing,
+  noteAfterStatusChange,
   primaryStatusOf,
   requiresNote,
   studentsMissingNote,
@@ -127,4 +129,34 @@ test("data absensi existing dapat dibuka kembali dengan substatus terpilih", () 
   assert.equal(primaryStatusOf(statuses.b), "hadir")
   assert.equal(primaryStatusOf(statuses.c), "belum")
   assert.deepEqual(studentsMissingNote(roster, statuses, notes), [])
+})
+
+test("keterangan kosong tidak boleh difinalisasi", () => {
+  assert.equal(canFinalizeNote(undefined), false)
+  assert.equal(canFinalizeNote(""), false)
+  assert.equal(canFinalizeNote("   "), false)
+})
+
+test("keterangan berisi boleh difinalisasi", () => {
+  assert.equal(canFinalizeNote("Demam"), true)
+  assert.equal(canFinalizeNote("  Acara Keluarga  "), true)
+})
+
+test("berganti alasan mengosongkan keterangan lama", () => {
+  assert.equal(noteAfterStatusChange("izin", "sakit", "Acara Keluarga"), "")
+  assert.equal(noteAfterStatusChange("sakit", "dispensasi", "Demam"), "")
+  assert.equal(noteAfterStatusChange("sakit", "hadir", "Demam"), "")
+})
+
+test("alasan yang tidak berubah mempertahankan keterangan", () => {
+  assert.equal(noteAfterStatusChange("izin", "izin", "Acara Keluarga"), "Acara Keluarga")
+  assert.equal(noteAfterStatusChange("izin", "izin", undefined), "")
+})
+
+test("keterangan yang difinalisasi tetap memenuhi syarat penyimpanan", () => {
+  // Finalisasi hanya status tampilan; kelengkapan tetap dinilai dari isi teks.
+  const finalizedStatuses: Record<string, InputStatus> = { a: "izin" }
+  const finalizedNotes: Record<string, string> = { a: "Acara Keluarga" }
+  assert.equal(canFinalizeNote(finalizedNotes.a), true)
+  assert.deepEqual(studentsMissingNote([roster[0]], finalizedStatuses, finalizedNotes), [])
 })

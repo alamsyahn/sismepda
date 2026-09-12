@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef } from "react"
+import { Check, Pencil } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import {
@@ -55,10 +56,19 @@ type EditorProps = {
    * ketidakhadiran yang terkirim tanpa dipilih pengguna.
    */
   absentPending: Record<string, boolean>
+  /**
+   * Keterangan yang sudah diselesaikan secara LOKAL: ditampilkan sebagai
+   * ringkasan read-only. Belum tersimpan ke database, jadi labelnya tidak boleh
+   * menyebut "Tersimpan".
+   */
+  finalized: Record<string, boolean>
   onPrimary: (studentId: string, primary: PrimaryStatus) => void
   onStatus: (studentId: string, status: InputStatus) => void
   onNote: (studentId: string, note: string) => void
   onNoteBlur: (studentId: string) => void
+  /** Mengembalikan false jika isian kosong sehingga field tetap dalam mode edit. */
+  onNoteFinalize: (studentId: string) => boolean
+  onNoteEdit: (studentId: string) => void
   registerNoteInput: (
     studentId: string,
     variant: NoteInputVariant,
@@ -94,6 +104,137 @@ function useNoteState(
 
 type RowProps = EditorProps & { student: RosterStudent }
 
+/**
+ * Field keterangan dengan dua mode.
+ *
+ * Mode edit: input + tombol centang untuk menyelesaikan. Enter dan blur juga
+ * menyelesaikan selama isinya valid; isian kosong ditolak, fokus dipertahankan,
+ * dan errornya muncul inline.
+ *
+ * Mode selesai (lokal): ringkasan read-only dengan tombol pensil untuk kembali
+ * mengedit. Tidak memakai kata "Tersimpan" karena data baru masuk database
+ * setelah tombol Simpan ditekan.
+ */
+function NoteField({
+  studentId,
+  variant,
+  copy,
+  value,
+  showError,
+  finalized,
+  inputRef,
+  onNote,
+  onNoteBlur,
+  onNoteFinalize,
+  onNoteEdit,
+  registerNoteInput,
+}: {
+  studentId: string
+  variant: NoteInputVariant
+  copy: { label: string; placeholder: string; error: string }
+  value: string
+  showError: boolean
+  finalized: boolean
+} & Pick<EditorProps, "onNote" | "onNoteBlur" | "onNoteFinalize" | "onNoteEdit" | "registerNoteInput"> & {
+    inputRef: React.RefObject<HTMLInputElement | null>
+  }) {
+  const fieldId = `keterangan-${variant}-${studentId}`
+  const errorId = `keterangan-error-${variant}-${studentId}`
+  const touchClass = variant === "mobile" ? "min-h-11" : ""
+
+  if (finalized) {
+    return (
+      <div className="space-y-1">
+        <p className="text-xs font-medium text-muted-foreground">{copy.label}</p>
+        <div
+          className={cn(
+            "flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-2.5 py-2",
+            touchClass,
+          )}
+        >
+          <Check className="size-4 shrink-0 text-[var(--chart-1)]" aria-hidden />
+          <span className="min-w-0 flex-1 break-words text-sm text-foreground">{value}</span>
+          <button
+            type="button"
+            onClick={() => {
+              onNoteEdit(studentId)
+              // rAF berjalan setelah commit, jadi input mode edit sudah terpasang.
+              requestAnimationFrame(() => inputRef.current?.focus())
+            }}
+            aria-label={`Ubah ${copy.label.toLowerCase()}`}
+            className={cn(
+              "inline-flex shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
+              variant === "mobile" ? "size-9" : "size-7",
+            )}
+          >
+            <Pencil className="size-4" aria-hidden />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1">
+      <label htmlFor={fieldId} className="block text-xs font-medium text-foreground">
+        {copy.label} <span aria-hidden>*</span>
+        <span className="sr-only">(wajib diisi)</span>
+      </label>
+      <div className="flex items-start gap-1.5">
+        <Input
+          id={fieldId}
+          ref={(element) => {
+            inputRef.current = element
+            registerNoteInput(studentId, variant, element)
+          }}
+          value={value}
+          onChange={(event) => onNote(studentId, event.target.value)}
+          onBlur={() => onNoteBlur(studentId)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return
+            // Form ini tidak memakai submit native; Enter berarti "selesai".
+            event.preventDefault()
+            if (!onNoteFinalize(studentId)) inputRef.current?.focus()
+          }}
+          placeholder={copy.placeholder}
+          // Keyboard mobile menampilkan aksi Done/Selesai jika didukung.
+          enterKeyHint="done"
+          aria-required
+          aria-invalid={showError || undefined}
+          aria-describedby={errorId}
+          className={cn(
+            "min-w-0 flex-1",
+            touchClass,
+            showError && "border-destructive focus-visible:ring-destructive/40",
+          )}
+        />
+        <button
+          type="button"
+          // onMouseDown mendahului blur, sehingga klik centang tidak kehilangan
+          // fokus input lebih dulu ketika isiannya masih kosong.
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            if (!onNoteFinalize(studentId)) inputRef.current?.focus()
+          }}
+          aria-label={`Selesai mengisi ${copy.label.toLowerCase()}`}
+          className={cn(
+            "inline-flex shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
+            variant === "mobile" ? "size-11" : "size-9",
+          )}
+        >
+          <Check className="size-4" aria-hidden />
+        </button>
+      </div>
+      <p
+        id={errorId}
+        className={cn("text-xs", showError ? "font-medium text-destructive" : "text-muted-foreground")}
+      >
+        {showError ? copy.error : "Wajib diisi"}
+      </p>
+    </div>
+  )
+}
+
 function useRowHandlers({ student, statuses, absentPending, onPrimary, onStatus }: RowProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const status = statuses[student.id] ?? "belum"
@@ -107,6 +248,8 @@ function useRowHandlers({ student, statuses, absentPending, onPrimary, onStatus 
   const handleReason = (reason: AbsenceReason) => {
     onStatus(student.id, reason)
     // Setelah alasan dipilih pengguna langsung bisa mengetik keterangannya.
+    // rAF berjalan setelah commit, jadi ref input sudah terpasang meskipun
+    // field sebelumnya berada dalam mode ringkasan.
     requestAnimationFrame(() => inputRef.current?.focus())
   }
 
@@ -145,10 +288,9 @@ function DesktopTable(props: EditorProps) {
 }
 
 function DesktopRow(props: RowProps) {
-  const { student, onNote, onNoteBlur, registerNoteInput, notes } = props
+  const { student, notes, finalized, onNote, onNoteBlur, onNoteFinalize, onNoteEdit, registerNoteInput } = props
   const { inputRef, status, primary, handlePrimary, handleReason } = useRowHandlers(props)
   const { reason, showError, copy } = useNoteState(student.id, status, props)
-  const errorId = `keterangan-error-${student.id}`
 
   return (
     <TableRow className="align-top">
@@ -179,36 +321,20 @@ function DesktopRow(props: RowProps) {
       </TableCell>
       <TableCell className="py-3">
         {primary === "tidakHadir" && copy ? (
-          <div className="space-y-1">
-            <label
-              htmlFor={`keterangan-desktop-${student.id}`}
-              className="block text-xs font-medium text-foreground"
-            >
-              {copy.label} <span aria-hidden>*</span>
-              <span className="sr-only">(wajib diisi)</span>
-            </label>
-            <Input
-              id={`keterangan-desktop-${student.id}`}
-              ref={(element) => {
-                inputRef.current = element
-                registerNoteInput(student.id, "desktop", element)
-              }}
-              value={notes[student.id] ?? ""}
-              onChange={(event) => onNote(student.id, event.target.value)}
-              onBlur={() => onNoteBlur(student.id)}
-              placeholder={copy.placeholder}
-              aria-required
-              aria-invalid={showError || undefined}
-              aria-describedby={errorId}
-              className={cn(showError && "border-destructive focus-visible:ring-destructive/40")}
-            />
-            <p
-              id={errorId}
-              className={cn("text-xs", showError ? "font-medium text-destructive" : "text-muted-foreground")}
-            >
-              {showError ? copy.error : "Wajib diisi"}
-            </p>
-          </div>
+          <NoteField
+            studentId={student.id}
+            variant="desktop"
+            copy={copy}
+            value={notes[student.id] ?? ""}
+            showError={showError}
+            finalized={Boolean(finalized[student.id])}
+            inputRef={inputRef}
+            onNote={onNote}
+            onNoteBlur={onNoteBlur}
+            onNoteFinalize={onNoteFinalize}
+            onNoteEdit={onNoteEdit}
+            registerNoteInput={registerNoteInput}
+          />
         ) : primary === "tidakHadir" ? (
           <p className="text-xs text-muted-foreground">Pilih alasan ketidakhadiran terlebih dahulu.</p>
         ) : (
@@ -233,10 +359,9 @@ function MobileCards(props: EditorProps) {
 }
 
 function MobileCard(props: RowProps) {
-  const { student, onNote, onNoteBlur, registerNoteInput, notes } = props
+  const { student, notes, finalized, onNote, onNoteBlur, onNoteFinalize, onNoteEdit, registerNoteInput } = props
   const { inputRef, status, primary, handlePrimary, handleReason } = useRowHandlers(props)
   const { reason, showError, copy } = useNoteState(student.id, status, props)
-  const errorId = `keterangan-error-mobile-${student.id}`
 
   return (
     <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm">
@@ -279,36 +404,20 @@ function MobileCard(props: RowProps) {
       ) : null}
 
       {primary === "tidakHadir" && copy ? (
-        <div className="space-y-1">
-          <label
-            htmlFor={`keterangan-mobile-${student.id}`}
-            className="block text-xs font-medium text-foreground"
-          >
-            {copy.label} <span aria-hidden>*</span>
-            <span className="sr-only">(wajib diisi)</span>
-          </label>
-          <Input
-            id={`keterangan-mobile-${student.id}`}
-            ref={(element) => {
-              inputRef.current = element
-              registerNoteInput(student.id, "mobile", element)
-            }}
-            value={notes[student.id] ?? ""}
-            onChange={(event) => onNote(student.id, event.target.value)}
-            onBlur={() => onNoteBlur(student.id)}
-            placeholder={copy.placeholder}
-            aria-required
-            aria-invalid={showError || undefined}
-            aria-describedby={errorId}
-            className={cn("min-h-11", showError && "border-destructive focus-visible:ring-destructive/40")}
-          />
-          <p
-            id={errorId}
-            className={cn("text-xs", showError ? "font-medium text-destructive" : "text-muted-foreground")}
-          >
-            {showError ? copy.error : "Wajib diisi"}
-          </p>
-        </div>
+        <NoteField
+          studentId={student.id}
+          variant="mobile"
+          copy={copy}
+          value={notes[student.id] ?? ""}
+          showError={showError}
+          finalized={Boolean(finalized[student.id])}
+          inputRef={inputRef}
+          onNote={onNote}
+          onNoteBlur={onNoteBlur}
+          onNoteFinalize={onNoteFinalize}
+          onNoteEdit={onNoteEdit}
+          registerNoteInput={registerNoteInput}
+        />
       ) : null}
     </div>
   )

@@ -34,7 +34,21 @@ A note is **required** for every absence reason. Label, placeholder and error
 message follow the reason (`absenceNoteCopy` in `lib/attendance-input.ts`);
 helper text reads "Wajib diisi" until the field is blurred while empty or the
 user presses Simpan, only then does the inline error appear, and it clears as
-soon as a value is typed. Hadir and Belum Diisi show no note field at all (a
+soon as a value is typed.
+
+The note field has two local modes. In edit mode it is an input plus a check
+button; Enter, the check button, or blurring with valid content **finalises it
+locally** — the field collapses into a read-only summary (check icon, text,
+pencil button to reopen). `enterKeyHint="done"` makes mobile keyboards offer a
+Done action. An empty value never finalises: focus stays in the input and the
+inline error appears. Finalisation is display state only, so the UI deliberately
+never says "Tersimpan" — nothing reaches the database until Simpan. Records
+loaded from the server open in summary mode because their notes are already
+complete. Changing the reason (Izin → Sakit) discards the old note, returns to
+edit mode and refocuses the input with the new placeholder; switching to Hadir
+or Belum Diisi, Semua Hadir and Kosongkan Semua also drop the finalised state.
+
+Hadir and Belum Diisi show no note field at all (a
 "—" placeholder on desktop). Both Simpan buttons behave identically: they show a
 live count from the full roster ("⚠ N siswa masih memerlukan keterangan" versus
 "✓ Semua data wajib sudah lengkap"), and pressing Simpan with a missing note

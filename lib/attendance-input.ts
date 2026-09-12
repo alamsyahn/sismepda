@@ -185,6 +185,29 @@ export function isNoteMissing(status: InputStatus, note: string | undefined): bo
 }
 
 /**
+ * Keterangan hanya boleh "selesai secara lokal" jika benar-benar berisi.
+ * Ini murni status tampilan: data tetap belum tersimpan ke database, sehingga
+ * UI tidak boleh memakai kata "Tersimpan".
+ */
+export function canFinalizeNote(note: string | undefined): boolean {
+  return (note ?? "").trim() !== ""
+}
+
+/**
+ * Keterangan lama tidak boleh terbawa ketika alasan ketidakhadiran berganti:
+ * "Acara Keluarga" tidak masuk akal setelah izin diubah menjadi sakit.
+ * Mengembalikan keterangan yang seharusnya berlaku setelah perpindahan.
+ */
+export function noteAfterStatusChange(
+  previous: InputStatus,
+  next: InputStatus,
+  note: string | undefined,
+): string {
+  if (previous === next) return note ?? ""
+  return ""
+}
+
+/**
  * Siswa yang menghalangi penyimpanan: tidak hadir dengan alasan terpilih tetapi
  * keterangannya masih kosong. Urutannya mengikuti roster penuh supaya tombol
  * Simpan bisa langsung melompat ke siswa bermasalah pertama.
