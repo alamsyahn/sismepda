@@ -294,6 +294,45 @@ used for cards, because a hero fills the viewport width where a card does not.
 |---|---|---|
 | `/api/e-uks/hero-images` | `POST` create, `PATCH` update/reorder, `DELETE` remove | ADMIN |
 | `/api/e-uks/hero-images/[imageId]/photo` | `GET` serve, `PUT` upload/replace | GET `euks.view`; writes ADMIN |
+| `/api/e-uks/hero-logos` | `POST` create, `PATCH` update/reorder, `DELETE` remove | ADMIN |
+| `/api/e-uks/hero-logos/[logoId]/logo` | `GET` serve, `PUT` upload/replace, `DELETE` clear file | GET `euks.view`; writes ADMIN |
+
+### Hero logos
+
+`EuksHeroLogo` (migration `20260912120000_add_euks_hero_logos`) holds the
+institution logos overlaid on the top-left of the hero. It is a separate table
+from `EuksHeroImage` despite the similar shape: a logo is a static layer drawn
+`object-contain` at a fixed height and may be an SVG, whereas a hero image is a
+16:9 background cropped `cover` and never an SVG. Merging them would force a
+"kind" column plus branching in every query and every component.
+
+Logos accept JPG, PNG, SVG, and WebP up to 512 KB. `name` is required and
+becomes the `alt` text, because a logo represents an institution and must not
+degrade into an unlabelled image for screen-reader users.
+
+SVG support is the reason `lib/euks-logo.ts` exists rather than reusing
+`detectProfilePhotoType`. SVG has no magic bytes, so the detector skips the BOM,
+XML declaration, comments, and DOCTYPE and then requires the first real element
+to be `<svg` — searching for `<svg` anywhere would accept an HTML file with an
+inline `<svg>`. Uploads that parse as SVG are additionally rejected when they
+carry `<script>`, `<foreignObject>`, event handlers, `javascript:` URLs, remote
+`<use>`, or entity definitions. Serving is defence in depth: logos are only ever
+rendered through `<img src>` (which already blocks scripts and remote loads),
+and the GET route adds `nosniff`, a `sandbox` CSP, and
+`Cross-Origin-Resource-Policy: same-origin` so a logo opened directly in a tab
+cannot inherit the app origin.
+
+Logo files bypass `EuksPhotoField`, which resizes uploads through a canvas —
+that would rasterise an SVG and destroy exactly what makes it worth uploading.
+
+In the hero the logo row sits in the flex flow with `mb-auto` rather than being
+absolutely positioned, so it cannot overlap the title when many logos wrap on a
+narrow screen. `EuksHeroLogos` is wrapped in `memo`: the hero re-renders on
+every slide change and the logos do not depend on the slide, so memoising keeps
+the same DOM nodes alive and the logos genuinely never blink. Max width is set
+to four times the height at each breakpoint (36/40/48 px → 144/160/192 px) so
+that any logo up to a 4:1 ratio displays at full height, keeping the row
+visually even.
 
 The carousel is roughly sixty lines of component code with no new dependency.
 What the page needs is a background crossfade, not a scrollable track: Embla,
@@ -372,6 +411,8 @@ age outside the reference range.
 `/api/e-uks/officers` and `/api/e-uks/facilities` each expose `POST` (create), `PATCH` (edit fields, toggle `active`, or `move` one position) and `DELETE` (remove the row), all ADMIN-only and each writing an `AuditLog` entry (`EUKS_OFFICER_*`/`EUKS_FACILITY_*`, including `_PHOTO_UPDATED`) in the same transaction. The photo sub-routes are described under Settings photos.
 
 `/api/e-uks/hero-images` exposes `POST` (create), `PATCH` (edit caption, toggle `active`, or `move` one position) and `DELETE`, all ADMIN-only, each writing an `EUKS_HERO_IMAGE_*` `AuditLog` entry in the same transaction. `PUT /api/e-uks/hero-images/[imageId]/photo` uploads or replaces the image; `GET` serves it to any `euks.view` reader. See Home page composition.
+
+`/api/e-uks/hero-logos` mirrors that shape for the hero logo overlay: `POST`, `PATCH` (rename, toggle `active`, or `move` one position) and `DELETE`, ADMIN-only, each writing an `EUKS_HERO_LOGO_*` `AuditLog` entry in the same transaction. `PUT /api/e-uks/hero-logos/[logoId]/logo` uploads or replaces the file (JPG/PNG/SVG/WebP, 512 KB), `DELETE` clears it while keeping the row, and `GET` serves it to any `euks.view` reader. See Hero logos for the SVG validation rules.
 
 ## Open reference-data requirement
 

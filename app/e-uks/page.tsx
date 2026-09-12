@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { EuksTermRanking } from "@/components/e-uks/euks-term-ranking"
 import { EuksMonthlyVisitsChart } from "@/components/e-uks/euks-monthly-visits-chart"
+import { euksHeroLogoUrl } from "@/lib/euks-logo"
 import { EuksHero } from "@/components/e-uks/euks-hero"
 import { EuksOfficerRail } from "@/components/e-uks/euks-officer-rail"
 import { EuksFacilityGrid } from "@/components/e-uks/euks-facility-grid"
@@ -65,6 +66,15 @@ export default async function EuksHomePage() {
       caption: image.caption,
     }))
 
+  // Logo tanpa berkas terunggah dilewati, alasan sama seperti slide kosong.
+  const heroLogos = settings.heroLogos
+    .filter((logo) => logo.active && logo.logoUpdatedAt)
+    .map((logo) => ({
+      id: logo.id,
+      name: logo.name,
+      url: euksHeroLogoUrl(logo.id, logo.logoUpdatedAt)!,
+    }))
+
   const range = await readEuksVisitDateRange()
   const visits = range ? await readEuksTrendVisits(range.first, range.last) : []
   const distinctStudents = range ? await countDistinctVisitingStudents(range.first, range.last) : 0
@@ -93,6 +103,7 @@ export default async function EuksHomePage() {
         serviceHours={settings.profile.serviceHours}
         contact={settings.profile.contact}
         slides={heroSlides}
+        logos={heroLogos}
         manageHref={canManage ? "/e-uks/pengaturan" : null}
       />
 

@@ -263,6 +263,32 @@ model EuksHeroImage {
   @@index([active, sortOrder])
 }
 
+/// Logo institusi yang ditumpuk di pojok kiri atas hero Halaman Utama E-UKS.
+///
+/// Tabel terpisah dari EuksHeroImage meskipun strukturnya mirip: logo adalah
+/// lapisan statis dengan aturan tampilan berbeda (object-contain, tinggi
+/// seragam, boleh SVG) sementara EuksHeroImage adalah foto latar 16:9 yang
+/// dipotong cover dan tidak pernah SVG. Menggabungkan keduanya akan memaksa
+/// satu kolom "peran" plus percabangan di setiap query dan setiap komponen.
+model EuksHeroLogo {
+  id String @id @default(cuid())
+  /// Nama institusi; dipakai sebagai teks alternatif. Wajib terisi karena logo
+  /// mewakili institusi, jadi tidak boleh jadi gambar tanpa makna.
+  name String
+  /// Byte logo. Nullable dengan alasan sama seperti EuksHeroImage: baris dibuat
+  /// lebih dulu, byte menyusul pada permintaan kedua.
+  logoData Bytes?
+  /// Termasuk image/svg+xml, yang tidak berlaku untuk foto hero.
+  logoMimeType String?
+  logoUpdatedAt DateTime?
+  sortOrder Int @default(0)
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, sortOrder])
+}
+
 /// Pengurus UKS. Boleh menunjuk User (guru) atau diisi manual untuk siswa
 /// dan pihak luar yang tidak punya akun — karena itu userId nullable dan
 /// name selalu tersimpan sebagai teks.

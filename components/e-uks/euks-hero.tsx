@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { EuksHeroLogos, type EuksHeroLogoItem } from "@/components/e-uks/euks-hero-logos"
 
 /** Jeda antar slide. Lebih lambat dari default kebanyakan library agar kalem. */
 const SLIDE_MS = 6500
@@ -33,6 +34,8 @@ export type EuksHeroProps = {
   serviceHours: string | null
   contact: string | null
   slides: EuksHeroSlide[]
+  /** Logo institusi untuk overlay kiri atas; kosong berarti tidak dirender. */
+  logos: EuksHeroLogoItem[]
   /** Diisi hanya untuk admin: memunculkan ajakan mengisi foto saat hero kosong. */
   manageHref?: string | null
 }
@@ -58,6 +61,7 @@ export function EuksHero({
   serviceHours,
   contact,
   slides,
+  logos,
   manageHref,
 }: EuksHeroProps) {
   const [index, setIndex] = useState(0)
@@ -181,6 +185,17 @@ export function EuksHero({
             tumpukan foto. Kalau overlay ikut dibatasi, deskripsi panjang akan
             terpotong bersama blok jam layanan dan kontrol carousel. */}
         <div className="relative flex min-h-[52svh] flex-col justify-end gap-5 p-6 sm:p-8 lg:p-10">
+          {/* Logo dipasang di atas dan didorong ke bawah oleh `mb-auto`, bukan
+              dengan absolute positioning. Dengan begitu ia ikut alur flex dan
+              tidak mungkin menindih judul saat logonya banyak dan membungkus ke
+              baris berikutnya di layar sempit. Padding kiri/atasnya pun otomatis
+              sama dengan padding hero. */}
+          {logos.length > 0 ? (
+            <div className="mb-auto">
+              <EuksHeroLogos logos={logos} />
+            </div>
+          ) : null}
+
           <div className="max-w-2xl space-y-3">
             <p className="text-xs font-semibold tracking-[0.18em] text-white/80 uppercase">
               Unit Kesehatan Sekolah

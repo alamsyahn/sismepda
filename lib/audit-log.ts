@@ -19,6 +19,7 @@ export type AuditEntity =
   | "EuksOfficer"
   | "EuksFacility"
   | "EuksHeroImage"
+  | "EuksHeroLogo"
   | "EuksComplaintOption"
 
 export type AuditAction =
@@ -59,6 +60,10 @@ export type AuditAction =
   | "EUKS_HERO_IMAGE_UPDATED"
   | "EUKS_HERO_IMAGE_DELETED"
   | "EUKS_HERO_IMAGE_PHOTO_UPDATED"
+  | "EUKS_HERO_LOGO_CREATED"
+  | "EUKS_HERO_LOGO_UPDATED"
+  | "EUKS_HERO_LOGO_DELETED"
+  | "EUKS_HERO_LOGO_FILE_UPDATED"
   | "EUKS_COMPLAINT_OPTION_CREATED"
   | "EUKS_COMPLAINT_OPTION_UPDATED"
   | "EUKS_SICK_ABSENCE_UPDATED"
