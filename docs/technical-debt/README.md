@@ -82,6 +82,35 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Direction:** In Phase 6, delete the dead helpers together with `User.role`, the `can*` columns and the `"Role"` enum, and remove `requireAdmin()` outright.
 - **Exit criteria:** `lib/auth-guards.ts` no longer exports `requireAdmin`, no source file outside `lib/rbac-legacy.ts` and `tests/` mentions `user.role` or a `can*` column, and the schema no longer carries those columns.
 
+## TD-009 — Teacher deletion is blocked by recorded violation points
+
+- **Area / severity:** User lifecycle/data integrity — **High**
+- **Current condition:** Teacher deletion reassigns homeroom and attendance submissions, then deletes the user, but does not handle `StudentViolationPoint.recordedById`, whose required relation restricts deletion. No violation point has been recorded yet (database check: 0 rows), so the failure is latent rather than currently observable.
+- **Evidence:** `app/api/admin/teachers/route.ts:115-136` (transaction clears `homeroomUserId` and reassigns `submittedById` only); `prisma/schema.prisma:189,196` (`recordedById String` with a non-nullable `recordedBy` relation).
+- **Impact:** Permanent deletion returns a generic failure for any teacher who has recorded a violation point, leaving the advertised lifecycle incomplete.
+- **Reason:** Submission ownership was explicitly reassigned, while violation-point provenance added later has no deletion policy.
+- **Direction:** Define a provenance-preserving policy such as nullable recorder with `SetNull`, reassignment, or prohibiting deletion with a precise explanation.
+- **Exit criteria:** Database-backed tests cover a teacher with violation points; deletion either succeeds under the documented provenance policy or is predictably rejected before the transaction with an actionable response.
+
+## TD-010 — Destructive restore lacks maintenance lock and audit record
+
+- **Area / severity:** Backup/restore — **High**
+- **Current condition:** The ADMIN restore endpoint truncates and reloads application tables while the app may remain writable; it does not append an `AuditLog` record.
+- **Evidence:** `app/api/admin/database/route.ts:42-72`; `lib/audit-log.ts` action/entity list.
+- **Impact:** Concurrent writes can conflict with a recovery operation, and there is no durable application record of who initiated a destructive restore.
+- **Reason:** Restore is implemented as an on-demand web operation without an application maintenance state or restore-specific audit event.
+- **Direction:** Require a controlled maintenance mode, prevent concurrent writes, and record initiation/result with actor and backup metadata that does not expose secrets.
+- **Exit criteria:** Integration tests show writes are blocked during restore, success/failure is auditable, and transaction failure leaves prior data intact.
+
+## TD-011 — Two students still lack demographics for nutrition status
+
+- **Area / severity:** E-UKS health data — **Low** (was Medium; the roster has since been filled in)
+- **Current condition:** A database check reports **838 of 840 students carrying both `birthDate` and `gender`**. Two students remain without demographics, so `nutritionStatus()` returns `no_birth_date`/`no_gender` for those two only.
+- **Evidence:** `birthDate`/`gender` on `model Student`, writable from `/siswa/input` (manual + CSV) and the `/siswa` edit dialog; `lib/euks.ts:149-180` distinguishes the missing-input reasons.
+- **Impact:** Limited to two students, who render an explicit reason rather than a wrong category — the intended behaviour. Not an engineering liability; remaining work is operator data entry.
+- **Reason:** SISMEPDA was built for attendance, where demographics were never required; the roster was filled in after the E-UKS build.
+- **Direction:** Fill the two remaining students through the existing `/siswa` edit dialog.
+- **Exit criteria:** All active students carry both fields; this entry is removed once the last two are filled in.
 ## TD-012 — Two route handlers map authorization failures to HTTP 400
 
 - **Area / severity:** API contract — **Low**
@@ -102,32 +131,3 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Direction:** Authorize at the top of the handler, as `PUT /api/admin/settings` now does, keeping the loader check as defence in depth.
 - **Exit criteria:** An unauthorized request to `/api/attendance-trend` returns 401/403 without reading `schoolSetting`, proven by a direct handler test.
 
-## TD-009 — Teacher deletion is blocked by recorded violation points
-
-- **Area / severity:** User lifecycle/data integrity — **High**
-- **Current condition:** Teacher deletion reassigns attendance submissions, then deletes the user, but does not handle `StudentViolationPoint.recordedById`, whose foreign key restricts deletion.
-- **Evidence:** `app/api/admin/teachers/route.ts:99-123`; `prisma/schema.prisma:144-154`.
-- **Impact:** Permanent deletion returns a generic failure for any teacher who has recorded a violation point, leaving the advertised lifecycle incomplete.
-- **Reason:** Submission ownership was explicitly reassigned, while violation-point provenance added later has no deletion policy.
-- **Direction:** Define a provenance-preserving policy such as nullable recorder with `SetNull`, reassignment, or prohibiting deletion with a precise explanation.
-- **Exit criteria:** Database-backed tests cover a teacher with violation points; deletion either succeeds under the documented provenance policy or is predictably rejected before the transaction with an actionable response.
-
-## TD-010 — Destructive restore lacks maintenance lock and audit record
-
-- **Area / severity:** Backup/restore — **High**
-- **Current condition:** The ADMIN restore endpoint truncates and reloads application tables while the app may remain writable; it does not append an `AuditLog` record.
-- **Evidence:** `app/api/admin/database/route.ts:42-72`; `lib/audit-log.ts` action/entity list.
-- **Impact:** Concurrent writes can conflict with a recovery operation, and there is no durable application record of who initiated a destructive restore.
-- **Reason:** Restore is implemented as an on-demand web operation without an application maintenance state or restore-specific audit event.
-- **Direction:** Require a controlled maintenance mode, prevent concurrent writes, and record initiation/result with actor and backup metadata that does not expose secrets.
-- **Exit criteria:** Integration tests show writes are blocked during restore, success/failure is auditable, and transaction failure leaves prior data intact.
-
-## TD-011 — Student demographics are not filled in yet
-
-- **Area / severity:** E-UKS health data — **Medium**
-- **Current condition:** The schema columns and all three input surfaces now exist, but no student has been filled in yet, so `nutritionStatus()` still returns a reason rather than a category.
-- **Evidence:** `birthDate`/`gender` exist on `model Student` and are writable from `/siswa/input` (manual + CSV) and the `/siswa` edit dialog; a database check reports 840 students with 0 carrying demographics.
-- **Impact:** Nutritional status stays unresolved for every student until the roster is filled in. The reference dataset and the classifier are in place, so this is now the only remaining blocker — and it is operator data entry, not engineering work.
-- **Reason:** SISMEPDA was built for attendance, where student demographics were never required. Filling 840 students is operator work that follows the E-UKS build.
-- **Direction:** Fill the demographics through the existing student screens — CSV import is the practical route for 840 rows, using the optional `tanggal_lahir` and `jenis_kelamin` columns. `nutritionStatus()` already distinguishes `no_birth_date` from `no_gender`, so the missing input is visible per student.
-- **Exit criteria:** Active students carry both fields and `/e-uks/pantauan-kesehatan` shows a real category for them; students still missing the data keep rendering an explicit reason rather than a wrong category.
