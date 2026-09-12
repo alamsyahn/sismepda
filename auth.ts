@@ -7,6 +7,7 @@ import { canViewBos, hasBosPermission } from "@/lib/bos"
 import { canViewSarpras } from "@/lib/sarpras"
 import { canViewEuks } from "@/lib/euks"
 import { clearLoginFailures, consumeLoginAttempt } from "@/lib/login-rate-limit"
+import { isLegacyAdminPrefilterRoute, isPublicRoute } from "@/lib/route-policy"
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
@@ -158,20 +159,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     authorized({ auth, request }) {
       const path = request.nextUrl.pathname
       const loggedIn = Boolean(auth?.user)
-      // Logo aplikasi dipakai pada halaman login yang belum terautentikasi,
-      // jadi pembacaannya harus publik. Penulisannya (PUT/DELETE) tetap
-      // dijaga requireAdmin() di dalam route handler-nya.
-      if (path === "/app-logo" && request.method === "GET") return true
-      if (path === "/login") return loggedIn ? Response.redirect(new URL("/", request.nextUrl)) : true
+      // Kebijakan publik/terautentikasi fail closed: path yang tidak terdaftar
+      // publik selalu menuntut login. Lihat lib/route-policy.ts.
+      if (isPublicRoute(path, request.method)) {
+        if (path === "/login" && loggedIn) {
+          return Response.redirect(new URL("/", request.nextUrl))
+        }
+        return true
+      }
       if (!loggedIn) return false
-      const adminOnly = ["/siswa/input", "/siswa/kelola", "/guru/input", "/guru/kelola", "/wali-kelas/input", "/pengaturan", "/supervisi-buku-kerja/kelola"]
-      // Halaman pengelolaan gabungan: cocokkan persis agar profil siswa/guru
-      // (/siswa/<id>, /guru/<id>, /guru/direktori) tetap terbuka untuk GURU.
-      const adminOnlyExact = ["/siswa", "/guru"]
-      const isAdminRoute =
-        adminOnly.some((route) => path === route || path.startsWith(`${route}/`)) ||
-        adminOnlyExact.includes(path)
-      if (isAdminRoute && auth?.user.role !== "ADMIN") {
+      // Tapis awal legacy berbasis role di dalam JWT. Ini hanya MEMPERSEMPIT;
+      // halaman-halaman ini belum punya guard server sendiri, jadi daftarnya
+      // dipertahankan sampai Phase 4 memindahkannya ke requirePermission().
+      if (isLegacyAdminPrefilterRoute(path) && auth?.user.role !== "ADMIN") {
         return Response.redirect(new URL("/", request.nextUrl))
       }
       // Modul BOS: tapis awal berbasis sesi. Guard sebenarnya tetap di

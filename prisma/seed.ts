@@ -1,9 +1,10 @@
 import "dotenv/config"
 import { hash } from "bcryptjs"
 import { PrismaPg } from "@prisma/adapter-pg"
-import { PrismaClient, Role } from "../app/generated/prisma/client"
+import { PrismaClient, LegacyRole } from "../app/generated/prisma/client"
 import { databaseSchema } from "../lib/database-config"
 import { workbookMasterData } from "../lib/workbook-master"
+import { seedRbac } from "./seed-rbac"
 
 function requiredEnv(name: "DATABASE_URL" | "SEED_ADMIN_EMAIL" | "SEED_ADMIN_PASSWORD") {
   const value = process.env[name]
@@ -28,7 +29,7 @@ async function main() {
     create: {
       email: adminEmail,
       name: "Admin Sekolah",
-      role: Role.ADMIN,
+      role: LegacyRole.ADMIN,
       passwordHash: await hash(adminPassword, 12),
     },
   })
@@ -37,6 +38,7 @@ async function main() {
   }
   await prisma.schoolSetting.upsert({ where: { id: "default" }, update: {}, create: {} })
   await seedWorkbooks()
+  await seedRbac(prisma)
 }
 
 /** Idempotent: re-running keeps a single row per workbook and per item. */

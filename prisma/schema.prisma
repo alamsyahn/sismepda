@@ -7,9 +7,15 @@ datasource db {
   provider = "postgresql"
 }
 
-enum Role {
+/// Enum peran legacy. Simbol Prisma-nya bernama `LegacyRole` supaya nama `Role`
+/// bisa dipakai model RBAC baru, tetapi tipe fisik PostgreSQL tetap `"Role"`
+/// lewat @@map — tidak ada perubahan database untuk enum ini. Dihapus pada
+/// Phase 6, bukan sekarang.
+enum LegacyRole {
   ADMIN
   GURU
+
+  @@map("Role")
 }
 
 /// Jenis kelamin siswa. Diperlukan untuk klasifikasi IMT-menurut-umur
@@ -49,7 +55,7 @@ model User {
   photoData Bytes?
   photoMimeType String?
   photoUpdatedAt DateTime?
-  role Role @default(GURU)
+  role LegacyRole @default(GURU)
   active Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -88,6 +94,16 @@ model User {
   euksVisitsRecorded EuksVisit[] @relation("EuksVisitRecorder")
   healthMeasurementsRecorded StudentHealthMeasurement[] @relation("HealthMeasurementRecorder")
   euksOfficerRoles EuksOfficer[] @relation("EuksOfficerUser")
+  /// Menandai bahwa akun ini juga merupakan record guru (direktori, jadwal,
+  /// wali kelas, buku kerja, kandidat pengurus UKS). Identitas bisnis, BUKAN
+  /// konsep otorisasi: memegang role `guru` tidak menyalakan kolom ini, dan
+  /// kolom ini tidak memberi permission apa pun. Backfill identitas legacy
+  /// dilakukan Phase 3, jadi kode yang membacanya harus tetap benar saat
+  /// seluruh baris masih false.
+  isTeacher Boolean @default(false)
+  /// Keanggotaan role RBAC. Kosong berarti tanpa permission — tidak ada role
+  /// default implisit.
+  rbacRoles UserRole[]
 }
 
 model Subject {
@@ -648,4 +664,99 @@ model SarprasHistory {
   item SarprasItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
   actor User? @relation("SarprasHistoryActor", fields: [actorId], references: [id], onDelete: SetNull)
   @@index([itemId, createdAt])
+}
+
+/// ---------------------------------------------------------------------------
+/// RBAC (Phase 2 — foundation additive)
+///
+/// Tabel di bawah ini ADITIF: belum ada guard produksi yang membacanya. Kolom
+/// legacy (`User.role`, kolom boolean kapabilitas, `workbookSupervised`) tetap
+/// menjadi otoritas runtime sampai Phase 4. Lihat docs/architecture/rbac.md.
+/// ---------------------------------------------------------------------------
+
+/// Sekumpulan permission bernama. User memegang 0..n role; tidak ada role
+/// default implisit dan tidak ada hierarki/inheritance antar role.
+///
+/// Nama fisiknya `RbacRole`, bukan `Role`, karena tipe enum PostgreSQL `"Role"`
+/// sudah ada sejak migration init dan baru dihapus pada Phase 6.
+model Role {
+  id          String           @id @default(cuid())
+  /// Kunci stabil lowercase (`system_admin`, `guru`). Dipakai kode dan seed
+  /// untuk idempotensi; tidak pernah ikut berubah saat `name` diganti admin.
+  key         String           @unique
+  /// Label tampilan yang boleh diubah admin. Sengaja TIDAK unique dan tidak
+  /// pernah dipakai untuk keputusan otorisasi: role bernama "Admin Sistem"
+  /// yang key-nya bukan `system_admin` tidak memperoleh keistimewaan apa pun.
+  name        String
+  description String?
+  /// Role bawaan sistem yang di-seed kode. Tidak boleh dihapus.
+  isSystem    Boolean          @default(false)
+  /// Field identitas (`key`, `isSystem`, `isProtected`) tidak boleh diubah
+  /// lewat payload role generik. Hanya `system_admin` yang memperoleh bypass,
+  /// dan bypass itu ditentukan oleh `key`, bukan oleh kolom ini — menyalin
+  /// role berbendera protected tidak menyalin bypass.
+  isProtected Boolean          @default(false)
+  /// Optimistic concurrency: update role membandingkan versi, penulisan basi
+  /// ditolak 409 alih-alih saling menimpa diam-diam.
+  version     Int              @default(1)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@map("RbacRole")
+}
+
+/// Katalog satu operasi konkret yang benar-benar dicek kode.
+///
+/// Baris di sini adalah cerminan registry TypeScript (`lib/rbac-permissions.ts`);
+/// UI hanya boleh menautkan role ke baris yang sudah ada, tidak pernah mengarang
+/// key baru.
+model Permission {
+  id          String           @id @default(cuid())
+  /// Gabungan `resource.action` atau `resource.action.scope`. Redundan
+  /// terhadap tiga kolom di bawah, tetapi disimpan supaya lookup dan seed
+  /// cukup memakai satu kolom.
+  key         String           @unique
+  resource    String
+  action      String
+  /// Null berarti permission tidak berskala (school-wide), bukan "semua scope".
+  scope       String?
+  label       String
+  description String?
+  /// Pengelompokan untuk UI, mis. `attendance`, `euks`.
+  module      String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  roles       RolePermission[]
+
+  /// Menjamin `key` benar-benar turunan tiga kolom ini: satu kombinasi
+  /// resource+action+scope tidak boleh muncul dua kali dengan key berbeda.
+  @@unique([resource, action, scope])
+  @@index([module])
+}
+
+/// Keanggotaan user pada role. Tidak ada grant permission langsung ke user.
+model UserRole {
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+}
+
+/// Permission yang dimiliki sebuah role. Tidak ada DENY — ketiadaan baris
+/// berarti tidak diberikan.
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime   @default(now())
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
 }

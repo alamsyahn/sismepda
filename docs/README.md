@@ -8,6 +8,7 @@ This directory is the canonical description of the system as it works now. Start
 |---|---|---|
 | Boundaries, stack, request/data flow, module map | [System overview](architecture/overview.md) | Any cross-feature or unfamiliar task |
 | Identity, sessions, roles, capabilities, class scope | [Authentication and authorization](architecture/authentication-authorization.md) | Access, users, protected routes, exports |
+| Target RBAC model, permission catalog, surface policy inventory, migration phases | [Role-based access control](architecture/rbac.md) | Any authorization change, new protected surface, role/permission work |
 | Models, ownership, lifecycle, migrations, binary data | [Database](architecture/database.md) | Schema, queries, backup/restore, data behavior |
 | Runtime topology, external networks, proxy, containers | [Deployment architecture](architecture/deployment.md) | Production/configuration changes |
 
