@@ -245,6 +245,11 @@ model EuksOfficer {
   name String
   /// Jabatan dalam struktur UKS, mis. "Pembina", "Ketua".
   role String
+  /// Foto potret 9:16, disimpan sebagai bytes mengikuti pola User.photoData.
+  /// Override milik modul UKS: tidak pernah menulis foto akun guru.
+  photoData Bytes?
+  photoMimeType String?
+  photoUpdatedAt DateTime?
   sortOrder Int @default(0)
   active Boolean @default(true)
   createdAt DateTime @default(now())
@@ -264,6 +269,10 @@ model EuksFacility {
   /// Jumlah unit bila relevan; null berarti tidak dihitung.
   quantity Int?
   note String?
+  /// Foto utama fasilitas (4:3), bytes seperti SarprasPhoto. Opsional.
+  photoData Bytes?
+  photoMimeType String?
+  photoUpdatedAt DateTime?
   sortOrder Int @default(0)
   active Boolean @default(true)
   createdAt DateTime @default(now())

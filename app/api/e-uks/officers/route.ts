@@ -15,12 +15,17 @@ const createPayload = z.object({
 
 const updatePayload = z.object({
   id: z.string().min(1),
+  // Tautan ke akun guru boleh diubah/dilepas; ini override milik modul UKS dan
+  // tidak pernah menulis apa pun ke akun guru itu sendiri.
+  userId: z.string().min(1).nullable().optional(),
   name: z.string().trim().min(2).max(OFFICER_NAME_MAX).optional(),
   role: z.string().trim().min(2).max(OFFICER_ROLE_MAX).optional(),
   active: z.boolean().optional(),
   /** Geser satu posisi; urutan ditulis ulang rapat agar tidak ada nomor kembar. */
   move: z.enum(["up", "down"]).optional(),
 })
+
+const deletePayload = z.object({ id: z.string().min(1) })
 
 export async function POST(request: Request) {
   try {
@@ -82,7 +87,7 @@ export async function PATCH(request: Request) {
 
     const existing = await prisma.euksOfficer.findUnique({
       where: { id: body.id },
-      select: { id: true, name: true, role: true, active: true, sortOrder: true },
+      select: { id: true, name: true, role: true, active: true, sortOrder: true, userId: true },
     })
     if (!existing) return NextResponse.json({ error: "Pengurus tidak ditemukan" }, { status: 404 })
 
@@ -113,8 +118,24 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ ...existing, sortOrder: neighbour.sortOrder })
     }
 
-    const data: { name?: string; role?: string; active?: boolean } = {}
-    if (body.name !== undefined) data.name = normalizeLabel(body.name)
+    const data: { name?: string; role?: string; active?: boolean; userId?: string | null } = {}
+    if (body.userId !== undefined) {
+      if (body.userId === null) {
+        // Dilepas dari akun: entri menjadi manual, namanya harus ikut dikirim
+        // atau nama tersimpan sebelumnya dipertahankan.
+        data.userId = null
+      } else {
+        const user = await prisma.user.findUnique({
+          where: { id: body.userId },
+          select: { id: true, name: true },
+        })
+        if (!user) return NextResponse.json({ error: "Guru tidak ditemukan" }, { status: 404 })
+        // Nama disalin dari akun; akun guru sendiri tidak pernah ditulis.
+        data.userId = user.id
+        data.name = user.name
+      }
+    }
+    if (body.name !== undefined && data.name === undefined) data.name = normalizeLabel(body.name)
     if (body.role !== undefined) data.role = normalizeLabel(body.role)
     if (body.active !== undefined) data.active = body.active
 
@@ -140,6 +161,48 @@ export async function PATCH(request: Request) {
     })
 
     return NextResponse.json(updated)
+  } catch (error) {
+    const { error: message, status } = euksErrorResponse(error)
+    return NextResponse.json({ error: message }, { status })
+  }
+}
+
+/**
+ * Hapus satu entri pengurus.
+ *
+ * Yang dihapus hanya baris `EuksOfficer`. Akun guru yang tertaut tidak
+ * disentuh sama sekali — kepengurusan UKS adalah relasi, bukan kepemilikan.
+ * Foto ikut terhapus karena tersimpan pada baris yang sama, sehingga tidak ada
+ * berkas yatim yang tertinggal.
+ */
+export async function DELETE(request: Request) {
+  try {
+    const viewer = await requireEuksAdmin()
+    const body = deletePayload.parse(await request.json())
+
+    const existing = await prisma.euksOfficer.findUnique({
+      where: { id: body.id },
+      select: { id: true, name: true, role: true, userId: true },
+    })
+    if (!existing) return NextResponse.json({ error: "Pengurus tidak ditemukan" }, { status: 404 })
+
+    await prisma.$transaction(async (tx) => {
+      await tx.euksOfficer.delete({ where: { id: existing.id } })
+      await recordAuditLog(
+        {
+          actorId: viewer.id,
+          action: "EUKS_OFFICER_DELETED",
+          entity: "EuksOfficer",
+          entityId: existing.id,
+          targetUserId: existing.userId,
+          summary: `Pengurus UKS "${existing.name}" (${existing.role}) dihapus dari daftar`,
+          before: { name: existing.name, role: existing.role, userId: existing.userId },
+        },
+        tx,
+      )
+    })
+
+    return NextResponse.json({ ok: true })
   } catch (error) {
     const { error: message, status } = euksErrorResponse(error)
     return NextResponse.json({ error: message }, { status })

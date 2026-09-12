@@ -38,6 +38,8 @@ const updatePayload = z.object({
   active: z.boolean().optional(),
 })
 
+const deletePayload = z.object({ id: z.string().min(1) })
+
 const SELECT = {
   id: true,
   name: true,
@@ -45,6 +47,7 @@ const SELECT = {
   note: true,
   active: true,
   sortOrder: true,
+  photoUpdatedAt: true,
 } as const
 
 /**
@@ -106,7 +109,7 @@ export async function POST(request: Request) {
   }
 }
 
-/** Fasilitas tidak pernah dihapus, hanya dinonaktifkan. */
+/** Perbarui isi atau status tampil satu fasilitas. */
 export async function PATCH(request: Request) {
   try {
     const viewer = await requireEuksAdmin()
@@ -149,6 +152,47 @@ export async function PATCH(request: Request) {
     })
 
     return NextResponse.json(updated)
+  } catch (error) {
+    const { error: message, status } = euksErrorResponse(error)
+    return NextResponse.json({ error: message }, { status })
+  }
+}
+
+/**
+ * Hapus satu fasilitas beserta fotonya.
+ *
+ * Berbeda dari toggle: menonaktifkan hanya menyembunyikan entri dari Halaman
+ * Utama, sedangkan ini benar-benar melepas slug-nya sehingga nama yang sama
+ * dapat dibuat ulang sebagai entri baru. Tidak ada data lain yang mereferensi
+ * fasilitas, jadi penghapusan tidak menyentuh kunjungan atau inventaris Sarpras.
+ */
+export async function DELETE(request: Request) {
+  try {
+    const viewer = await requireEuksAdmin()
+    const body = deletePayload.parse(await request.json())
+
+    const existing = await prisma.euksFacility.findUnique({
+      where: { id: body.id },
+      select: { id: true, name: true, quantity: true, note: true },
+    })
+    if (!existing) return NextResponse.json({ error: "Fasilitas tidak ditemukan" }, { status: 404 })
+
+    await prisma.$transaction(async (tx) => {
+      await tx.euksFacility.delete({ where: { id: existing.id } })
+      await recordAuditLog(
+        {
+          actorId: viewer.id,
+          action: "EUKS_FACILITY_DELETED",
+          entity: "EuksFacility",
+          entityId: existing.id,
+          summary: `Fasilitas UKS "${existing.name}" dihapus`,
+          before: { name: existing.name, quantity: existing.quantity, note: existing.note },
+        },
+        tx,
+      )
+    })
+
+    return NextResponse.json({ ok: true })
   } catch (error) {
     const { error: message, status } = euksErrorResponse(error)
     return NextResponse.json({ error: message }, { status })

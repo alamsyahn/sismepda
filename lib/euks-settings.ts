@@ -36,6 +36,42 @@ export const PROFILE_DESCRIPTION_MAX = 2000
 export const FACILITY_QUANTITY_MAX = 9999
 
 /**
+ * Batas ukuran foto pengaturan E-UKS, sama dengan Sarpras. Form memeriksanya
+ * lebih dulu untuk pesan cepat; route handler tetap memeriksa ulang.
+ */
+export const MAX_EUKS_PHOTO_BYTES = 2 * 1024 * 1024
+
+/** Rasio potret kartu pengurus, dipakai pratinjau, kompresi, dan tampilan. */
+export const OFFICER_PHOTO_ASPECT = 9 / 16
+
+/** Rasio lanskap foto fasilitas; cocok untuk foto barang/ruangan. */
+export const FACILITY_PHOTO_ASPECT = 4 / 3
+
+/** Sisi terpanjang setelah kompresi klien; cukup untuk kartu dan pratinjau. */
+export const EUKS_PHOTO_MAX_EDGE = 1280
+
+/**
+ * URL foto pengurus. Query `v` memakai waktu pembaruan sehingga mengganti foto
+ * langsung terlihat tanpa menunggu cache browser kedaluwarsa.
+ */
+export function euksOfficerPhotoUrl(
+  id: string,
+  updatedAt: Date | string | null | undefined,
+): string | null {
+  if (!updatedAt) return null
+  return `/api/e-uks/officers/${id}/photo?v=${new Date(updatedAt).getTime()}`
+}
+
+/** URL foto fasilitas; aturan cache-busting sama dengan pengurus. */
+export function euksFacilityPhotoUrl(
+  id: string,
+  updatedAt: Date | string | null | undefined,
+): string | null {
+  if (!updatedAt) return null
+  return `/api/e-uks/facilities/${id}/photo?v=${new Date(updatedAt).getTime()}`
+}
+
+/**
  * Sisipkan satu item ke posisi baru dan hitung ulang sortOrder.
  *
  * Mengembalikan urutan penuh, bukan hanya yang berubah, supaya nomor urut

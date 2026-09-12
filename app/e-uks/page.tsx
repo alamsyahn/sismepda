@@ -7,7 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { EuksTermRanking } from "@/components/e-uks/euks-term-ranking"
 import { EuksMonthlyVisitsChart } from "@/components/e-uks/euks-monthly-visits-chart"
+import { EuksPhotoFrame } from "@/components/e-uks/euks-photo-field"
 import { EuksAccessError, requireEuksViewer } from "@/lib/euks-access"
+import { euksFacilityPhotoUrl, euksOfficerPhotoUrl } from "@/lib/euks-settings"
 import { monthlyVisitCounts, rankTerms, formatMonthLabel } from "@/lib/euks-trends"
 import {
   countDistinctVisitingStudents,
@@ -79,8 +81,16 @@ export default async function EuksHomePage() {
               <CardContent>
                 <ul className="space-y-2">
                   {activeOfficers.map((officer) => (
-                    <li key={officer.id} className="flex items-baseline justify-between gap-3 text-sm">
-                      <span className="truncate font-medium">{officer.user?.name ?? officer.name}</span>
+                    <li key={officer.id} className="flex items-center gap-3 text-sm">
+                      <EuksPhotoFrame
+                        src={euksOfficerPhotoUrl(officer.id, officer.photoUpdatedAt)}
+                        alt={`Foto ${officer.user?.name ?? officer.name}`}
+                        shape="portrait"
+                        className="w-9"
+                      />
+                      <span className="min-w-0 flex-1 truncate font-medium">
+                        {officer.user?.name ?? officer.name}
+                      </span>
                       <span className="text-muted-foreground shrink-0">{officer.role}</span>
                     </li>
                   ))}
@@ -97,8 +107,14 @@ export default async function EuksHomePage() {
               <CardContent>
                 <ul className="space-y-2">
                   {activeFacilities.map((facility) => (
-                    <li key={facility.id} className="flex items-baseline justify-between gap-3 text-sm">
-                      <span className="truncate font-medium">{facility.name}</span>
+                    <li key={facility.id} className="flex items-center gap-3 text-sm">
+                      <EuksPhotoFrame
+                        src={euksFacilityPhotoUrl(facility.id, facility.photoUpdatedAt)}
+                        alt={`Foto ${facility.name}`}
+                        shape="landscape"
+                        className="w-14"
+                      />
+                      <span className="min-w-0 flex-1 truncate font-medium">{facility.name}</span>
                       {facility.quantity !== null ? (
                         <span className="text-muted-foreground shrink-0 tabular-nums">
                           {facility.quantity} unit

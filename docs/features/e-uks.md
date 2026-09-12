@@ -180,14 +180,77 @@ tables created by `20260911160000_add_euks_settings`:
 | Model | Shape | Notes |
 |---|---|---|
 | `EuksProfile` | Singleton, id `"default"` | Name, location, description. Follows the `BosSetting` pattern; all fields nullable until an admin fills them |
-| `EuksOfficer` | List | `userId` is nullable: officers may be a `User` (teacher) or a manually typed student/outsider. `onDelete: SetNull` plus a stored `name` keeps the roster readable after an account is removed |
-| `EuksFacility` | List, unique `slug` | An informational list for the home page, not stock control — inventory belongs to Sarpras |
+| `EuksOfficer` | List | `userId` is nullable: officers may be a `User` (teacher) or a manually typed student/outsider. `onDelete: SetNull` plus a stored `name` keeps the roster readable after an account is removed. Optional 9:16 portrait photo |
+| `EuksFacility` | List, unique `slug` | An informational list for the home page, not stock control — inventory belongs to Sarpras. Optional 4:3 cover photo |
 | `EuksComplaintOption` | List, unique `slug` | Standard complaint spellings offered on the visit form |
 
 Facilities and complaint options reuse the BOS category rules: a case or
 whitespace variant revives the existing row instead of creating a duplicate,
-rows are deactivated rather than deleted, and renames are rejected with 409
-when they would collide with another row.
+and renames are rejected with 409 when they would collide with another row.
+
+Officers and facilities support full CRUD. Toggling and deleting are
+deliberately different actions and both are offered: the switch sets `active`
+(the row stays, it just stops showing on Halaman Utama), while delete removes
+the row permanently behind a confirmation dialog. Deleting an officer removes
+only the `EuksOfficer` row — the linked teacher account is never touched,
+because UKS membership is a relation, not ownership. Complaint options remain
+deactivate-only, since deleting one would orphan nothing but also gains
+nothing: visit history stores complaint text, not a reference.
+
+Edit and delete live behind a `⋮` menu (`components/ui/menu.tsx`, a thin
+wrapper over Base UI `Menu`) rather than inline icons, so a row stays readable
+at a photo thumbnail, name, role, reorder arrows, and toggle.
+
+### Settings photos
+
+Officers and facilities each carry one optional photo, stored as
+`photoData` / `photoMimeType` / `photoUpdatedAt` on their own row by
+`20260912100000_add_euks_settings_photos`. All three columns are nullable with
+no backfill: rows created before the feature simply have no photo and render a
+placeholder.
+
+Bytes live in the row rather than on disk, following `User.photoData` and
+`SarprasPhoto`. That choice answers the file-handling questions structurally
+instead of procedurally — there are no filenames to collide, no orphans when a
+photo is replaced (the update overwrites the same columns) or when a record is
+deleted (the bytes go with the row), no upload directory to mount in
+VPS/Docker, and no path to traverse.
+
+An officer photo is stored on `EuksOfficer`, never on the linked `User`.
+Changing the roster photo of a teacher must not change that teacher's own
+profile picture; the UKS module holds overrides, and it never writes to an
+account.
+
+| Endpoint | Method | Access |
+|---|---|---|
+| `/api/e-uks/officers/[officerId]/photo` | `GET` serve, `PUT` upload/replace, `DELETE` clear | GET `euks.view`; writes ADMIN |
+| `/api/e-uks/facilities/[facilityId]/photo` | `GET` serve, `PUT` upload/replace, `DELETE` clear | GET `euks.view`; writes ADMIN |
+
+`DELETE` clears the photo only and leaves the entry in place, so an admin can
+return a row to the placeholder without recreating it.
+
+The accepted type is decided by `detectProfilePhotoType()` on the file's magic
+bytes, not the client's `Content-Type`, and the limit is
+`MAX_EUKS_PHOTO_BYTES` (2 MB, matching Sarpras) checked on the request body —
+a client-declared header cannot talk past either.
+
+`lib/image-resize.ts` crops cover to the target ratio and shrinks the longest
+edge to 1280 px in the browser before upload, so a 4000 px phone photo does not
+have to be rejected for size. It degrades to the original file if the browser
+lacks `createImageBitmap`, leaving the server checks to decide. The crop is
+cover-to-centre precisely because the display uses `object-cover` — preview and
+stored result then frame identically.
+
+Photo URLs come from `euksOfficerPhotoUrl()` / `euksFacilityPhotoUrl()`, which
+return `null` when `photoUpdatedAt` is null (so a photoless row renders the
+placeholder instead of requesting a certain 404) and otherwise append
+`?v=<timestamp>` so a replaced photo appears immediately rather than after the
+browser cache expires. List queries select `photoUpdatedAt` only, never the
+blob.
+
+Upload is a second request after the row exists. If it fails, the officer or
+facility is still saved without a photo and the toast says so — the failure
+mode is a complete row missing a picture, never a half-written record.
 
 The officer display name prefers the linked account's current name, so
 renaming a teacher does not leave a stale roster; the stored `name` is only
@@ -254,6 +317,8 @@ age outside the reference range.
 `POST /api/e-uks/measurements` records one measurement (409 when that student already has one on that date); `DELETE /api/e-uks/measurements/[measurementId]` removes one. Both require `euks.edit` and write an `AuditLog` entry in the same transaction.
 
 `POST /api/e-uks/visits` creates a visit; `PATCH`/`DELETE /api/e-uks/visits/[visitId]` edit and remove one. All three require `euks.edit`, validate with zod, reject inactive students, and append an `AuditLog` entry (`EUKS_VISIT_CREATED`/`UPDATED`/`DELETED`) inside the same transaction as the change. Clients refresh via `router.refresh()` rather than optimistic updates.
+
+`/api/e-uks/officers` and `/api/e-uks/facilities` each expose `POST` (create), `PATCH` (edit fields, toggle `active`, or `move` one position) and `DELETE` (remove the row), all ADMIN-only and each writing an `AuditLog` entry (`EUKS_OFFICER_*`/`EUKS_FACILITY_*`, including `_PHOTO_UPDATED`) in the same transaction. The photo sub-routes are described under Settings photos.
 
 ## Open reference-data requirement
 

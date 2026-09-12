@@ -65,12 +65,23 @@ export async function readEuksSettings() {
         active: true,
         sortOrder: true,
         userId: true,
+        // Hanya penanda waktu foto yang diambil, bukan byte-nya: daftar tidak
+        // boleh menarik seluruh gambar ke memori server.
+        photoUpdatedAt: true,
         user: { select: { name: true, active: true } },
       },
     }),
     prisma.euksFacility.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, quantity: true, note: true, active: true, sortOrder: true },
+      select: {
+        id: true,
+        name: true,
+        quantity: true,
+        note: true,
+        active: true,
+        sortOrder: true,
+        photoUpdatedAt: true,
+      },
     }),
     prisma.euksComplaintOption.findMany({
       orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
