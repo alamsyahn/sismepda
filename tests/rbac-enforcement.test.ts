@@ -226,7 +226,7 @@ test("workbook: tautan sendiri terpisah dari supervisi", () => {
 
 test("nav: menu berasal dari permission, bukan nama peran", () => {
   const hrefs = (grants: readonly string[]) =>
-    flattenNav(visibleNavEntries(mainNav, { role: "GURU", grants })).map((item) => item.href)
+    flattenNav(visibleNavEntries(mainNav, { grants })).map((item) => item.href)
 
   const guruHrefs = hrefs([
     "attendance.dashboard.read.assigned_classes",
@@ -242,7 +242,7 @@ test("nav: menu berasal dari permission, bukan nama peran", () => {
 })
 
 test("nav: zero-role tidak melihat satu pun menu yang dijaga", () => {
-  const entries = visibleNavEntries(mainNav, { role: "GURU", grants: [] })
+  const entries = visibleNavEntries(mainNav, { grants: [] })
   const hrefs = flattenNav(entries).map((item) => item.href)
 
   for (const guarded of ["/", "/absensi/input", "/siswa", "/guru", "/laporan-whatsapp"]) {
@@ -252,7 +252,6 @@ test("nav: zero-role tidak melihat satu pun menu yang dijaga", () => {
 
 test("nav: group tanpa anak yang terlihat tidak dirender", () => {
   const entries = visibleNavEntries(mainNav, {
-    role: "GURU",
     grants: ["attendance.read.assigned_classes"],
   })
   const ids = entries.filter((entry) => "children" in entry).map((entry) => (entry as { id: string }).id)
@@ -262,7 +261,7 @@ test("nav: group tanpa anak yang terlihat tidak dirender", () => {
 
 test("nav: item tanpa daftar permission tetap terbuka bagi sesi yang sah", () => {
   const profil = { title: "Profil", href: "/profil", icon: mainNav[0].icon, description: "" }
-  assert.equal(canSeeNavItem(profil as never, { role: "GURU", grants: [] }), true)
+  assert.equal(canSeeNavItem(profil as never, { grants: [] }), true)
 })
 
 // ---------------------------------------------------------------------------

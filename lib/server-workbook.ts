@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma"
+import { teacherPopulationWhere } from "@/lib/teacher-population"
 import {
   aggregateWorkbookPercent,
   completionState,
@@ -93,7 +94,7 @@ export async function readSupervisionOverview(): Promise<SupervisionOverview> {
   const [workbooks, teachers, links, statuses] = await Promise.all([
     readWorkbookMaster(),
     prisma.user.findMany({
-      where: { role: { in: ["ADMIN", "GURU"] }, workbookSupervised: true },
+      where: { ...teacherPopulationWhere(), workbookSupervised: true },
       select: { id: true, name: true, nip: true, active: true, photoUpdatedAt: true },
       orderBy: { name: "asc" },
     }),

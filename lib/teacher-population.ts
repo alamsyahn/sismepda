@@ -21,14 +21,16 @@ import { resolveAccountTargetPrivilege } from "@/lib/account-privilege"
 /**
  * Filter Prisma untuk populasi guru.
  *
- * Catatan transisi: baris legacy yang belum di-backfill masih memiliki
- * `role = "GURU"` dengan `isTeacher = false`. Backfill identitas dijadwalkan
- * Phase 3/5; sampai itu terjadi, keduanya diterima agar direktori tidak
- * mendadak kosong. Kolom legacy TIDAK dipakai untuk keputusan otorisasi —
- * hanya untuk menentukan keanggotaan populasi.
+ * Sumber tunggal: `User.isTeacher`. Backfill identitas legacy sudah COMPLETED,
+ * sehingga cabang `role = "GURU"` tidak lagi menjangkau baris mana pun —
+ * mempertahankannya hanya menyisakan sumber kebenaran kedua yang bisa
+ * menyimpang diam-diam.
+ *
+ * Kolom `User.role` sengaja TIDAK di-drop (Phase 6 menunda kontraksi skema);
+ * ia sekadar berhenti dibaca.
  */
-export function teacherPopulationWhere(): { OR: Array<{ isTeacher: boolean } | { role: "GURU" }> } {
-  return { OR: [{ isTeacher: true }, { role: "GURU" }] }
+export function teacherPopulationWhere(): { isTeacher: boolean } {
+  return { isTeacher: true }
 }
 
 /**

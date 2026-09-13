@@ -74,13 +74,13 @@ Only verified, unresolved engineering liabilities are listed here.
 
 ## TD-008 — Legacy role/capability columns still exist but no longer authorize
 
-- **Area / severity:** Authorization — **Low** (was Medium; domain modules resolved in Phase 5)
-- **Current condition:** Every application surface authorizes through `lib/rbac-access.ts` against the current database. `requireAdmin()` in `lib/auth-guards.ts` and the pure helpers in `lib/euks.ts`, `lib/sarpras.ts`, `lib/workbook.ts`, `lib/teacher-profile.ts` still contain "ADMIN always passes" logic, but a repo-wide grep confirms **no runtime call sites** — they are referenced only by their own definitions and by tests. `User.role` and the `can*` columns are still written by existing UIs and read by `lib/rbac-legacy.ts` for one-time backfill parity.
-- **Evidence:** `lib/auth-guards.ts:12-16`; `lib/euks.ts:31`; `lib/sarpras.ts:32`; `lib/workbook.ts:150`; `lib/teacher-profile.ts:45`.
-- **Impact:** No live authorization impact. The risk is future regression: a new handler could import one of these helpers and silently reintroduce JWT-role authority.
+- **Area / severity:** Authorization — **Low**
+- **Current condition:** Every application surface authorizes through `lib/rbac-access.ts` against the current database. `requireAdmin()` and `lib/auth-guards.ts` were deleted. The pure helpers in `lib/euks.ts`, `lib/sarpras.ts`, `lib/workbook.ts`, `lib/teacher-profile.ts` still contain "ADMIN always passes" logic, but a repo-wide grep confirms **zero runtime call sites** — they are referenced only by their own definitions, by `lib/rbac-legacy.ts` and by tests. Legacy columns are no longer read for *population* either: `teacherPopulationWhere()` and `readSupervisionOverview()` now select on `isTeacher` alone, and `NavViewer` no longer accepts legacy fields. `User.role` and the `can*` columns remain written by existing UIs (`/api/workbooks/scope`) and read by `lib/rbac-legacy.ts` for backfill parity.
+- **Evidence:** `lib/euks.ts:31`; `lib/sarpras.ts:32`; `lib/workbook.ts:150`; `lib/teacher-profile.ts:44`; writer at `app/api/workbooks/scope/route.ts:37-39`.
+- **Impact:** No live authorization impact and no live population impact. The remaining risk is future regression: a new handler could import one of these helpers and silently reintroduce JWT-role authority.
 - **Reason:** The columns are retained through one release cycle so the backfill remains re-verifiable; deleting the dead helpers early would break the parity mapping and its tests.
-- **Direction:** In Phase 6, delete the dead helpers together with `User.role`, the `can*` columns and the `"Role"` enum, and remove `requireAdmin()` outright.
-- **Exit criteria:** `lib/auth-guards.ts` no longer exports `requireAdmin`, no source file outside `lib/rbac-legacy.ts` and `tests/` mentions `user.role` or a `can*` column, and the schema no longer carries those columns.
+- **Direction:** Once the backfill no longer needs to be re-verifiable, delete the dead helpers together with `User.role`, the `can*` columns and the `"Role"` enum, and migrate `/api/workbooks/scope` to RBAC.
+- **Exit criteria:** No source file outside `lib/rbac-legacy.ts` and `tests/` mentions `user.role` or a `can*` column — **still unmet**: `app/api/workbooks/scope/route.ts` writes `canSuperviseWorkbooks`/`canViewWorkbookSupervision` — and the schema no longer carries those columns.
 
 ## TD-009 — Teacher deletion is blocked by recorded violation points
 

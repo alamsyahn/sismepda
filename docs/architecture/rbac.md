@@ -70,7 +70,7 @@ Invariants:
 
 ## Identity separation
 
-- `User.isTeacher` marks teacher records. Teacher directory, homeroom candidates, schedule/duty editing targets, workbook supervision population, E-UKS officer candidates and the `teachers` export select on `isTeacher = true`, not on role membership.
+- `User.isTeacher` marks teacher records. Teacher directory, homeroom candidates, schedule/duty editing targets, workbook supervision population, E-UKS officer candidates and the `teachers` export select on `isTeacher = true`, not on role membership. `teacherPopulationWhere()` is the single source for that filter; it does **not** fall back to `role = "GURU"` (the legacy backfill is `COMPLETED`, and the narrowing was verified to change zero rows).
 - Holding the `guru` role does not set `isTeacher`; having `isTeacher` does not grant permissions.
 - `workbookSupervised` stays a business attribute (include in supervision population). `EuksOfficer.role` stays a free-text UKS position.
 - `siswa` and `wali_murid` may exist as roles, but until a `User↔Student` link and a parent↔child resolver exist their templates hold only the authenticated-public set. No student/parent account creation path exists in HEAD.

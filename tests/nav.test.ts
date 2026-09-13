@@ -52,12 +52,20 @@ const GURU_GRANTS = [
   "teachers.directory.read",
 ]
 
-const admin = { role: "ADMIN" as const, grants: ADMIN_GRANTS }
-const guru = { role: "GURU" as const, grants: GURU_GRANTS }
+const admin = { grants: ADMIN_GRANTS }
+const guru = { grants: GURU_GRANTS }
 const guruSupervisor = {
-  role: "GURU" as const,
   grants: [...GURU_GRANTS, "workbook.supervision.read"],
 }
+
+/**
+ * Menyuntikkan kolom legacy yang SUDAH TIDAK ADA di `NavViewer`.
+ *
+ * Dipakai khusus untuk membuktikan bahwa flag legacy tidak memberi akses.
+ * Cast diperlukan justru karena tipenya sudah dipersempit — itulah buktinya.
+ */
+const withLegacy = (viewer: { grants: readonly string[] }, legacy: Record<string, unknown>) =>
+  ({ ...viewer, ...legacy }) as Parameters<typeof visibleNavEntries>[1]
 
 
 test("dashboard tetap top-level dan terlihat untuk semua role", () => {
@@ -153,8 +161,8 @@ test("BOS hanya terlihat dari grant RBAC terkini", () => {
     flattenNav(visibleNavEntries(mainNav, viewer)).map((item) => item.href)
 
   assert.ok(!hrefs(guru).includes("/bos"), "GURU polos tidak boleh melihat menu BOS")
-  assert.ok(hrefs({ role: "GURU", grants: [...GURU_GRANTS, "bos.read"] }).includes("/bos"))
-  assert.ok(!hrefs({ role: "GURU", grants: GURU_GRANTS, canViewBos: true }).includes("/bos"))
+  assert.ok(hrefs({ grants: [...GURU_GRANTS, "bos.read"] }).includes("/bos"))
+  assert.ok(!hrefs(withLegacy({ grants: GURU_GRANTS }, { canViewBos: true })).includes("/bos"))
 })
 
 test("BOS adalah menu utama tepat di bawah E-UKS", () => {
@@ -190,7 +198,7 @@ test("E-UKS adalah group di antara Kurikulum dan BOS", () => {
 
 test("submenu E-UKS mengikuti permission masing-masing", () => {
   const hrefs = (grants: readonly string[]) =>
-    flattenNav(visibleNavEntries(mainNav, { role: "GURU", grants })).map((item) => item.href)
+    flattenNav(visibleNavEntries(mainNav, { grants })).map((item) => item.href)
 
   assert.ok(!hrefs(GURU_GRANTS).includes("/e-uks"))
   assert.ok(hrefs([...GURU_GRANTS, "euks.content.read"]).includes("/e-uks"))
@@ -203,8 +211,9 @@ test("Pengaturan E-UKS tampil dari permission konfigurasi, bukan ADMIN legacy", 
   const hrefs = (viewer: Parameters<typeof visibleNavEntries>[1]) =>
     flattenNav(visibleNavEntries(mainNav, viewer)).map((item) => item.href)
 
-  assert.ok(hrefs({ role: "GURU", grants: [...GURU_GRANTS, "euks.profile.update"] }).includes("/e-uks/pengaturan"))
-  assert.ok(!hrefs({ role: "ADMIN", grants: GURU_GRANTS }).includes("/e-uks/pengaturan"))
+  assert.ok(hrefs({ grants: [...GURU_GRANTS, "euks.profile.update"] }).includes("/e-uks/pengaturan"))
+  // Nama peran ADMIN legacy tidak memberi akses apa pun.
+  assert.ok(!hrefs(withLegacy({ grants: GURU_GRANTS }, { role: "ADMIN" })).includes("/e-uks/pengaturan"))
 })
 
 test("active state E-UKS bekerja untuk seluruh route modul", () => {
@@ -253,8 +262,8 @@ test("Sarpras hanya terlihat dari grant read RBAC terkini", () => {
     flattenNav(visibleNavEntries(mainNav, viewer)).map((item) => item.href)
 
   assert.ok(!hrefs(guru).includes("/sarpras"), "GURU polos tidak boleh melihat menu Sarpras")
-  assert.ok(hrefs({ role: "GURU", grants: [...GURU_GRANTS, "sarpras.read"] }).includes("/sarpras"))
-  assert.ok(!hrefs({ role: "GURU", grants: GURU_GRANTS, canEditSarpras: true }).includes("/sarpras"))
+  assert.ok(hrefs({ grants: [...GURU_GRANTS, "sarpras.read"] }).includes("/sarpras"))
+  assert.ok(!hrefs(withLegacy({ grants: GURU_GRANTS }, { canEditSarpras: true })).includes("/sarpras"))
 })
 
 test("route Sarpras aktif termasuk sub-halaman akses", () => {

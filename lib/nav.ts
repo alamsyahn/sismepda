@@ -58,19 +58,6 @@ export type NavEntry = NavItem | NavGroup
 export type NavViewer = {
   /** Grant efektif pemakai, hasil authorization context database terkini. */
   grants: ReadonlySet<string> | readonly string[]
-  /** Dipertahankan sementara untuk kompatibilitas pemanggil; bukan authority. */
-  role?: "ADMIN" | "GURU"
-  canSuperviseWorkbooks?: boolean
-  canViewWorkbookSupervision?: boolean
-  canViewBos?: boolean
-  canCreateBos?: boolean
-  canEditBos?: boolean
-  canManageBosCategories?: boolean
-  canManageBosAccess?: boolean
-  canViewSarpras?: boolean
-  canEditSarpras?: boolean
-  canViewEuks?: boolean
-  canEditEuks?: boolean
 }
 
 export function isNavGroup(entry: NavEntry): entry is NavGroup {
