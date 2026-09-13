@@ -108,11 +108,25 @@ export function createRoleStore(tx: TransactionClient, actorId: string): RoleSto
       })
       return toRoleRecord(role)
     },
-    updateRole: async (id, data) => {
-      if (data.permissionKeys !== undefined) {
-        const permissionIds = await resolvePermissionIds(tx, data.permissionKeys)
-        // Ganti seluruh himpunan: selisih dihitung service, dan penulisan ulang
-        // menyeluruh menghindari baris yatim bila dua permintaan bersilangan.
+    updateRole: async (id, expectedVersion, data) => {
+      const permissionIds =
+        data.permissionKeys === undefined
+          ? null
+          : await resolvePermissionIds(tx, data.permissionKeys)
+
+      // Klaim versi secara atomik. Dua transaksi yang membaca versi sama tidak
+      // bisa sama-sama memperoleh count=1; penulis kedua mendapat null → 409.
+      const claimed = await tx.role.updateMany({
+        where: { id, version: expectedVersion },
+        data: {
+          ...(data.name === undefined ? {} : { name: data.name }),
+          ...(data.description === undefined ? {} : { description: data.description }),
+          version: { increment: 1 },
+        },
+      })
+      if (claimed.count !== 1) return null
+
+      if (permissionIds !== null) {
         await tx.rolePermission.deleteMany({ where: { roleId: id } })
         if (permissionIds.length > 0) {
           await tx.rolePermission.createMany({
@@ -121,22 +135,12 @@ export function createRoleStore(tx: TransactionClient, actorId: string): RoleSto
         }
       }
 
-      const role = await tx.role.update({
-        where: { id },
-        data: {
-          ...(data.name === undefined ? {} : { name: data.name }),
-          ...(data.description === undefined ? {} : { description: data.description }),
-          // Setiap mutasi menaikkan versi; inilah yang membuat penulisan basi
-          // tertolak 409 pada percobaan berikutnya.
-          version: { increment: 1 },
-        },
-        select: roleSelect,
-      })
+      const role = await tx.role.findUniqueOrThrow({ where: { id }, select: roleSelect })
       return toRoleRecord(role)
     },
-    deleteRole: async (id) => {
-      await tx.rolePermission.deleteMany({ where: { roleId: id } })
-      await tx.role.delete({ where: { id } })
+    deleteRole: async (id, expectedVersion) => {
+      const deleted = await tx.role.deleteMany({ where: { id, version: expectedVersion } })
+      return deleted.count === 1
     },
     removeAllMembers: async (id) => {
       const result = await tx.userRole.deleteMany({ where: { roleId: id } })

@@ -126,6 +126,10 @@ test("account nav: profil terbuka, pengaturan menerima setiap domain yang dirend
     "/pengaturan",
     "/pengaturan/pengguna",
     "/pengaturan/akses",
+    "/pengaturan/audit",
+  ])
+  assert.deepEqual(accountNav.find((item) => item.href === "/pengaturan/audit")?.permissions, [
+    "rbac.audit.read",
   ])
   // "Profil Saya" sengaja tanpa daftar permission: setiap sesi sah memilikinya.
   // Administrasi RBAC TIDAK boleh ikut kategori ini — bila salah satu kehilangan

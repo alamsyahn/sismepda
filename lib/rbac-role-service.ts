@@ -64,9 +64,10 @@ export type RoleStore = {
   }): Promise<RoleRecord>
   updateRole(
     id: string,
+    expectedVersion: number,
     data: { name?: string; description?: string | null; permissionKeys?: string[] },
-  ): Promise<RoleRecord>
-  deleteRole(id: string): Promise<void>
+  ): Promise<RoleRecord | null>
+  deleteRole(id: string, expectedVersion: number): Promise<boolean>
   removeAllMembers(id: string): Promise<number>
   recordAudit(entry: RoleAuditEntry): Promise<void>
 }
@@ -87,13 +88,15 @@ export type ServiceActor = AuthorityActor & { id: string }
 
 const KEY_PATTERN = /^[a-z][a-z0-9_]*$/
 
+function staleVersionError(): RoleMutationError {
+  return new RoleMutationError(
+    409,
+    "Role telah diubah pihak lain. Muat ulang dan tinjau perubahan sebelum menyimpan.",
+  )
+}
+
 function assertVersion(role: RoleRecord, expectedVersion: number): void {
-  if (role.version !== expectedVersion) {
-    throw new RoleMutationError(
-      409,
-      "Role telah diubah pihak lain. Muat ulang dan tinjau perubahan sebelum menyimpan.",
-    )
-  }
+  if (role.version !== expectedVersion) throw staleVersionError()
 }
 
 async function loadRole(store: RoleStore, roleId: string): Promise<RoleRecord> {
@@ -116,6 +119,13 @@ function assertPermissionSetAllowed(input: {
   const nextSet = new Set(input.next)
   const added = [...nextSet].filter((key) => !currentSet.has(key))
   const removed = [...currentSet].filter((key) => !nextSet.has(key))
+
+  // Validasi SELURUH payload final, bukan hanya delta. Baris permission stale
+  // yang masih ada di database tidak boleh dilewatkan kembali oleh klien.
+  const unknown = [...nextSet].filter((key) => !isKnownPermission(key))
+  if (unknown.length > 0) {
+    throw new RoleMutationError(400, `Permission tidak dikenal: ${unknown.join(", ")}.`)
+  }
 
   const denial = assertRoleMutationAllowed({
     actor: input.actor,
@@ -229,7 +239,8 @@ export async function updateRoleProfile(
     return role
   }
 
-  const updated = await store.updateRole(role.id, { name, description: input.description })
+  const updated = await store.updateRole(role.id, input.expectedVersion, { name, description: input.description })
+  if (!updated) throw staleVersionError()
 
   await store.recordAudit({
     action: "RBAC_ROLE_UPDATED",
@@ -265,7 +276,8 @@ export async function updateRolePermissions(
     return role
   }
 
-  const updated = await store.updateRole(role.id, { permissionKeys: input.permissionKeys })
+  const updated = await store.updateRole(role.id, input.expectedVersion, { permissionKeys: input.permissionKeys })
+  if (!updated) throw staleVersionError()
 
   await store.recordAudit({
     action: "RBAC_ROLE_PERMISSIONS_CHANGED",
@@ -342,7 +354,8 @@ export async function deleteRole(
   // Pencabutan dan penghapusan berada dalam satu transaksi pemanggil, sehingga
   // tidak mungkin tersisa keanggotaan yang menunjuk role yang sudah hilang.
   const revokedMemberCount = memberCount > 0 ? await store.removeAllMembers(role.id) : 0
-  await store.deleteRole(role.id)
+  const deleted = await store.deleteRole(role.id, input.expectedVersion)
+  if (!deleted) throw staleVersionError()
 
   await store.recordAudit({
     action: "RBAC_ROLE_DELETED",

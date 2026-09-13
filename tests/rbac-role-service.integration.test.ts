@@ -76,14 +76,18 @@ describe("integrasi service RBAC (database nyata)", { skip: enabled ? false : "D
       createRole: async () => {
         throw new Error("tidak dipakai")
       },
-      updateRole: async (id, data) => {
-        const role = await tx.role.update({
-          where: { id },
+      updateRole: async (id, expectedVersion, data) => {
+        const claimed = await tx.role.updateMany({
+          where: { id, version: expectedVersion },
           data: {
             ...(data.name === undefined ? {} : { name: data.name }),
             ...(data.description === undefined ? {} : { description: data.description }),
             version: { increment: 1 },
           },
+        })
+        if (claimed.count !== 1) return null
+        const role = await tx.role.findUniqueOrThrow({
+          where: { id },
           select: {
             id: true, key: true, name: true, description: true,
             isSystem: true, isProtected: true, version: true,
@@ -91,8 +95,9 @@ describe("integrasi service RBAC (database nyata)", { skip: enabled ? false : "D
         })
         return { ...role, permissionKeys: [], memberIds: [] }
       },
-      deleteRole: async (id) => {
-        await tx.role.delete({ where: { id } })
+      deleteRole: async (id, expectedVersion) => {
+        const deleted = await tx.role.deleteMany({ where: { id, version: expectedVersion } })
+        return deleted.count === 1
       },
       removeAllMembers: async (id) => {
         const result = await tx.userRole.deleteMany({ where: { roleId: id } })

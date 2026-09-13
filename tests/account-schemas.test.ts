@@ -3,6 +3,7 @@ import { test } from "node:test"
 
 import {
   AUTHORIZATION_FIELDS,
+  accountAdminMutationSchema,
   ownProfileUpdateSchema,
   passwordUpdateSchema,
 } from "../lib/account-schemas"
@@ -69,4 +70,11 @@ test("ganti password sendiri tidak menerima userId target", () => {
     userId: "korban-1",
   })
   assert.equal(result.success, false)
+})
+
+test("administrasi akun menerima tepat satu jenis mutasi", () => {
+  assert.equal(accountAdminMutationSchema.safeParse({ password: "rahasia-baru" }).success, true)
+  assert.equal(accountAdminMutationSchema.safeParse({ active: false }).success, true)
+  assert.equal(accountAdminMutationSchema.safeParse({ password: "rahasia-baru", active: false }).success, false)
+  assert.equal(accountAdminMutationSchema.safeParse({}).success, false)
 })

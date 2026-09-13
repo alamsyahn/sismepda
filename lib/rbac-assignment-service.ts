@@ -134,7 +134,9 @@ export async function updateUserRoles(
   }
 
   // Aktor non-system tidak boleh mendelegasikan role yang memuat kewenangan
-  // sensitif — itu setara memberikan kewenangan itu sendiri.
+  // sensitif — itu setara memberikan kewenangan itu sendiri. Untuk role biasa,
+  // setiap permission yang DIBERIKAN harus sudah dimiliki aktor; memiliki hak
+  // mengatur assignment bukan kuasa untuk menciptakan kewenangan baru.
   if (!input.actor.isSystemAdmin) {
     const sensitiveRole = [...added, ...removed].find((role) =>
       role.permissionKeys.some(isSensitiveAuthority),
@@ -143,6 +145,16 @@ export async function updateUserRoles(
       throw new AssignmentError(
         403,
         `Role ${sensitiveRole.name} memuat kewenangan sensitif dan hanya dapat diatur Admin Sistem.`,
+      )
+    }
+
+    const beyondOwnAuthority = added.flatMap((role) =>
+      role.permissionKeys.filter((key) => !input.actor.grants.has(key)),
+    )
+    if (beyondOwnAuthority.length > 0) {
+      throw new AssignmentError(
+        403,
+        `Anda tidak dapat memberikan permission yang tidak Anda miliki: ${[...new Set(beyondOwnAuthority)].join(", ")}.`,
       )
     }
   }

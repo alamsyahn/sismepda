@@ -53,16 +53,20 @@ function makeStore(seed: StoredRole[] = []) {
       roles.set(role.id, role)
       return structuredClone(role)
     },
-    updateRole: async (id, data) => {
+    updateRole: async (id, expectedVersion, data) => {
       const role = roles.get(id)!
+      if (role.version !== expectedVersion) return null
       if (data.name !== undefined) role.name = data.name
       if (data.description !== undefined) role.description = data.description
       if (data.permissionKeys !== undefined) role.permissionKeys = [...data.permissionKeys]
       role.version += 1
       return structuredClone(role)
     },
-    deleteRole: async (id) => {
+    deleteRole: async (id, expectedVersion) => {
+      const role = roles.get(id)
+      if (!role || role.version !== expectedVersion) return false
       roles.delete(id)
+      return true
     },
     removeAllMembers: async (id) => {
       const role = roles.get(id)!
@@ -244,6 +248,24 @@ test("perubahan permission menghormati batas kewenangan aktor", async () => {
       }),
     (error: RoleMutationError) => error.status === 403,
   )
+})
+
+test("permission tak dikenal pada set final ditolak meski sudah tersimpan", async () => {
+  const role = ordinary("role-1")
+  role.permissionKeys = ["bos.read", "permission.stale"]
+  const { store, roles } = makeStore([role])
+
+  await assert.rejects(
+    () =>
+      updateRolePermissions(store, {
+        actor: systemAdmin,
+        roleId: "role-1",
+        expectedVersion: 3,
+        permissionKeys: ["bos.read", "permission.stale"],
+      }),
+    (error: RoleMutationError) => error.status === 400 && /tidak dikenal/i.test(error.message),
+  )
+  assert.deepEqual(roles.get("role-1")!.permissionKeys, ["bos.read", "permission.stale"])
 })
 
 test("payload permission ditolak seluruhnya, bukan disaring sebagian", async () => {

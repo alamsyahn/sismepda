@@ -1,10 +1,15 @@
 import { hash } from "bcryptjs"
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { requirePermission, requireUser } from "@/lib/rbac-access"
+import { getAuthorizationContext, requirePermission } from "@/lib/rbac-access"
 import { ApiError, authFailureResponse } from "@/lib/api-errors"
-import { assertTargetNotPrivileged, teacherPopulationWhere } from "@/lib/teacher-population"
+import { teacherPopulationWhere } from "@/lib/teacher-population"
 import { prisma } from "@/lib/prisma"
+import { verifySameOrigin } from "@/lib/same-origin"
+import { lockSystemAdminPopulation } from "@/lib/rbac-invariants-db"
+import { resolveAccountTargetPrivilege } from "@/lib/account-privilege"
+import { assertAccountMutationAllowed } from "@/lib/rbac-invariants"
+import { recordAuditLog } from "@/lib/audit-log"
 
 const optionalNip = z.string().trim().max(30).refine((value) => !value || /^\d+$/.test(value), "NIP hanya boleh berisi angka")
 const optionalEmail = z.string().trim().max(254).refine(
@@ -27,15 +32,15 @@ const teacherCreate = z.object({
   path: ["nip"],
 })
 
-const teacherUpdate = z.object({
-  id: z.string().min(1),
-  nip: optionalNip.optional(),
-  email: optionalEmail.optional(),
-  name: z.string().trim().min(1).max(100).optional(),
-  phone: optionalPhone.optional(),
-  password: z.string().min(8).max(128).optional(),
-  active: z.boolean().optional(),
-})
+const teacherUpdate = z
+  .object({
+    id: z.string().min(1),
+    nip: optionalNip.optional(),
+    email: optionalEmail.optional(),
+    name: z.string().trim().min(1).max(100).optional(),
+    phone: optionalPhone.optional(),
+  })
+  .strict()
 
 const teacherSelect = {
   id: true,
@@ -63,42 +68,88 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
+    const origin = verifySameOrigin(request)
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status })
+
     const body = teacherUpdate.parse(await request.json())
-
-    // Kewenangan dipecah per jenis perubahan: menyunting data akun tidak
-    // otomatis memberi hak mereset sandi/e-mail atau mengaktifkan akun.
     await requirePermission("teachers.accounts.update")
-    if (body.password !== undefined || body.email !== undefined) {
-      await requirePermission("accounts.credentials.manage")
-    }
-    if (body.active !== undefined) {
-      await requirePermission("accounts.status.manage")
-    }
-    await assertTargetNotPrivileged(body.id)
+    if (body.email !== undefined) await requirePermission("accounts.credentials.manage")
 
-    const existing = await prisma.user.findFirst({
-      where: { id: body.id, ...teacherPopulationWhere() },
-      select: { nip: true, email: true },
-    })
-    if (!existing) throw new ApiError(404, "Guru tidak ditemukan")
-    const nip = body.nip === undefined ? existing.nip : body.nip || null
-    const email = body.email === undefined ? existing.email : body.email ? body.email.toLowerCase() : null
-    if (!nip && !email) {
-      return NextResponse.json({ error: "Minimal salah satu NIP atau email wajib diisi" }, { status: 400 })
-    }
+    const authorization = await getAuthorizationContext()
+    const updated = await prisma.$transaction(async (tx) => {
+      // Assignment role dan mutasi identitas berbagi lock ini. Fakta privilege
+      // target dibaca sesudah lock agar tidak stale saat penulisan berlangsung.
+      await lockSystemAdminPopulation(tx)
+      const existing = await tx.user.findFirst({
+        where: { id: body.id, ...teacherPopulationWhere() },
+        select: {
+          ...teacherSelect,
+          rbacRoles: {
+            select: {
+              role: {
+                select: {
+                  key: true,
+                  isProtected: true,
+                  permissions: { select: { permission: { select: { key: true } } } },
+                },
+              },
+            },
+          },
+        },
+      })
+      if (!existing) throw new ApiError(404, "Guru tidak ditemukan")
 
-    const updated = await prisma.user.update({
-      where: { id: body.id },
-      data: {
-        ...(body.nip !== undefined ? { nip } : {}),
-        ...(body.email !== undefined ? { email } : {}),
-        ...(body.name !== undefined ? { name: body.name } : {}),
-        ...(body.phone !== undefined ? { phone: body.phone || null } : {}),
-        ...(body.password !== undefined ? { passwordHash: await hash(body.password, 12) } : {}),
-        ...(body.active !== undefined ? { active: body.active } : {}),
-      },
-      select: teacherSelect,
+      const privilege = resolveAccountTargetPrivilege({
+        roles: existing.rbacRoles.map((assignment) => ({
+          key: assignment.role.key,
+          isProtected: assignment.role.isProtected,
+          permissionKeys: assignment.role.permissions.map((entry) => entry.permission.key),
+        })),
+      })
+      const denial = assertAccountMutationAllowed({
+        actorId: authorization.user.id,
+        actorIsSystemAdmin: authorization.isSystemAdmin,
+        intent: "update_identity",
+        target: {
+          id: body.id,
+          active: existing.active,
+          isSystemAdmin: privilege.isSystemAdmin,
+          hasSensitiveAuthority: privilege.isPrivileged,
+        },
+      })
+      if (denial) throw new ApiError(denial.status, denial.error)
+
+      const nip = body.nip === undefined ? existing.nip : body.nip || null
+      const email = body.email === undefined ? existing.email : body.email ? body.email.toLowerCase() : null
+      if (!nip && !email) throw new ApiError(400, "Minimal salah satu NIP atau email wajib diisi")
+
+      const result = await tx.user.update({
+        where: { id: body.id },
+        data: {
+          ...(body.nip !== undefined ? { nip } : {}),
+          ...(body.email !== undefined ? { email } : {}),
+          ...(body.name !== undefined ? { name: body.name } : {}),
+          ...(body.phone !== undefined ? { phone: body.phone || null } : {}),
+        },
+        select: teacherSelect,
+      })
+
+      await recordAuditLog(
+        {
+          actorId: authorization.user.id,
+          action: "RBAC_ACCOUNT_IDENTITY_CHANGED",
+          entity: "UserAuthority",
+          entityId: body.id,
+          targetUserId: body.id,
+          before: { nip: existing.nip, email: existing.email, name: existing.name, phone: existing.phone },
+          after: { nip: result.nip, email: result.email, name: result.name, phone: result.phone },
+          summary: `Identitas akun guru ${result.name} diperbarui.`,
+        },
+        tx,
+      )
+      return result
     })
+
     return NextResponse.json(updated)
   } catch (error) {
     const duplicate = typeof error === "object" && error !== null && "code" in error && error.code === "P2002"
@@ -108,43 +159,15 @@ export async function PATCH(request: Request) {
   }
 }
 
-const teacherDelete = z.object({ id: z.string().min(1), confirmationIdentifier: z.string().trim().min(1) })
-
-export async function DELETE(request: Request) {
-  try {
-    await requirePermission("teachers.accounts.delete")
-    const admin = await requireUser()
-    const body = teacherDelete.parse(await request.json())
-    await assertTargetNotPrivileged(body.id)
-
-    const existing = await prisma.user.findFirst({
-      where: { id: body.id, ...teacherPopulationWhere() },
-      select: { nip: true, email: true },
-    })
-    if (!existing) throw new ApiError(404, "Guru tidak ditemukan")
-    const confirmation = body.confirmationIdentifier.toLowerCase()
-    if (confirmation !== existing.nip && confirmation !== existing.email?.toLowerCase()) {
-      throw new ApiError(400, "Konfirmasi NIP/email tidak sesuai")
-    }
-
-    const reassignedSubmissions = await prisma.$transaction(async (tx) => {
-      await tx.schoolClass.updateMany({ where: { homeroomUserId: body.id }, data: { homeroomUserId: null } })
-      const result = await tx.attendanceDay.updateMany({ where: { submittedById: body.id }, data: { submittedById: admin.id } })
-      await tx.user.delete({ where: { id: body.id } })
-      return result.count
-    })
-    return NextResponse.json({ id: body.id, reassignedSubmissions })
-  } catch (error) {
-    if (error instanceof z.ZodError) return NextResponse.json({ error: "Data hapus tidak valid" }, { status: 400 })
-    return authFailureResponse(error, "Guru gagal dihapus permanen")
-  }
-}
-
 export async function POST(request: Request) {
   try {
+    const origin = verifySameOrigin(request)
+    if (!origin.ok) return NextResponse.json({ error: origin.error }, { status: origin.status })
+
     await requirePermission("teachers.accounts.create")
     // Membuat akun berarti menetapkan kredensial awal.
     await requirePermission("accounts.credentials.manage")
+    const authorization = await getAuthorizationContext()
     const body = await request.json()
     const rows = z.array(teacherCreate).parse(Array.isArray(body) ? body : [body])
     const prepared = await Promise.all(rows.map(async (row) => ({
@@ -158,7 +181,23 @@ export async function POST(request: Request) {
       // record guru. Kolom legacy tetap diisi sampai fase kontraksi.
       isTeacher: true,
     })))
-    await prisma.$transaction(prepared.map((data) => prisma.user.create({ data })))
+    await prisma.$transaction(async (tx) => {
+      for (const data of prepared) {
+        const created = await tx.user.create({ data, select: { id: true, name: true, nip: true, email: true } })
+        await recordAuditLog(
+          {
+            actorId: authorization.user.id,
+            action: "RBAC_ACCOUNT_CREATED",
+            entity: "UserAuthority",
+            entityId: created.id,
+            targetUserId: created.id,
+            after: { name: created.name, nip: created.nip, email: created.email, isTeacher: true },
+            summary: `Akun guru ${created.name} dibuat.`,
+          },
+          tx,
+        )
+      }
+    })
     return NextResponse.json({ count: prepared.length }, { status: 201 })
   } catch (error) {
     const duplicate = typeof error === "object" && error !== null && "code" in error && error.code === "P2002"

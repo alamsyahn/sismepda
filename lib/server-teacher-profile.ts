@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma"
 import { compareClassNames } from "@/lib/class-order"
+import { teacherPopulationWhere } from "@/lib/teacher-population"
 import { groupScheduleByDay, summarizeTeachingLoad } from "@/lib/teacher-profile"
 
 /** Photo URL scoped to a specific teacher (not the signed-in user). */
@@ -9,7 +10,7 @@ export function teacherPhotoUrl(teacherId: string, updatedAt: Date | null) {
 
 export async function readTeacherProfile(teacherId: string) {
   const teacher = await prisma.user.findFirst({
-    where: { id: teacherId, role: { in: ["ADMIN", "GURU"] } },
+    where: { id: teacherId, ...teacherPopulationWhere() },
     select: {
       id: true,
       name: true,
@@ -69,7 +70,7 @@ export async function readTeacherProfile(teacherId: string) {
 
 export async function readTeacherDirectory() {
   const teachers = await prisma.user.findMany({
-    where: { role: { in: ["ADMIN", "GURU"] } },
+    where: teacherPopulationWhere(),
     select: {
       id: true,
       name: true,

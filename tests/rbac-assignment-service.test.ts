@@ -159,6 +159,29 @@ test("manager non-system tidak boleh memberikan role berkewenangan sensitif", as
   )
 })
 
+test("manager non-system tidak boleh memberikan role biasa di luar grant miliknya", async () => {
+  const { store, users } = makeStore([
+    { id: "user-1", name: "Budi", active: true, roleIds: ["role-guru"] },
+  ])
+  const manager = {
+    id: "mgr-1",
+    isSystemAdmin: false,
+    grants: new Set(["rbac.assignments.manage"]),
+  }
+
+  await assert.rejects(
+    () =>
+      updateUserRoles(store, {
+        actor: manager,
+        userId: "user-1",
+        roleIds: ["role-guru", "role-bos"],
+        expectedRevision: computeAssignmentRevision(["role-guru"]),
+      }),
+    (error: AssignmentError) => error.status === 403 && /tidak Anda miliki/i.test(error.message),
+  )
+  assert.deepEqual(users.get("user-1")!.roleIds, ["role-guru"], "payload ditolak seluruhnya")
+})
+
 test("mencabut system_admin terakhir ditolak", async () => {
   const { store } = makeStore(
     [{ id: "admin-1", name: "Admin", active: true, roleIds: ["role-admin"] }],

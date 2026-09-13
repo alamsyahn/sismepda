@@ -14,6 +14,7 @@ import {
   CircleUserRound,
   Settings,
   ShieldCheck,
+  ScrollText,
   FileDown,
   MessageCircleMore,
   Wallet,
@@ -350,7 +351,7 @@ export const accountNav: NavItem[] = [
     icon: UserCog,
     description: "Role, status, dan siklus hidup akun",
     permissions: [
-      "rbac.assignments.manage", "accounts.credentials.manage",
+      "accounts.read", "rbac.assignments.manage", "accounts.credentials.manage",
       "accounts.status.manage", "accounts.delete",
     ],
   },
@@ -360,6 +361,13 @@ export const accountNav: NavItem[] = [
     icon: ShieldCheck,
     description: "Role dan permission",
     permissions: ["rbac.roles.read", "rbac.roles.manage"],
+  },
+  {
+    title: "Audit Akses",
+    href: "/pengaturan/audit",
+    icon: ScrollText,
+    description: "Jejak perubahan role dan akun",
+    permissions: ["rbac.audit.read"],
   },
 ]
 

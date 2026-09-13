@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { requireTeacherManager, teacherErrorResponse } from "@/lib/teacher-access"
+import { teacherPopulationWhere } from "@/lib/teacher-population"
 
 const scheduleCreate = z.object({
   className: z.string().trim().min(1),
@@ -21,7 +22,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
     }
 
     const [teacher, schoolClass] = await Promise.all([
-      prisma.user.findFirst({ where: { id: teacherId, role: { in: ["ADMIN", "GURU"] } }, select: { id: true } }),
+      prisma.user.findFirst({ where: { id: teacherId, ...teacherPopulationWhere() }, select: { id: true } }),
       prisma.schoolClass.findUnique({ where: { name: body.className }, select: { id: true } }),
     ])
     if (!teacher) return NextResponse.json({ error: "Guru tidak ditemukan" }, { status: 404 })

@@ -20,6 +20,7 @@ import {
 } from "@/lib/rbac-role-service"
 import { createRoleStore } from "@/lib/rbac-stores"
 import { verifySameOrigin } from "@/lib/same-origin"
+import { lockSystemAdminPopulation } from "@/lib/rbac-invariants-db"
 
 const patchPayload = z
   .object({
@@ -76,6 +77,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ roleI
     const body = patchPayload.parse(await request.json())
 
     const role = await prisma.$transaction(async (tx) => {
+      // Menyelaraskan perubahan isi role dengan mutasi target akun: status
+      // privilege tidak boleh berubah di sela pemeriksaan dan penulisan.
+      await lockSystemAdminPopulation(tx)
       const store = createRoleStore(tx, actor.id)
 
       // Profil dan permission adalah dua kepedulian berbeda, tetapi keduanya
@@ -142,14 +146,15 @@ export async function DELETE(request: Request, context: { params: Promise<{ role
     const { roleId } = await context.params
     const body = deletePayload.parse(await request.json())
 
-    const result = await prisma.$transaction(async (tx) =>
-      deleteRole(createRoleStore(tx, actor.id), {
+    const result = await prisma.$transaction(async (tx) => {
+      await lockSystemAdminPopulation(tx)
+      return deleteRole(createRoleStore(tx, actor.id), {
         actor,
         roleId,
         expectedVersion: body.expectedVersion,
         revokeFromAllMembers: body.revokeFromAllMembers,
-      }),
-    )
+      })
+    })
 
     return NextResponse.json({ success: true, revokedMemberCount: result.revokedMemberCount })
   } catch (error) {

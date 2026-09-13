@@ -69,5 +69,16 @@ export const passwordUpdateSchema = z
   })
   .strict()
 
+/**
+ * Administrasi akun menerima tepat SATU operasi per permintaan.
+ *
+ * Tanpa XOR ini, payload `{ password, active: false }` dapat salah
+ * diklasifikasikan sebagai perubahan kredensial lalu melewati invariant status.
+ */
+export const accountAdminMutationSchema = z.union([
+  z.object({ password: z.string().min(8).max(128) }).strict(),
+  z.object({ active: z.boolean() }).strict(),
+])
+
 export type OwnProfileUpdate = z.infer<typeof ownProfileUpdateSchema>
 export type PasswordUpdate = z.infer<typeof passwordUpdateSchema>

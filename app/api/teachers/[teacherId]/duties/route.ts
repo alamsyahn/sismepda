@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { requireTeacherManager, teacherErrorResponse } from "@/lib/teacher-access"
+import { teacherPopulationWhere } from "@/lib/teacher-population"
 import { parseSchoolDate, toPrismaDate } from "@/lib/school-date"
 
 const dutyCreate = z.object({
@@ -20,7 +21,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tea
 
     const startDate = startDateValue ? toPrismaDate(startDateValue) : null
 
-    const teacher = await prisma.user.findFirst({ where: { id: teacherId, role: { in: ["ADMIN", "GURU"] } }, select: { id: true } })
+    const teacher = await prisma.user.findFirst({ where: { id: teacherId, ...teacherPopulationWhere() }, select: { id: true } })
     if (!teacher) return NextResponse.json({ error: "Guru tidak ditemukan" }, { status: 404 })
 
     const created = await prisma.additionalDuty.create({

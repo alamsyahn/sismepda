@@ -26,14 +26,16 @@
 
 export type DeletionBlockReason = "self_delete" | "violation_points_attributed"
 
-export type AccountDeletionPlan = {
-  blocked: boolean
-  reason?: DeletionBlockReason
-  message?: string
+type AccountDeletionBase = {
   /** Penerima atribusi absensi; selalu aktor penghapus. */
   reassignAttendanceTo: string
   attendanceDays: number
 }
+
+export type AccountDeletionPlan = AccountDeletionBase & (
+  | { blocked: true; reason: DeletionBlockReason; message: string }
+  | { blocked: false; reason?: never; message?: never }
+)
 
 export function planAccountDeletion(input: {
   actorId: string

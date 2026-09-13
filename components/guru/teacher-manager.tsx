@@ -28,7 +28,17 @@ type Teacher = {
 
 type EditValues = { nip: string; email: string; name: string; phone: string; password: string }
 
-export function TeacherManager() {
+export function TeacherManager({
+  canUpdate,
+  canResetPassword,
+  canManageStatus,
+  canDelete,
+}: {
+  canUpdate: boolean
+  canResetPassword: boolean
+  canManageStatus: boolean
+  canDelete: boolean
+}) {
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -81,33 +91,47 @@ export function TeacherManager() {
     setTeachers((current) => current.map((teacher) => teacher.id === data.id ? data : teacher))
   }
 
+  async function mutateAccount(userId: string, payload: { password: string } | { active: boolean }) {
+    const response = await fetch(`/api/rbac/accounts/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error ?? "Akun guru gagal diperbarui")
+    return data as { id: string; active: boolean }
+  }
+
   async function saveEdit() {
     const nip = values.nip.trim()
     const email = values.email.trim().toLowerCase()
     const phone = normalizePhone(values.phone)
-    if (!editing || !values.name.trim() || (!nip && !email)) {
+    if (!editing) return
+    if (canUpdate && (!values.name.trim() || (!nip && !email))) {
       toast.error("Nama lengkap dan minimal salah satu NIP atau email wajib diisi")
       return
     }
-    if ((nip && !/^\d+$/.test(nip)) || (email && !isValidEmail(email))) {
+    if (canUpdate && ((nip && !/^\d+$/.test(nip)) || (email && !isValidEmail(email)))) {
       toast.error("Format NIP atau email tidak valid")
       return
     }
-    if ((phone && !isValidPhone(phone)) || (values.password && values.password.length < 8)) {
+    if ((canUpdate && phone && !isValidPhone(phone)) || (values.password && values.password.length < 8)) {
       toast.error("Periksa format telepon atau gunakan password minimal 8 karakter")
       return
     }
 
     setSaving(true)
     try {
-      await patchTeacher({
-        id: editing.id,
-        nip,
-        email,
-        name: values.name.trim(),
-        phone,
-        ...(values.password ? { password: values.password } : {}),
-      })
+      if (values.password) await mutateAccount(editing.id, { password: values.password })
+      if (canUpdate) {
+        await patchTeacher({
+          id: editing.id,
+          nip,
+          email,
+          name: values.name.trim(),
+          phone,
+        })
+      }
       setEditing(null)
       toast.success("Data guru berhasil diperbarui")
     } catch (error) {
@@ -121,7 +145,10 @@ export function TeacherManager() {
     if (!statusTarget) return
     setSaving(true)
     try {
-      await patchTeacher({ id: statusTarget.id, active: !statusTarget.active })
+      const updated = await mutateAccount(statusTarget.id, { active: !statusTarget.active })
+      setTeachers((current) =>
+        current.map((teacher) => teacher.id === updated.id ? { ...teacher, active: updated.active } : teacher),
+      )
       toast.success(statusTarget.active ? "Guru berhasil dinonaktifkan" : "Guru berhasil diaktifkan")
       setStatusTarget(null)
     } catch (error) {
@@ -135,17 +162,17 @@ export function TeacherManager() {
     if (!deleteTarget || deleteConfirmation.trim().toLowerCase() !== (deleteTarget.nip ?? deleteTarget.email)?.toLowerCase()) return
     setSaving(true)
     try {
-      const response = await fetch("/api/admin/teachers", {
+      const response = await fetch(`/api/rbac/accounts/${deleteTarget.id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: deleteTarget.id, confirmationIdentifier: deleteConfirmation.trim() }),
+        body: JSON.stringify({ confirmationIdentifier: deleteConfirmation.trim() }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? "Guru gagal dihapus permanen")
       setTeachers((current) => current.filter((teacher) => teacher.id !== deleteTarget.id))
       setDeleteTarget(null)
       setDeleteConfirmation("")
-      toast.success("Guru dihapus permanen", { description: `${data.reassignedSubmissions} riwayat penginputan dialihkan ke admin.` })
+      toast.success("Guru dihapus permanen", { description: `${data.reassignedAttendanceDays} riwayat penginputan dialihkan ke admin.` })
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Guru gagal dihapus permanen")
     } finally {
@@ -194,9 +221,9 @@ export function TeacherManager() {
             <TableCell>{teacher.homeroomClass?.name ?? "-"}</TableCell>
             <TableCell><Badge variant={teacher.active ? "default" : "secondary"}>{teacher.active ? "Aktif" : "Nonaktif"}</Badge></TableCell>
             <TableCell><div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => openEdit(teacher)}><Pencil className="size-4" /> Edit</Button>
-              <Button variant="outline" size="sm" onClick={() => setStatusTarget(teacher)}>{teacher.active ? <UserX className="size-4" /> : <UserCheck className="size-4" />}{teacher.active ? "Nonaktifkan" : "Aktifkan"}</Button>
-              <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => { setDeleteTarget(teacher); setDeleteConfirmation("") }}><Trash2 className="size-4" /> Hapus</Button>
+              {canUpdate || canResetPassword ? <Button variant="outline" size="sm" onClick={() => openEdit(teacher)}><Pencil className="size-4" /> Edit</Button> : null}
+              {canManageStatus ? <Button variant="outline" size="sm" onClick={() => setStatusTarget(teacher)}>{teacher.active ? <UserX className="size-4" /> : <UserCheck className="size-4" />}{teacher.active ? "Nonaktifkan" : "Aktifkan"}</Button> : null}
+              {canDelete ? <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => { setDeleteTarget(teacher); setDeleteConfirmation("") }}><Trash2 className="size-4" /> Hapus</Button> : null}
             </div></TableCell>
           </TableRow>)}
       </TableBody>
@@ -207,11 +234,11 @@ export function TeacherManager() {
       <DialogContent className="sm:max-w-md">
         <DialogHeader><DialogTitle>Edit data guru</DialogTitle><DialogDescription>Nama dan minimal salah satu NIP atau email wajib diisi. Telepon dan password baru bersifat opsional.</DialogDescription></DialogHeader>
         <div className="space-y-4">
-          <div className="space-y-1.5"><Label htmlFor="teacher-name">Nama lengkap</Label><Input id="teacher-name" value={values.name} onChange={(event) => setValues((current) => ({ ...current, name: event.target.value }))} /></div>
-          <div className="space-y-1.5"><Label htmlFor="teacher-nip">NIP (opsional jika email diisi)</Label><Input id="teacher-nip" inputMode="numeric" value={values.nip} onChange={(event) => setValues((current) => ({ ...current, nip: event.target.value.replace(/\D/g, "") }))} /></div>
-          <div className="space-y-1.5"><Label htmlFor="teacher-email">Email (opsional jika NIP diisi)</Label><Input id="teacher-email" type="email" value={values.email} onChange={(event) => setValues((current) => ({ ...current, email: event.target.value }))} /></div>
-          <div className="space-y-1.5"><Label htmlFor="teacher-phone">Nomor telepon (opsional)</Label><Input id="teacher-phone" value={values.phone} onChange={(event) => setValues((current) => ({ ...current, phone: event.target.value }))} /></div>
-          <div className="space-y-1.5"><Label htmlFor="teacher-password">Password baru (opsional)</Label><Input id="teacher-password" type="password" autoComplete="new-password" value={values.password} onChange={(event) => setValues((current) => ({ ...current, password: event.target.value }))} placeholder="Minimal 8 karakter" /></div>
+          <div className="space-y-1.5"><Label htmlFor="teacher-name">Nama lengkap</Label><Input id="teacher-name" disabled={!canUpdate} value={values.name} onChange={(event) => setValues((current) => ({ ...current, name: event.target.value }))} /></div>
+          <div className="space-y-1.5"><Label htmlFor="teacher-nip">NIP (opsional jika email diisi)</Label><Input id="teacher-nip" disabled={!canUpdate} inputMode="numeric" value={values.nip} onChange={(event) => setValues((current) => ({ ...current, nip: event.target.value.replace(/\D/g, "") }))} /></div>
+          <div className="space-y-1.5"><Label htmlFor="teacher-email">Email (opsional jika NIP diisi)</Label><Input id="teacher-email" disabled={!canUpdate} type="email" value={values.email} onChange={(event) => setValues((current) => ({ ...current, email: event.target.value }))} /></div>
+          <div className="space-y-1.5"><Label htmlFor="teacher-phone">Nomor telepon (opsional)</Label><Input id="teacher-phone" disabled={!canUpdate} value={values.phone} onChange={(event) => setValues((current) => ({ ...current, phone: event.target.value }))} /></div>
+          {canResetPassword ? <div className="space-y-1.5"><Label htmlFor="teacher-password">Password baru (opsional)</Label><Input id="teacher-password" type="password" autoComplete="new-password" value={values.password} onChange={(event) => setValues((current) => ({ ...current, password: event.target.value }))} placeholder="Minimal 8 karakter" /></div> : null}
         </div>
         <DialogFooter><DialogClose render={<Button variant="outline" disabled={saving} />}>Batal</DialogClose><Button onClick={saveEdit} disabled={saving}>{saving ? <Loader2 className="size-4 animate-spin" /> : null}{saving ? "Menyimpan..." : "Simpan Perubahan"}</Button></DialogFooter>
       </DialogContent>

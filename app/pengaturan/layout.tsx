@@ -24,6 +24,10 @@ export default async function PengaturanLayout({ children }: { children: ReactNo
     "rbac.roles.manage",
     "rbac.assignments.manage",
     "rbac.audit.read",
+    "accounts.read",
+    "accounts.credentials.manage",
+    "accounts.status.manage",
+    "accounts.delete",
   ])
   return children
 }

@@ -13,6 +13,7 @@ import { readAccounts, readRoles } from "@/lib/server-rbac-admin"
  */
 export default async function PenggunaPage() {
   await requirePageAnyPermission([
+    "accounts.read",
     "rbac.assignments.manage",
     "accounts.credentials.manage",
     "accounts.status.manage",

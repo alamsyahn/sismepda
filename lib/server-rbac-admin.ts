@@ -8,6 +8,7 @@
 import { prisma } from "@/lib/prisma"
 import { PERMISSIONS, SYSTEM_ADMIN_ROLE_KEY } from "@/lib/rbac-permissions"
 import { computeAssignmentRevision } from "@/lib/rbac-assignment-service"
+import { RBAC_AUDIT_ENTITIES } from "@/lib/rbac-audit"
 
 export type RoleRow = {
   readonly id: string
@@ -50,6 +51,17 @@ export type PermissionRow = {
   readonly sensitive: boolean
 }
 
+export type RbacAuditRow = {
+  readonly id: string
+  readonly action: string
+  readonly entity: string
+  readonly summary: string | null
+  readonly targetUserId: string | null
+  readonly targetUserName: string | null
+  readonly actorName: string
+  readonly createdAt: Date
+}
+
 export async function readRoles(): Promise<RoleRow[]> {
   const roles = await prisma.role.findMany({
     orderBy: [{ isProtected: "desc" }, { name: "asc" }],
@@ -77,6 +89,39 @@ export async function readRoles(): Promise<RoleRow[]> {
     memberCount: role._count.users,
     permissionKeys: role.permissions.map((entry) => entry.permission.key),
     isSystemAdmin: role.key === SYSTEM_ADMIN_ROLE_KEY,
+  }))
+}
+
+export async function readRbacAudit(limit = 100): Promise<RbacAuditRow[]> {
+  const rows = await prisma.auditLog.findMany({
+    where: { entity: { in: [...RBAC_AUDIT_ENTITIES] } },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: Math.min(Math.max(Math.trunc(limit), 1), 100),
+    select: {
+      id: true,
+      action: true,
+      entity: true,
+      summary: true,
+      targetUserId: true,
+      createdAt: true,
+      actor: { select: { name: true } },
+    },
+  })
+  const targetIds = [...new Set(rows.map((row) => row.targetUserId).filter((id): id is string => Boolean(id)))]
+  const targets = targetIds.length
+    ? await prisma.user.findMany({ where: { id: { in: targetIds } }, select: { id: true, name: true } })
+    : []
+  const targetById = new Map(targets.map((target) => [target.id, target.name]))
+
+  return rows.map((row) => ({
+    id: row.id,
+    action: row.action,
+    entity: row.entity,
+    summary: row.summary,
+    targetUserId: row.targetUserId,
+    targetUserName: row.targetUserId ? targetById.get(row.targetUserId) ?? null : null,
+    actorName: row.actor?.name ?? "Akun terhapus",
+    createdAt: row.createdAt,
   }))
 }
 

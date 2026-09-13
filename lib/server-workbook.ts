@@ -231,7 +231,7 @@ export async function readOwnWorkbookLinks(userId: string) {
 /** Teachers plus their supervision-scope flag, for the scope management screen. */
 export async function readSupervisionScope() {
   const teachers = await prisma.user.findMany({
-    where: { role: { in: ["ADMIN", "GURU"] } },
+    where: teacherPopulationWhere(),
     select: {
       id: true,
       name: true,

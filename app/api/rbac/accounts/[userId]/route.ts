@@ -30,28 +30,52 @@ import {
   lockSystemAdminPopulation,
 } from "@/lib/rbac-invariants-db"
 import { recordAuditLog } from "@/lib/audit-log"
+import { accountAdminMutationSchema } from "@/lib/account-schemas"
 
-/**
- * `.strict()` disengaja: payload berisi `role`, `roles`, `permissionKeys`, atau
- * `isTeacher` ditolak 400 alih-alih dibuang diam-diam oleh mode strip Zod.
- * Penyerang tidak boleh menerima 200 untuk permintaan yang sebagian diabaikan.
- */
-const accountMutation = z
-  .object({
-    password: z.string().min(8).max(128).optional(),
-    active: z.boolean().optional(),
+const accountTargetSelect = {
+  id: true,
+  name: true,
+  nip: true,
+  email: true,
+  active: true,
+  rbacRoles: {
+    select: {
+      role: {
+        select: {
+          key: true,
+          isProtected: true,
+          permissions: { select: { permission: { select: { key: true } } } },
+        },
+      },
+    },
+  },
+} as const
+
+function targetPrivilege(target: {
+  rbacRoles: Array<{
+    role: { key: string; isProtected: boolean; permissions: Array<{ permission: { key: string } }> }
+  }>
+}) {
+  return resolveAccountTargetPrivilege({
+    roles: target.rbacRoles.map((assignment) => ({
+      key: assignment.role.key,
+      isProtected: assignment.role.isProtected,
+      permissionKeys: assignment.role.permissions.map((entry) => entry.permission.key),
+    })),
   })
-  .strict()
-  .refine((value) => value.password !== undefined || value.active !== undefined, {
-    message: "Tidak ada perubahan yang diminta",
-  })
+}
 
 export async function PATCH(request: Request, context: { params: Promise<{ userId: string }> }) {
   try {
-    verifySameOrigin(request)
+    const origin = verifySameOrigin(request)
+    if (!origin.ok) {
+      return NextResponse.json({ error: origin.error }, { status: origin.status })
+    }
 
     const { userId } = await context.params
-    const body = accountMutation.parse(await request.json())
+    const body = accountAdminMutationSchema.parse(await request.json())
+    const password = "password" in body ? body.password : undefined
+    const active = "active" in body ? body.active : undefined
 
     // Konteks otorisasi, bukan `requireUser`: `CurrentUser` sengaja tidak memuat
     // role/permission agar tidak ada pemanggil yang memakainya sebagai
@@ -60,78 +84,52 @@ export async function PATCH(request: Request, context: { params: Promise<{ userI
     const actor = authorization.user
 
     // Dipecah per jenis perubahan sebelum menyentuh database.
-    if (body.password !== undefined) await requirePermission("accounts.credentials.manage")
-    if (body.active !== undefined) await requirePermission("accounts.status.manage")
-
-    const target = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        active: true,
-        rbacRoles: {
-          select: {
-            role: {
-              select: {
-                key: true,
-                isProtected: true,
-                permissions: { select: { permission: { select: { key: true } } } },
-              },
-            },
-          },
-        },
-      },
-    })
-    if (!target) throw new ApiError(404, "Akun tidak ditemukan")
-
-    const privilege = resolveAccountTargetPrivilege({
-      roles: target.rbacRoles.map((assignment) => ({
-        key: assignment.role.key,
-        isProtected: assignment.role.isProtected,
-        permissionKeys: assignment.role.permissions.map((entry) => entry.permission.key),
-      })),
-    })
+    if (password !== undefined) await requirePermission("accounts.credentials.manage")
+    if (active !== undefined) await requirePermission("accounts.status.manage")
 
     const actorIsSystemAdmin = authorization.isSystemAdmin
 
-    // Satu intent per permintaan. Menonaktifkan dinilai lebih keras daripada
-    // mengaktifkan, karena hanya penonaktifan dapat mengosongkan populasi admin.
+    // Schema menjamin tepat satu operasi, jadi intent tidak mungkin salah
+    // klasifikasi akibat payload gabungan password + status.
     const intent =
-      body.password !== undefined
+      "password" in body
         ? "update_credentials"
-        : body.active === false
+        : active === false
           ? "deactivate"
           : "update_status"
 
-    const denial = assertAccountMutationAllowed({
-      actorId: actor.id,
-      actorIsSystemAdmin,
-      intent,
-      target: {
-        id: target.id,
-        isSystemAdmin: privilege.isSystemAdmin,
-        hasSensitiveAuthority: privilege.sensitiveKeys.length > 0 || privilege.isPrivileged,
-        active: target.active,
-      },
-    })
-    if (denial) return NextResponse.json({ error: denial.error }, { status: denial.status })
-
     const updated = await prisma.$transaction(async (tx) => {
-      // Kunci diambil SEBELUM menulis agar dua penonaktifan bersamaan tidak
-      // dapat sama-sama melihat populasi yang masih aman.
-      if (intent === "deactivate") await lockSystemAdminPopulation(tx)
+      // Kunci yang sama juga dipakai penugasan role. Target dibaca SETELAH lock,
+      // sehingga ia tidak dapat memperoleh role sensitif di sela pemeriksaan dan
+      // reset sandi/status (TOCTOU).
+      await lockSystemAdminPopulation(tx)
 
-      const before = await tx.user.findUniqueOrThrow({
-        where: { id: userId },
-        select: { active: true },
+      const target = await tx.user.findUnique({ where: { id: userId }, select: accountTargetSelect })
+      if (!target) throw new ApiError(404, "Akun tidak ditemukan")
+
+      const privilege = targetPrivilege(target)
+      const denial = assertAccountMutationAllowed({
+        actorId: actor.id,
+        actorIsSystemAdmin,
+        intent,
+        target: {
+          id: target.id,
+          isSystemAdmin: privilege.isSystemAdmin,
+          hasSensitiveAuthority: privilege.isPrivileged,
+          active: target.active,
+        },
       })
+      if (denial) throw new InvariantViolationError(denial)
+
+      const before = { active: target.active }
 
       const result = await tx.user.update({
         where: { id: userId },
         data: {
-          ...(body.password !== undefined
-            ? { passwordHash: await hash(body.password, 12) }
+          ...(password !== undefined
+            ? { passwordHash: await hash(password, 12) }
             : {}),
-          ...(body.active !== undefined ? { active: body.active } : {}),
+          ...(active !== undefined ? { active } : {}),
         },
         select: { id: true, name: true, active: true },
       })
@@ -145,7 +143,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ userI
         {
           actorId: actor.id,
           action:
-            body.password !== undefined
+            password !== undefined
               ? "RBAC_ACCOUNT_CREDENTIAL_CHANGED"
               : "RBAC_ACCOUNT_STATUS_CHANGED",
           entity: "UserAuthority",
@@ -155,7 +153,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ userI
           before: { active: before.active },
           after: { active: result.active },
           summary:
-            body.password !== undefined
+            password !== undefined
               ? "Sandi akun direset oleh administrator."
               : `Status akun diubah menjadi ${result.active ? "aktif" : "nonaktif"}.`,
         },
@@ -196,7 +194,10 @@ const accountDeletion = z
 
 export async function DELETE(request: Request, context: { params: Promise<{ userId: string }> }) {
   try {
-    verifySameOrigin(request)
+    const origin = verifySameOrigin(request)
+    if (!origin.ok) {
+      return NextResponse.json({ error: origin.error }, { status: origin.status })
+    }
 
     const { userId } = await context.params
     const body = accountDeletion.parse(await request.json())
@@ -205,79 +206,52 @@ export async function DELETE(request: Request, context: { params: Promise<{ user
     const authorization = await getAuthorizationContext()
     const actor = authorization.user
 
-    const target = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        name: true,
-        nip: true,
-        email: true,
-        active: true,
-        rbacRoles: {
-          select: {
-            role: {
-              select: {
-                key: true,
-                isProtected: true,
-                permissions: { select: { permission: { select: { key: true } } } },
-              },
-            },
-          },
-        },
-      },
-    })
-    if (!target) throw new ApiError(404, "Akun tidak ditemukan")
-
-    // Konfirmasi diverifikasi sebelum pemeriksaan mahal apa pun.
-    const confirmation = body.confirmationIdentifier.toLowerCase()
-    if (confirmation !== target.nip?.toLowerCase() && confirmation !== target.email?.toLowerCase()) {
-      throw new ApiError(400, "Konfirmasi NIP/email tidak sesuai")
-    }
-
-    const privilege = resolveAccountTargetPrivilege({
-      roles: target.rbacRoles.map((assignment) => ({
-        key: assignment.role.key,
-        isProtected: assignment.role.isProtected,
-        permissionKeys: assignment.role.permissions.map((entry) => entry.permission.key),
-      })),
-    })
-
-    const denial = assertAccountMutationAllowed({
-      actorId: actor.id,
-      actorIsSystemAdmin: authorization.isSystemAdmin,
-      intent: "delete",
-      target: {
-        id: target.id,
-        isSystemAdmin: privilege.isSystemAdmin,
-        hasSensitiveAuthority: privilege.isPrivileged,
-        active: target.active,
-      },
-    })
-    if (denial) return NextResponse.json({ error: denial.error }, { status: denial.status })
-
-    const [attendanceDays, violationPoints] = await Promise.all([
-      prisma.attendanceDay.count({ where: { submittedById: userId } }),
-      prisma.studentViolationPoint.count({ where: { recordedById: userId } }),
-    ])
-
-    const plan = planAccountDeletion({
-      actorId: actor.id,
-      targetId: userId,
-      attendanceDays,
-      violationPoints,
-    })
-
-    if (plan.blocked) {
-      return NextResponse.json(
-        { error: plan.message, reason: plan.reason },
-        { status: plan.reason === "self_delete" ? 403 : 409 },
-      )
-    }
-
     const outcome = await prisma.$transaction(async (tx) => {
-      // Kunci diambil sebelum menulis: menghapus seorang admin dapat
-      // mengosongkan populasi, sama berbahayanya dengan menonaktifkannya.
+      // Kunci diambil sebelum MEMBACA target. Assignment dan perubahan role
+      // memakai kunci yang sama, sehingga privilege tidak dapat berubah di sela
+      // pemeriksaan dan penghapusan.
       await lockSystemAdminPopulation(tx)
+
+      const target = await tx.user.findUnique({ where: { id: userId }, select: accountTargetSelect })
+      if (!target) throw new ApiError(404, "Akun tidak ditemukan")
+
+      const confirmation = body.confirmationIdentifier.toLowerCase()
+      if (confirmation !== target.nip?.toLowerCase() && confirmation !== target.email?.toLowerCase()) {
+        throw new ApiError(400, "Konfirmasi NIP/email tidak sesuai")
+      }
+
+      const privilege = targetPrivilege(target)
+      const denial = assertAccountMutationAllowed({
+        actorId: actor.id,
+        actorIsSystemAdmin: authorization.isSystemAdmin,
+        intent: "delete",
+        target: {
+          id: target.id,
+          isSystemAdmin: privilege.isSystemAdmin,
+          hasSensitiveAuthority: privilege.isPrivileged,
+          active: target.active,
+        },
+      })
+      if (denial) throw new InvariantViolationError(denial)
+
+      const [attendanceDays, violationPoints] = await Promise.all([
+        tx.attendanceDay.count({ where: { submittedById: userId } }),
+        tx.studentViolationPoint.count({ where: { recordedById: userId } }),
+      ])
+      const plan = planAccountDeletion({
+        actorId: actor.id,
+        targetId: userId,
+        attendanceDays,
+        violationPoints,
+      })
+      if (plan.blocked) {
+        return {
+          blocked: true as const,
+          status: plan.reason === "self_delete" ? 403 : 409,
+          reason: plan.reason,
+          message: plan.message,
+        }
+      }
 
       await tx.schoolClass.updateMany({
         where: { homeroomUserId: userId },
@@ -316,10 +290,16 @@ export async function DELETE(request: Request, context: { params: Promise<{ user
       // Diverifikasi setelah penghapusan: kondisi AKHIR transaksi.
       await assertSystemAdminPopulationIntact(tx, { actorId: actor.id, targetId: userId })
 
-      return { reassignedAttendanceDays: reassigned.count }
+      return { blocked: false as const, reassignedAttendanceDays: reassigned.count }
     })
 
-    return NextResponse.json({ id: userId, ...outcome })
+    if (outcome.blocked) {
+      return NextResponse.json(
+        { error: outcome.message, reason: outcome.reason },
+        { status: outcome.status },
+      )
+    }
+    return NextResponse.json({ id: userId, reassignedAttendanceDays: outcome.reassignedAttendanceDays })
   } catch (error) {
     if (error instanceof InvariantViolationError) {
       return NextResponse.json({ error: error.denial.error }, { status: error.denial.status })

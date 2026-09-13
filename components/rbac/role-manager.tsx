@@ -20,6 +20,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PermissionMatrix } from "@/components/rbac/permission-matrix"
+import { roleKeyFromName } from "@/lib/rbac-role-key"
 import type { PermissionRow, RoleRow } from "@/lib/server-rbac-admin"
 
 /**
@@ -196,12 +197,13 @@ export function RoleManager({
           <DialogFooter>
             <DialogClose render={<Button variant="outline" disabled={busy} />}>Batal</DialogClose>
             <Button
-              disabled={busy || !name.trim()}
+              disabled={busy || !roleKeyFromName(name)}
               onClick={() =>
                 submit(
                   "/api/rbac/roles",
                   "POST",
                   {
+                    key: roleKeyFromName(name),
                     name: name.trim(),
                     description: description.trim() || null,
                     permissionKeys: [...selected],
