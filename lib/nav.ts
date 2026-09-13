@@ -330,51 +330,83 @@ export const mainNav: NavEntry[] = [
       },
     ],
   },
+  administrationGroup(),
 ]
 
-/** Pinned to the bottom of the sidebar, separated from the module navigation. */
+/**
+ * Administrasi adalah navigasi aplikasi, BUKAN menu akun.
+ *
+ * Pengaturan/Pengguna/Akses/Audit Akses adalah pekerjaan administratif atas
+ * sekolah, bukan tindakan atas akun sendiri, sehingga tidak boleh bersembunyi
+ * di balik popover profil. Sebagai `NavGroup` biasa di `mainNav`, kelompok ini
+ * otomatis memperoleh penyaringan permission dan state buka/tutup yang sama
+ * dengan kelompok lain — termasuk hilang total bila tidak ada satu pun anak
+ * yang terlihat (lihat `visibleNavEntries`).
+ *
+ * Dideklarasikan sebagai fungsi supaya dapat diletakkan di dalam `mainNav`
+ * tanpa masalah urutan inisialisasi konstanta.
+ */
+function administrationGroup(): NavGroup {
+  return {
+    type: "group",
+    id: "administrasi",
+    title: "Administrasi",
+    icon: Settings,
+    children: [
+      {
+        title: "Pengaturan",
+        href: "/pengaturan",
+        icon: Settings,
+        description: "Preferensi aplikasi & akun",
+        // `exact`: tanpa ini "/pengaturan" ikut aktif pada setiap sub-rute
+        // administrasi, sehingga dua baris tampak aktif bersamaan.
+        match: "exact",
+        permissions: [
+          "school.settings.read", "school.settings.update", "school.class_access.manage",
+          "school.branding.update", "school.holidays.read", "school.holidays.create",
+          "school.holidays.update", "school.holidays.delete", "school.holidays.export",
+          "database.backup", "database.restore",
+        ],
+      },
+      {
+        title: "Pengguna",
+        href: "/pengaturan/pengguna",
+        icon: UserCog,
+        description: "Role, status, dan siklus hidup akun",
+        permissions: [
+          "accounts.read", "rbac.assignments.manage", "accounts.credentials.manage",
+          "accounts.status.manage", "accounts.delete",
+        ],
+      },
+      {
+        title: "Akses",
+        href: "/pengaturan/akses",
+        icon: ShieldCheck,
+        description: "Role dan permission",
+        permissions: ["rbac.roles.read", "rbac.roles.manage"],
+      },
+      {
+        title: "Audit Akses",
+        href: "/pengaturan/audit",
+        icon: ScrollText,
+        description: "Jejak perubahan role dan akun",
+        permissions: ["rbac.audit.read"],
+      },
+    ],
+  }
+}
+
+/**
+ * Tindakan atas akun sendiri, ditampilkan di popover kartu akun pada bagian
+ * bawah sidebar. Sengaja hanya berisi tujuan yang dimiliki setiap sesi sah;
+ * menu administratif TIDAK boleh ditambahkan ke sini.
+ */
 export const accountNav: NavItem[] = [
   {
     title: "Profil Saya",
     href: "/profil",
     icon: CircleUserRound,
     description: "Kelola data diri dan keamanan akun",
-  },
-  {
-    title: "Pengaturan",
-    href: "/pengaturan",
-    icon: Settings,
-    description: "Preferensi aplikasi & akun",
-    permissions: [
-      "school.settings.read", "school.settings.update", "school.class_access.manage",
-      "school.branding.update", "school.holidays.read", "school.holidays.create",
-      "school.holidays.update", "school.holidays.delete", "school.holidays.export",
-      "database.backup", "database.restore",
-    ],
-  },
-  {
-    title: "Pengguna",
-    href: "/pengaturan/pengguna",
-    icon: UserCog,
-    description: "Role, status, dan siklus hidup akun",
-    permissions: [
-      "accounts.read", "rbac.assignments.manage", "accounts.credentials.manage",
-      "accounts.status.manage", "accounts.delete",
-    ],
-  },
-  {
-    title: "Akses",
-    href: "/pengaturan/akses",
-    icon: ShieldCheck,
-    description: "Role dan permission",
-    permissions: ["rbac.roles.read", "rbac.roles.manage"],
-  },
-  {
-    title: "Audit Akses",
-    href: "/pengaturan/audit",
-    icon: ScrollText,
-    description: "Jejak perubahan role dan akun",
-    permissions: ["rbac.audit.read"],
   },
 ]
 

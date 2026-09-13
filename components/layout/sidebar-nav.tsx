@@ -3,8 +3,8 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ChevronRight, LogOut } from "lucide-react"
-import { signOut, useSession } from "next-auth/react"
+import { ChevronRight } from "lucide-react"
+import { useSession } from "next-auth/react"
 import { cn } from "@/lib/utils"
 import {
   accountNav,
@@ -18,9 +18,9 @@ import {
   type NavGroup,
   type NavItem,
 } from "@/lib/nav"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { AppLogo } from "@/components/layout/app-logo"
 import { useAppBranding } from "@/components/layout/app-branding-provider"
+import { SidebarAccountMenu } from "@/components/layout/sidebar-account-menu"
 
 const STORAGE_KEY = "sismepda:sidebar-groups"
 
@@ -67,6 +67,13 @@ export function SidebarNav({ onNavigate, grants, roleNames }: { onNavigate?: () 
    */
   const [groupState, setGroupState] = useState<Record<string, boolean>>({})
   const seededGroupId = useRef<string | null>(null)
+
+  /**
+   * Menu akun adalah state UI sesaat: selalu tertutup saat sidebar dipasang.
+   * Karena drawer mobile melepas `SidebarNav` ketika ditutup, menu tidak pernah
+   * tertinggal terbuka setelah drawer hilang.
+   */
+  const [accountOpen, setAccountOpen] = useState(false)
 
   useEffect(() => {
     setGroupState(readStoredGroups())
@@ -122,29 +129,15 @@ export function SidebarNav({ onNavigate, grants, roleNames }: { onNavigate?: () 
       </nav>
 
       <div className="shrink-0 border-t border-sidebar-border px-3 py-3">
-        <div className="space-y-1">
-          {accountItems.map((item) => (
-            <NavLink key={item.href} item={item} active={item.href === activeHref} onNavigate={onNavigate} />
-          ))}
-        </div>
-
-        <div className="mt-3 flex items-center gap-3 rounded-xl border border-sidebar-border bg-card px-3 py-3 shadow-sm">
-          <Link href="/profil" onClick={onNavigate} aria-label="Buka profil saya" className="contents">
-            <Avatar className="size-9">
-              {session?.user.image ? <AvatarImage src={session.user.image} alt="Foto profil" /> : null}
-              <AvatarFallback className="bg-primary/12 font-semibold text-primary">
-                {(session?.user.name ?? "U").split(" ").map((v) => v[0]).join("").slice(0, 2).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 flex-1 leading-tight">
-              <p className="truncate text-sm font-semibold text-sidebar-foreground">{session?.user.name}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {roleNames.length > 0 ? roleNames.join(", ") : "Tanpa role"}
-              </p>
-            </div>
-          </Link>
-          <button onClick={() => signOut({ redirectTo: "/login" })} className="ml-auto cursor-pointer text-muted-foreground hover:text-destructive" aria-label="Keluar"><LogOut className="size-4" /></button>
-        </div>
+        <SidebarAccountMenu
+          name={session?.user.name}
+          image={session?.user.image}
+          roleNames={roleNames}
+          accountItems={accountItems}
+          open={accountOpen}
+          onOpenChange={setAccountOpen}
+          onNavigate={onNavigate}
+        />
       </div>
     </div>
   )
@@ -209,29 +202,42 @@ function NavGroupBlock({
         />
       </button>
 
-      {open ? (
-        <div id={panelId} className="mt-0.5 ml-[26px] space-y-0.5 border-l border-sidebar-border pl-2">
-          {group.children.map((child) => {
-            const active = child.href === activeHref
-            return (
-              <Link
-                key={child.href}
-                href={child.href}
-                onClick={onNavigate}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "flex min-h-10 items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] transition-colors",
-                  active
-                    ? "bg-sidebar-primary font-medium text-sidebar-primary-foreground shadow-sm"
-                    : "font-normal text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                )}
-              >
-                <span className="truncate">{child.title}</span>
-              </Link>
-            )
-          })}
+      {/* Animasi buka/tutup memakai grid-rows: tinggi konten tidak perlu
+          diukur, dan isi tetap berada di DOM sehingga transisi punya dua ujung
+          yang nyata. Saat tertutup, `inert` menjaga tautan di dalamnya keluar
+          dari urutan fokus dan dari pembaca layar. */}
+      <div
+        id={panelId}
+        inert={!open}
+        className={cn(
+          "grid transition-[grid-template-rows,opacity] duration-200 ease-out",
+          open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="mt-0.5 ml-[26px] space-y-0.5 border-l border-sidebar-border pl-2">
+            {group.children.map((child) => {
+              const active = child.href === activeHref
+              return (
+                <Link
+                  key={child.href}
+                  href={child.href}
+                  onClick={onNavigate}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "flex min-h-11 items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] transition-colors",
+                    active
+                      ? "bg-sidebar-primary font-medium text-sidebar-primary-foreground shadow-sm"
+                      : "font-normal text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                  )}
+                >
+                  <span className="truncate">{child.title}</span>
+                </Link>
+              )
+            })}
+          </div>
         </div>
-      ) : null}
+      </div>
     </div>
   )
 }

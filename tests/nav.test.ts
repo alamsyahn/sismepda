@@ -120,25 +120,38 @@ test("dashboard tidak aktif di halaman lain", () => {
   assert.notEqual(activeNavHref(entries, "/rekap-siswa"), "/")
 })
 
-test("account nav: profil terbuka, pengaturan menerima setiap domain yang dirender", () => {
-  assert.deepEqual(accountNav.map((item) => item.href), [
-    "/profil",
+test("menu akun hanya berisi tindakan atas akun sendiri", () => {
+  // Administrasi (Pengaturan/Pengguna/Akses/Audit) adalah navigasi aplikasi dan
+  // TIDAK boleh bersembunyi di balik popover akun.
+  assert.deepEqual(accountNav.map((item) => item.href), ["/profil"])
+
+  // "Profil Saya" sengaja tanpa daftar permission: setiap sesi sah memilikinya.
+  assert.deepEqual(
+    accountNav.filter((item) => !item.permissions?.length).map((item) => item.href),
+    ["/profil"],
+  )
+})
+
+test("group Administrasi memuat tujuan administratif dengan permission-nya", () => {
+  const group = mainNav.filter(isNavGroup).find((entry) => entry.id === "administrasi")
+  assert.ok(group, "group Administrasi harus ada di navigasi utama")
+  assert.deepEqual(group.children.map((child) => child.href), [
     "/pengaturan",
     "/pengaturan/pengguna",
     "/pengaturan/akses",
     "/pengaturan/audit",
   ])
-  assert.deepEqual(accountNav.find((item) => item.href === "/pengaturan/audit")?.permissions, [
+
+  // Administrasi RBAC TIDAK boleh kehilangan daftar permission-nya: bila kosong,
+  // tautannya akan tampil bagi setiap guru.
+  for (const child of group.children) {
+    assert.ok((child.permissions?.length ?? 0) > 0, `tujuan administratif tanpa permission: ${child.href}`)
+  }
+
+  assert.deepEqual(group.children.find((child) => child.href === "/pengaturan/audit")?.permissions, [
     "rbac.audit.read",
   ])
-  // "Profil Saya" sengaja tanpa daftar permission: setiap sesi sah memilikinya.
-  // Administrasi RBAC TIDAK boleh ikut kategori ini — bila salah satu kehilangan
-  // daftar permission-nya, tautannya akan tampil bagi setiap guru.
-  assert.deepEqual(
-    accountNav.filter((item) => !item.permissions?.length).map((item) => item.href),
-    ["/profil"],
-  )
-  assert.deepEqual(accountNav.find((item) => item.href === "/pengaturan")?.permissions, [
+  assert.deepEqual(group.children.find((child) => child.href === "/pengaturan")?.permissions, [
     "school.settings.read",
     "school.settings.update",
     "school.class_access.manage",
@@ -151,6 +164,40 @@ test("account nav: profil terbuka, pengaturan menerima setiap domain yang dirend
     "database.backup",
     "database.restore",
   ])
+})
+
+test("Administrasi hanya menampilkan tujuan yang benar-benar dimiliki pemakai", () => {
+  const sebagian = visibleNavEntries(mainNav, { grants: ["accounts.read", "rbac.audit.read"] })
+    .filter(isNavGroup)
+    .find((entry) => entry.id === "administrasi")
+  assert.deepEqual(sebagian?.children.map((child) => child.href), [
+    "/pengaturan/pengguna",
+    "/pengaturan/audit",
+  ])
+
+  // Tanpa satu pun grant administratif, heading Administrasi tidak dirender.
+  const tanpaAkses = visibleNavEntries(mainNav, guru).filter(isNavGroup).map((entry) => entry.id)
+  assert.ok(!tanpaAkses.includes("administrasi"), "GURU biasa tidak boleh melihat group Administrasi")
+})
+
+/**
+ * Fixture `admin` di berkas ini sengaja hanya memuat grant modul inti, tanpa
+ * grant administrasi RBAC. Pemeriksaan Administrasi memakai viewer tersendiri.
+ */
+const administrator = {
+  grants: [...ADMIN_GRANTS, "school.settings.read", "accounts.read", "rbac.roles.read", "rbac.audit.read"],
+}
+
+test("Pengaturan tidak ikut aktif pada sub-rute administrasi", () => {
+  const entries = visibleNavEntries(mainNav, administrator)
+  assert.equal(activeNavHref(entries, "/pengaturan"), "/pengaturan")
+  assert.equal(activeNavHref(entries, "/pengaturan/pengguna"), "/pengaturan/pengguna")
+  assert.equal(activeNavHref(entries, "/pengaturan/audit"), "/pengaturan/audit")
+})
+
+test("rute administrasi menyalakan group Administrasi", () => {
+  const entries = visibleNavEntries(mainNav, administrator)
+  assert.equal(activeNavGroupId(entries, activeNavHref(entries, "/pengaturan/akses")), "administrasi")
 })
 
 test("visibleNavItems tetap kompatibel sebagai daftar datar", () => {
