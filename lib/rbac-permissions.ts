@@ -385,6 +385,19 @@ export const PERMISSIONS: readonly PermissionDefinition[] = [
     dependsOn: ["teachers.accounts.read"],
     sensitive: true,
   }),
+  def({
+    // Dipisah dari accounts.status.manage: menonaktifkan dapat dibatalkan,
+    // menghapus tidak. Penghapusan juga memutus atribusi historis (siapa
+    // mencatat pelanggaran, siapa mengirim absensi), jadi ia menuntut
+    // kewenangan tersendiri dan bukan konsekuensi dari hak menonaktifkan.
+    key: "accounts.delete",
+    resource: "accounts",
+    action: "delete",
+    module: "teachers",
+    label: "Hapus akun permanen",
+    dependsOn: ["teachers.accounts.read"],
+    sensitive: true,
+  }),
 
   // --- homerooms ----------------------------------------------------------
   def({

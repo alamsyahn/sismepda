@@ -22,6 +22,7 @@ import { ApiError, authFailureResponse } from "@/lib/api-errors"
 import { requirePermission, getAuthorizationContext } from "@/lib/rbac-access"
 import { verifySameOrigin } from "@/lib/same-origin"
 import { resolveAccountTargetPrivilege } from "@/lib/account-privilege"
+import { planAccountDeletion } from "@/lib/account-deletion"
 import { assertAccountMutationAllowed } from "@/lib/rbac-invariants"
 import {
   InvariantViolationError,
@@ -173,5 +174,159 @@ export async function PATCH(request: Request, context: { params: Promise<{ userI
       return NextResponse.json({ error: "Permintaan tidak valid" }, { status: 400 })
     }
     return authFailureResponse(error, "Akun gagal diperbarui")
+  }
+}
+
+/**
+ * Penghapusan akun permanen.
+ *
+ * Menuntut konfirmasi identifier — bukan sekadar tombol — karena penghapusan
+ * tidak dapat dibatalkan. Pola konfirmasi ini mengikuti jalur hapus guru yang
+ * sudah ada.
+ *
+ * Relasi RESTRICT ditangani `lib/account-deletion.ts`: absensi dialihkan ke
+ * aktor, sedangkan atribusi poin pelanggaran MENGHALANGI penghapusan karena
+ * tidak ada perlakuan otomatis yang benar atas catatan disipliner siswa.
+ */
+const accountDeletion = z
+  .object({
+    confirmationIdentifier: z.string().trim().min(1),
+  })
+  .strict()
+
+export async function DELETE(request: Request, context: { params: Promise<{ userId: string }> }) {
+  try {
+    verifySameOrigin(request)
+
+    const { userId } = await context.params
+    const body = accountDeletion.parse(await request.json())
+
+    await requirePermission("accounts.delete")
+    const authorization = await getAuthorizationContext()
+    const actor = authorization.user
+
+    const target = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        nip: true,
+        email: true,
+        active: true,
+        rbacRoles: {
+          select: {
+            role: {
+              select: {
+                key: true,
+                isProtected: true,
+                permissions: { select: { permission: { select: { key: true } } } },
+              },
+            },
+          },
+        },
+      },
+    })
+    if (!target) throw new ApiError(404, "Akun tidak ditemukan")
+
+    // Konfirmasi diverifikasi sebelum pemeriksaan mahal apa pun.
+    const confirmation = body.confirmationIdentifier.toLowerCase()
+    if (confirmation !== target.nip?.toLowerCase() && confirmation !== target.email?.toLowerCase()) {
+      throw new ApiError(400, "Konfirmasi NIP/email tidak sesuai")
+    }
+
+    const privilege = resolveAccountTargetPrivilege({
+      roles: target.rbacRoles.map((assignment) => ({
+        key: assignment.role.key,
+        isProtected: assignment.role.isProtected,
+        permissionKeys: assignment.role.permissions.map((entry) => entry.permission.key),
+      })),
+    })
+
+    const denial = assertAccountMutationAllowed({
+      actorId: actor.id,
+      actorIsSystemAdmin: authorization.isSystemAdmin,
+      intent: "delete",
+      target: {
+        id: target.id,
+        isSystemAdmin: privilege.isSystemAdmin,
+        hasSensitiveAuthority: privilege.isPrivileged,
+        active: target.active,
+      },
+    })
+    if (denial) return NextResponse.json({ error: denial.error }, { status: denial.status })
+
+    const [attendanceDays, violationPoints] = await Promise.all([
+      prisma.attendanceDay.count({ where: { submittedById: userId } }),
+      prisma.studentViolationPoint.count({ where: { recordedById: userId } }),
+    ])
+
+    const plan = planAccountDeletion({
+      actorId: actor.id,
+      targetId: userId,
+      attendanceDays,
+      violationPoints,
+    })
+
+    if (plan.blocked) {
+      return NextResponse.json(
+        { error: plan.message, reason: plan.reason },
+        { status: plan.reason === "self_delete" ? 403 : 409 },
+      )
+    }
+
+    const outcome = await prisma.$transaction(async (tx) => {
+      // Kunci diambil sebelum menulis: menghapus seorang admin dapat
+      // mengosongkan populasi, sama berbahayanya dengan menonaktifkannya.
+      await lockSystemAdminPopulation(tx)
+
+      await tx.schoolClass.updateMany({
+        where: { homeroomUserId: userId },
+        data: { homeroomUserId: null },
+      })
+      const reassigned = await tx.attendanceDay.updateMany({
+        where: { submittedById: userId },
+        data: { submittedById: plan.reassignAttendanceTo },
+      })
+
+      // Audit ditulis SEBELUM penghapusan. `targetUserId` sengaja tanpa relasi
+      // sehingga id-nya bertahan sebagai catatan, tetapi identitas di baris User
+      // akan lenyap — karena itu `before` menyimpan nama/NIP/e-mail/role agar
+      // jejak tetap bermakna ketika barisnya sudah tidak ada.
+      await recordAuditLog(
+        {
+          actorId: actor.id,
+          action: "RBAC_ACCOUNT_DELETED",
+          entity: "UserAuthority",
+          entityId: userId,
+          targetUserId: userId,
+          before: {
+            name: target.name,
+            nip: target.nip,
+            email: target.email,
+            active: target.active,
+            roleKeys: target.rbacRoles.map((assignment) => assignment.role.key),
+          },
+          summary: `Akun ${target.name} dihapus permanen; ${reassigned.count} hari absensi dialihkan.`,
+        },
+        tx,
+      )
+
+      await tx.user.delete({ where: { id: userId } })
+
+      // Diverifikasi setelah penghapusan: kondisi AKHIR transaksi.
+      await assertSystemAdminPopulationIntact(tx, { actorId: actor.id, targetId: userId })
+
+      return { reassignedAttendanceDays: reassigned.count }
+    })
+
+    return NextResponse.json({ id: userId, ...outcome })
+  } catch (error) {
+    if (error instanceof InvariantViolationError) {
+      return NextResponse.json({ error: error.denial.error }, { status: error.denial.status })
+    }
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: "Permintaan tidak valid" }, { status: 400 })
+    }
+    return authFailureResponse(error, "Akun gagal dihapus")
   }
 }

@@ -85,12 +85,12 @@ Only verified, unresolved engineering liabilities are listed here.
 ## TD-009 — Teacher deletion is blocked by recorded violation points
 
 - **Area / severity:** User lifecycle/data integrity — **High**
-- **Current condition:** Teacher deletion reassigns homeroom and attendance submissions, then deletes the user, but does not handle `StudentViolationPoint.recordedById`, whose required relation restricts deletion. No violation point has been recorded yet (database check: 0 rows), so the failure is latent rather than currently observable.
-- **Evidence:** `app/api/admin/teachers/route.ts:115-136` (transaction clears `homeroomUserId` and reassigns `submittedById` only); `prisma/schema.prisma:189,196` (`recordedById String` with a non-nullable `recordedBy` relation).
-- **Impact:** Permanent deletion returns a generic failure for any teacher who has recorded a violation point, leaving the advertised lifecycle incomplete.
-- **Reason:** Submission ownership was explicitly reassigned, while violation-point provenance added later has no deletion policy.
-- **Direction:** Define a provenance-preserving policy such as nullable recorder with `SetNull`, reassignment, or prohibiting deletion with a precise explanation.
-- **Exit criteria:** Database-backed tests cover a teacher with violation points; deletion either succeeds under the documented provenance policy or is predictably rejected before the transaction with an actionable response.
+- **Current condition:** The new RBAC account endpoint (`app/api/rbac/accounts/[userId]/route.ts` DELETE) resolves this via `lib/account-deletion.ts`: attendance is reassigned to the actor, and recorded violation points block deletion with an actionable 409 instead of a raw FK failure. The legacy teacher endpoint still deletes without that check and remains exposed. No violation point exists in production data yet (database check: 0 rows), so the legacy failure stays latent.
+- **Evidence:** `app/api/admin/teachers/route.ts:115-136` (transaction clears `homeroomUserId` and reassigns `submittedById` only — still unguarded); `prisma/schema.prisma:189,196` (`recordedById String` with a non-nullable `recordedBy` relation); resolved path: `lib/account-deletion.ts` + `tests/account-deletion.test.ts`.
+- **Impact:** Permanent deletion through the legacy teacher endpoint returns a generic HTTP 500 for any teacher who has recorded a violation point. Mutation testing confirmed this exact failure mode: with the guard removed, deletion returns 500 rather than an actionable message.
+- **Reason:** Submission ownership was explicitly reassigned, while violation-point provenance added later has no deletion policy. The new endpoint adopted a policy; the legacy path predates it.
+- **Direction:** Route legacy teacher deletion through `planAccountDeletion` so both paths share one provenance policy, then retire the duplicate deletion logic.
+- **Exit criteria:** The legacy teacher endpoint also rejects (or handles) deletion of a teacher with recorded violation points predictably, before the transaction, with an actionable response — verified by a database-backed test.
 
 ## TD-010 — Destructive restore lacks maintenance lock and audit record
 

@@ -81,6 +81,26 @@ Invariants:
 - Membership grants a controlled bypass: every permission check for a *known* catalog key passes. The bypass still requires an active account (`requireUser()`), never skips business validation (zod, invariants, confirmation identifiers), and never satisfies an unknown key.
 - Class scope for a system admin resolves to `all` for every scoped family.
 
+## Account deletion policy
+
+Permanent deletion (`DELETE /api/rbac/accounts/[userId]`) is a distinct authority from deactivation, because deactivation is reversible and deletion is not.
+
+Two relations reference `User` without `onDelete`, so PostgreSQL applies RESTRICT and a naive delete fails at the database layer. Each has a deliberate, different policy (`lib/account-deletion.ts`):
+
+| Relation | Policy | Why |
+|---|---|---|
+| `AttendanceDay.submittedById` | Reassigned to the deleting actor | Student attendance is a school record that must not disappear because the submitting teacher was removed. |
+| `StudentViolationPoint.recordedById` | **Blocks** deletion (HTTP 409, `reason: violation_points_attributed`) | Reassigning it would rewrite who accused a student of misconduct — record falsification. Deleting it would discard the student's disciplinary history, which does not belong to the teacher's account. No automatic treatment is correct, so the operator decides. |
+
+Additional rules enforced by the endpoint:
+
+- A confirmation identifier (NIP or e-mail) must match the target; a button press is not enough.
+- Self-deletion is rejected, and is checked *before* attribution so the message stays useful.
+- The system-admin population lock is taken before writing, and the invariant is verified after deletion inside the same transaction.
+- The audit entry is written *before* the row disappears, and stores name/NIP/e-mail/roles in `before`. `AuditLog.targetUserId` has no Prisma relation, so the id survives, but the identity behind it would otherwise be unrecoverable.
+
+The legacy `DELETE /api/admin/teachers` does **not** yet apply this policy — see TD-009.
+
 ## Surface policy model
 
 Every page, route handler, server loader and non-API handler carries exactly one policy:
@@ -114,6 +134,7 @@ Every key below corresponds to at least one surface in the inventory. Keys are g
 | `teachers.accounts.read` | — | `/guru`, `GET /api/admin/teachers` |
 | `teachers.accounts.create` / `teachers.accounts.update` / `accounts.credentials.manage` / `accounts.status.manage` | — | `/guru/input`, `POST/PATCH /api/admin/teachers` (create, credentials, status, password reset) |
 | `teachers.accounts.delete` | — | `DELETE /api/admin/teachers` |
+| `accounts.delete` | — | `DELETE /api/rbac/accounts/[userId]` (permanent deletion; separate from `accounts.status.manage` because deactivation is reversible and deletion is not) |
 | `teachers.accounts.export` | — | `GET /api/export?type=teachers` |
 | `teachers.directory.read` | — | `/guru/direktori`, `/guru/[teacherId]` (view), `GET /api/teachers/[teacherId]/photo`, `readTeacherDirectory`, `readTeacherProfile` |
 | `teachers.profile.update` | — | `PATCH /api/teachers/[teacherId]` (employment, position, TMT, subjects) |
