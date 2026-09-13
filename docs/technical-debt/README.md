@@ -15,11 +15,11 @@ Only verified, unresolved engineering liabilities are listed here.
 ## TD-002 — Restore archive identifiers are not allowlisted
 
 - **Area / severity:** Backup/restore — **High**
-- **Current condition:** Table names parsed from an uploaded `pg_restore --list` are quoted but interpolated into generated `TRUNCATE` SQL; compatibility is checked only by presence/absence rules.
-- **Evidence:** `app/api/admin/database/route.ts:60-68`.
-- **Impact:** A malicious or malformed archive presented by an ADMIN could target unexpected tables or make restoration behavior unsafe; restore is inherently destructive.
-- **Reason:** Restore supports generic data-only archives rather than a manifest of expected SISMEPDA tables.
-- **Direction:** Validate archive format/version and require every table against an explicit schema-derived allowlist before generating SQL.
+- **Current condition:** Archive compatibility is now validated before any destructive statement: `lib/database-restore-preflight.ts` rejects unsupported formats, migration-bearing archives, empty archives, and archives missing any required RBAC table, and the route returns 409 before the first `TRUNCATE`. What remains unfixed is the identifier path — table names parsed from the uploaded `pg_restore --list` are quoted but still interpolated into generated `TRUNCATE` SQL without an explicit schema-derived allowlist.
+- **Evidence:** `app/api/admin/database/route.ts` (preflight call precedes SQL generation; interpolation remains); `lib/database-restore-preflight.ts`; `tests/database-restore-preflight.test.ts`; `tests/database-restore-route.test.ts`; `scripts/verify-backup-roundtrip.ts` (20/20 against a real database).
+- **Impact:** Reduced but not eliminated. Incompatible archives can no longer destroy access, yet an archive listing unexpected table names could still influence which tables appear in generated SQL.
+- **Reason:** Preflight validates the *required* set is present; it does not yet reject *unexpected* identifiers outside a known allowlist.
+- **Direction:** Require every parsed table to match an explicit schema-derived allowlist before generating SQL, and parse archive identifiers structurally rather than by regex (combine with TD-007).
 - **Exit criteria:** Unknown/quoted/malformed identifiers are rejected by tests; only the complete compatible SISMEPDA table set can be truncated/restored.
 
 ## TD-003 — Attendance time/auto-lock settings are not enforced

@@ -27,7 +27,10 @@ COPY --from=builder /app/app/generated ./app/generated
 COPY prisma ./prisma
 # prisma/seed.ts mengimpor lib/database-config dan lib/workbook-master.
 COPY lib ./lib
-COPY prisma.config.ts package.json ./
+# tsconfig.json memiliki path alias `@/*`; tsx membacanya untuk me-resolve
+# impor seperti "@/lib/rbac-legacy" pada lib/rbac-backfill.ts. Tanpa berkas ini
+# perintah backfill legacy gagal MODULE_NOT_FOUND di dalam image.
+COPY prisma.config.ts package.json tsconfig.json ./
 CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed"]
 
 FROM node:24-bookworm-slim AS runner

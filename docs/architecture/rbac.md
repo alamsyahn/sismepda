@@ -27,6 +27,12 @@ Physical names avoid the existing PostgreSQL enum `"Role"` (`prisma/migrations/2
 
 **Implementation status.** Phases 2–6 have landed locally. Every application surface — core modules (dashboard, attendance, recap/export, students, teachers, homerooms, workbook, navigation), domain modules, and role/account administration — now authorizes exclusively through `requirePermission()` / `requireAnyPermission()` / `requireClassScopeFor()` against the current database. Role/account UI lives at `/pengaturan/akses`, `/pengaturan/pengguna`, and `/pengaturan/audit`. `User.role` and the boolean capability columns are still written by existing UIs and are still read by `lib/rbac-legacy.ts` for the one-time backfill parity mapping, but they are **no longer consulted by any runtime guard**. Phase 6 removed their remaining runtime population/navigation reads without dropping the columns; physical removal waits for a separate migration after one full live release cycle.
 
+**Contract (drop) migration policy.** The first RBAC release is deliberately **additive only**. No migration in `prisma/migrations/` drops `User.role`, the `LegacyRole` enum type, or any boolean authorization flag, and `tests/deployment-contract.test.ts` fails the build if one appears. Two reasons: an additive schema keeps the previous application image valid as a rollback path up to the cutover, and contraction is irreversible without a restore.
+
+These legacy columns stay **inert** after cutover — present, possibly still written by older UI paths, never read by a runtime guard. Contraction is a separate future project, permitted only after production stability and explicit approval.
+
+Contraction must never remove `User.isTeacher`, `User.workbookSupervised`, or business relations: those are domain data, not legacy authorization flags, and remain in active runtime use (see the teacher-population note below).
+
 ```text
 RbacRole            id cuid PK · key text unique (lowercase, stable) · name text
                     description text? · isSystem bool · isProtected bool

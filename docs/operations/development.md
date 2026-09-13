@@ -16,9 +16,28 @@ For users without database-creation rights, use a dedicated schema query paramet
 
 `npm run db:ensure-test-user` (`scripts/ensure-local-test-user.ts`) guarantees exactly one development-only account for browser/E2E testing, separate from `prisma/seed.ts`. It is manual: run it after a production→local restore overwrote the local database, never on application start. Credentials come from the untracked `.env` (`ALLOW_LOCAL_TEST_USER`, `DEV_TEST_USER_EMAIL`, `DEV_TEST_USER_PASSWORD`, `DEV_TEST_USER_NAME`) and must never be committed or documented.
 
-The account is created with `Role.ADMIN`, the highest value of the two-value `Role` enum, because ADMIN passes every delegated capability guard and therefore reaches all UI without schema changes. Behavior is idempotent: a missing account is created, an existing one is never duplicated and only minimally repaired (`active`, `role`, password hash) when it could no longer log in; no other column and no other table is touched.
+The account is created with the legacy `role` column set to `ADMIN`, but that column is **not** what grants access: no module under `lib/` reads `LegacyRole` as an authorization path. Post-RBAC authority comes entirely from role membership, so the helper also ensures membership in the `system_admin` RBAC role. Without that step the account could log in yet hold zero permissions on a freshly bootstrapped local database (one that never ran the legacy backfill). Behavior is idempotent: a missing account is created, an existing one is never duplicated and only minimally repaired (`active`, `role`, password hash) when it could no longer log in, and role membership is upserted on the `(userId, roleId)` primary key. If the `system_admin` role does not exist yet, the helper exits nonzero and tells you to run `npm run db:seed` first rather than writing a half-configured account. `tests/local-test-user-rbac.test.ts` locks this contract, including that neither `prisma/seed.ts` nor `prisma/seed-rbac.ts` ever calls the helper.
 
 Safety guards are pure functions in `lib/local-test-user.ts`, evaluated before any database connection opens, and all fail closed: `NODE_ENV` must not be `production`, `ALLOW_LOCAL_TEST_USER` must equal `"true"`, `DATABASE_URL` must parse as PostgreSQL with a local host and a development database name (the production name is not on the allowlist), and the email must use a reserved test domain. An unparsable `DATABASE_URL` aborts instead of falling back, so no path writes to production.
+
+## Production dump into a local database
+
+Sync direction is always production → local. Never modify production to match local, and never restore a data-only archive blindly across schema versions — the archive carries rows, not the schema they were written against.
+
+If the dump is **pre-RBAC** (taken before the RBAC migrations shipped), it has no `UserRole`/`RolePermission`/`RbacMigration` data, so restoring it into a post-RBAC local database leaves zero role membership and no usable account. Use the forward path instead:
+
+1. Restore into a database/schema matching the dump's own legacy version, so the archive and the schema agree.
+2. Apply the forward migration: `npx prisma migrate deploy` (locally `npm run db:migrate` is also acceptable since it is a development database).
+3. Seed the RBAC registry and templates: `npm run db:seed`.
+4. Run the one-time backfill against the local database, dry-run first:
+   ```bash
+   npx tsx --env-file=.env prisma/rbac-backfill-legacy.ts
+   npx tsx --env-file=.env prisma/rbac-backfill-legacy.ts --apply --database=sismepda_dev
+   ```
+   `--apply` refuses to run unless the named database matches `current_database()`.
+5. Re-create the local test account: `npm run db:ensure-test-user`.
+
+If the dump is already **post-RBAC**, the in-app restore path applies and its preflight will confirm compatibility; see [backup and restore](backup-restore.md).
 
 ## Synthetic E-UKS test data (development only)
 
