@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
-import { requireUser } from "@/lib/auth-guards"
+import { requireUser, UnauthorizedError } from "@/lib/rbac-access"
+import { verifySameOrigin } from "@/lib/same-origin"
 import { prisma } from "@/lib/prisma"
 import { detectProfilePhotoType, MAX_PROFILE_PHOTO_BYTES, profilePhotoUrl } from "@/lib/profile"
 
@@ -22,7 +23,7 @@ export async function GET() {
       },
     })
   } catch (error) {
-    const unauthorized = error instanceof Error && error.message === "UNAUTHORIZED"
+    const unauthorized = error instanceof UnauthorizedError
     return NextResponse.json(
       { error: unauthorized ? "Sesi tidak valid" : "Foto profil gagal dimuat" },
       { status: unauthorized ? 401 : 500 },
@@ -32,6 +33,11 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
+    const origin = verifySameOrigin(request)
+    if (!origin.ok) {
+      return NextResponse.json({ error: origin.error }, { status: origin.status })
+    }
+
     const sessionUser = await requireUser()
     const contentLength = Number(request.headers.get("content-length") ?? 0)
     if (contentLength > MAX_PROFILE_PHOTO_BYTES + 64 * 1024) {
@@ -59,7 +65,7 @@ export async function PUT(request: Request) {
     })
     return NextResponse.json({ photoUrl: profilePhotoUrl(updated.photoUpdatedAt) })
   } catch (error) {
-    const unauthorized = error instanceof Error && error.message === "UNAUTHORIZED"
+    const unauthorized = error instanceof UnauthorizedError
     return NextResponse.json(
       { error: unauthorized ? "Sesi tidak valid" : "Foto profil gagal disimpan" },
       { status: unauthorized ? 401 : 500 },
@@ -67,8 +73,13 @@ export async function PUT(request: Request) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
   try {
+    const origin = verifySameOrigin(request)
+    if (!origin.ok) {
+      return NextResponse.json({ error: origin.error }, { status: origin.status })
+    }
+
     const sessionUser = await requireUser()
     await prisma.user.update({
       where: { id: sessionUser.id },
@@ -76,7 +87,7 @@ export async function DELETE() {
     })
     return NextResponse.json({ photoUrl: null })
   } catch (error) {
-    const unauthorized = error instanceof Error && error.message === "UNAUTHORIZED"
+    const unauthorized = error instanceof UnauthorizedError
     return NextResponse.json(
       { error: unauthorized ? "Sesi tidak valid" : "Foto profil gagal dihapus" },
       { status: unauthorized ? 401 : 500 },

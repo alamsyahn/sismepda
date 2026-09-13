@@ -1,17 +1,11 @@
 import { compare } from "bcryptjs"
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { requireUser } from "@/lib/auth-guards"
+import { ownProfileUpdateSchema } from "@/lib/account-schemas"
 import { prisma } from "@/lib/prisma"
 import { profilePhotoUrl } from "@/lib/profile"
-
-const profileUpdate = z.object({
-  name: z.string().trim().min(1).max(100),
-  nip: z.union([z.literal(""), z.string().trim().max(30).regex(/^\d+$/)]),
-  email: z.union([z.literal(""), z.string().trim().max(254).email()]),
-  phone: z.union([z.literal(""), z.string().trim().max(20).regex(/^\+?\d{7,15}$/)]),
-  currentPassword: z.string().max(128).optional(),
-})
+import { requireUser, UnauthorizedError } from "@/lib/rbac-access"
+import { verifySameOrigin } from "@/lib/same-origin"
 
 const profileSelect = {
   id: true,
@@ -19,8 +13,8 @@ const profileSelect = {
   nip: true,
   email: true,
   phone: true,
-  role: true,
   photoUpdatedAt: true,
+  rbacRoles: { select: { role: { select: { name: true } } } },
 } as const
 
 function serializeProfile(user: {
@@ -29,8 +23,8 @@ function serializeProfile(user: {
   nip: string | null
   email: string | null
   phone: string | null
-  role: "ADMIN" | "GURU"
   photoUpdatedAt: Date | null
+  rbacRoles: readonly { role: { name: string } }[]
 }) {
   return {
     id: user.id,
@@ -38,7 +32,9 @@ function serializeProfile(user: {
     nip: user.nip,
     email: user.email,
     phone: user.phone,
-    role: user.role,
+    // Nama role bersifat informatif untuk UI. Otorisasi tidak pernah
+    // memeriksa nama tampilan, dan klien tidak dapat mengubahnya lewat sini.
+    roleNames: user.rbacRoles.map((entry) => entry.role.name),
     photoUrl: profilePhotoUrl(user.photoUpdatedAt),
   }
 }
@@ -55,8 +51,13 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
+    const origin = verifySameOrigin(request)
+    if (!origin.ok) {
+      return NextResponse.json({ error: origin.error }, { status: origin.status })
+    }
+
     const sessionUser = await requireUser()
-    const body = profileUpdate.parse(await request.json())
+    const body = ownProfileUpdateSchema.parse(await request.json())
     const existing = await prisma.user.findUniqueOrThrow({
       where: { id: sessionUser.id },
       select: { ...profileSelect, passwordHash: true },
@@ -92,10 +93,12 @@ export async function PATCH(request: Request) {
     })
     return NextResponse.json(serializeProfile(updated))
   } catch (error) {
-    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+    if (error instanceof UnauthorizedError) {
       return NextResponse.json({ error: "Sesi tidak valid" }, { status: 401 })
     }
     if (error instanceof z.ZodError) {
+      // Termasuk penolakan field otorisasi yang disuntikkan: skema `.strict()`
+      // menggagalkan seluruh mutasi alih-alih membuang field itu diam-diam.
       return NextResponse.json({ error: "Data profil tidak valid", code: "INVALID_DATA" }, { status: 400 })
     }
     const duplicate = typeof error === "object" && error !== null && "code" in error && error.code === "P2002"
