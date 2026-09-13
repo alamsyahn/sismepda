@@ -33,6 +33,7 @@ Cross-feature rules are linked rather than repeated. Attendance class scope affe
 - [Deployment, migration, rollback boundaries](operations/deployment.md)
 - [RBAC cutover runbook](operations/rbac-cutover.md)
 - [Backup and restore](operations/backup-restore.md)
+- [Local database workflow: dev vs production clone](operations/local-database-workflow.md)
 
 ## Active technical debt
 

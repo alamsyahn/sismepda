@@ -4,6 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:local": "tsx scripts/with-db.ts local -- next dev",
+    "dev:prodclone": "tsx scripts/with-db.ts prodclone -- next dev",
+    "db:refresh-prodclone": "tsx scripts/refresh-prodclone.ts",
+    "db:studio:local": "tsx scripts/with-db.ts local -- prisma studio",
+    "db:studio:prodclone": "tsx scripts/with-db.ts prodclone -- prisma studio",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",

@@ -11,6 +11,9 @@ __v0_jsx-dev-runtime.ts
 !.env.example
 !.env.production.example
 *.dump
+# Area kerja dump clone produksi (db:refresh-prodclone). Berisi data siswa
+# nyata: tidak boleh masuk Git dalam bentuk apa pun.
+.prodclone/
 /*.sql
 *.backup
 *.db

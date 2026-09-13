@@ -7,10 +7,12 @@ npm install
 npm run db:setup       # migrate dev + idempotent seed
 npm run db:rbac-backfill                            # RBAC legacy backfill, dry-run report
 npm run db:rbac-backfill -- --apply --database=sismepda_dev   # apply once to the local DB
-npm run dev
+npm run dev:local      # development database, target printed before Next starts
 ```
 
 For users without database-creation rights, use a dedicated schema query parameter such as `?schema=sismepda_local`; runtime and Prisma CLI both honor it. Generated Prisma client is under `app/generated/prisma/`.
+
+Two local databases exist and are selected by script, not by editing `.env`: `npm run dev:local` (persistent `sismepda_dev`) and `npm run dev:prodclone` (disposable clone of production). Bare `npm run dev` still reads `.env` directly with no guard. See [local database workflow](local-database-workflow.md) for roles, guardrails, and the clone refresh command.
 
 ## Local test account
 
@@ -24,18 +26,9 @@ Safety guards are pure functions in `lib/local-test-user.ts`, evaluated before a
 
 Sync direction is always production → local. Never modify production to match local, and never restore a data-only archive blindly across schema versions — the archive carries rows, not the schema they were written against.
 
-If the dump is **pre-RBAC** (taken before the RBAC migrations shipped), it has no `UserRole`/`RolePermission`/`RbacMigration` data, so restoring it into a post-RBAC local database leaves zero role membership and no usable account. Use the forward path instead:
+`npm run db:refresh-prodclone` automates this forward path into the disposable clone: dump → restore → `prisma migrate deploy` → RBAC seed → legacy backfill → local test account, with guards that refuse any target that is not the local clone. See [local database workflow](local-database-workflow.md); do not reconstruct the steps by hand.
 
-1. Restore into a database/schema matching the dump's own legacy version, so the archive and the schema agree.
-2. Apply the forward migration: `npx prisma migrate deploy` (locally `npm run db:migrate` is also acceptable since it is a development database).
-3. Seed the RBAC registry and templates: `npm run db:seed`.
-4. Run the one-time backfill against the local database, dry-run first:
-   ```bash
-   npx tsx --env-file=.env prisma/rbac-backfill-legacy.ts
-   npx tsx --env-file=.env prisma/rbac-backfill-legacy.ts --apply --database=sismepda_dev
-   ```
-   `--apply` refuses to run unless the named database matches `current_database()`.
-5. Re-create the local test account: `npm run db:ensure-test-user`.
+The archive's own version still decides the path. A **pre-RBAC** dump has no `UserRole`/`RolePermission`/`RbacMigration` rows, so restoring it into a post-RBAC database leaves zero role membership and no usable account — which is why the refresh restores into an empty database first and only then migrates forward. `--apply` on the backfill refuses to run unless the named database matches `current_database()`.
 
 If the dump is already **post-RBAC**, the in-app restore path applies and its preflight will confirm compatibility; see [backup and restore](backup-restore.md).
 
@@ -43,12 +36,9 @@ If the dump is already **post-RBAC**, the in-app restore path applies and its pr
 
 > **WARNING: synthetic E-UKS scripts MUST NEVER target production.** Sync direction is always production → local; nothing here ever writes to, uploads to, or reads from production.
 
-The local database is periodically overwritten by a fresh production dump. Refresh workflow:
+Synthetic data belongs to the development database. `npm run db:refresh-prodclone` deliberately does **not** generate it: the clone represents production data on the latest schema, nothing else. Run the generator explicitly if a clone needs fixtures.
 
-1. Back up / download the production database.
-2. Restore it into the local development database.
-3. Confirm `DATABASE_URL` points at development.
-4. `npm run dev:bootstrap` — verifies the target, ensures the local test account, then generates data.
+`npm run dev:bootstrap` verifies the target, ensures the local test account, then generates data.
 
 ```bash
 npm run dev:bootstrap                 # test account + synthetic E-UKS

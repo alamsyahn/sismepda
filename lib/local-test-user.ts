@@ -15,8 +15,17 @@ export const localDatabaseHosts = ["localhost", "127.0.0.1", "::1", "[::1]"] as 
  * (`sismepda`) is deliberately absent, so pointing DATABASE_URL at production
  * aborts even when the host somehow resolves as local (SSH tunnel, port
  * forward, /etc/hosts override).
+ *
+ * `sismepda_prodclone` ada di sini karena clone produksi tetap database lokal
+ * yang disposable: akun uji harus dapat dibuat ulang setiap kali clone
+ * direfresh. Nama produksi tetap tidak pernah masuk daftar ini.
  */
-export const localDatabaseNames = ["sismepda_dev", "sismepda_local", "sismepda_test"] as const
+export const localDatabaseNames = [
+  "sismepda_dev",
+  "sismepda_local",
+  "sismepda_test",
+  "sismepda_prodclone",
+] as const
 
 /** Email domains reserved for test accounts (RFC 6761 reserved TLD). */
 export const localTestEmailDomains = [".test", ".invalid", ".localhost"] as const

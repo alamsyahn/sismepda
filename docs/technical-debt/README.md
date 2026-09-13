@@ -121,3 +121,12 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Direction:** Authorize at the top of the handler, as `PUT /api/admin/settings` now does, keeping the loader check as defence in depth.
 - **Exit criteria:** An unauthorized request to `/api/attendance-trend` returns 401/403 without reading `schoolSetting`, proven by a direct handler test.
 
+## TD-014 — Production attendance dates carry a timezone projection, blocking the date-only migration
+
+- **Area / severity:** Data integrity / migration — **High**
+- **Current condition:** Migration `20260909100000_use_date_for_business_dates` aborts against production data. Verified on the local production clone: 151 `AttendanceDay` rows store `17:00:00` instead of midnight — WIB midnight written as UTC — all within 2026-09-06..2026-09-11. `SchoolHoliday`, `User.teachingSince`, `AdditionalDuty`, `StudentViolationPoint`, `BosEntry`, and `SarprasItem` are clean. Additionally 22 `(classId, calendar date)` pairs would collide once cast to `DATE`, so the unique constraint would fail even after the ambiguity is resolved.
+- **Evidence:** `prisma/migrations/20260909100000_use_date_for_business_dates/migration.sql` (guard raises `Date-only migration aborted: 151 non-midnight legacy value(s)`); counts taken read-only from `sismepda_prodclone` after `npm run db:refresh-prodclone`; production itself remains at 16 applied migrations, 27 tables.
+- **Impact:** Production cannot receive the remaining 18 repository migrations, so any feature depending on the newer schema cannot ship. The local clone stays on the production schema, so `npm run dev:prodclone` boots but fails on pages requiring new columns (for example `SchoolSetting.timeZone`).
+- **Reason:** Legacy writers persisted a timezone projection rather than a calendar date, and two rows per class/day were created for the affected range.
+- **Direction:** Decide the business meaning of the 151 rows and the 22 collisions before touching schema — which of each colliding pair is authoritative, and whether `17:00:00` maps to its WIB calendar date. Encode that decision as an explicit data-repair migration placed before the date-only migration. Do not use `db push --force-reset` and do not author a migration that merely bypasses the guard.
+- **Exit criteria:** `npm run db:refresh-prodclone` completes `prisma migrate deploy` with all repository migrations applied, no attendance day is silently shifted to a different calendar date, and the repair is reproducible against a fresh clone.
