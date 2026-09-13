@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { EuksTermRanking } from "@/components/e-uks/euks-term-ranking"
 import { EuksMonthlyVisitsChart } from "@/components/e-uks/euks-monthly-visits-chart"
+import { EuksNutritionDashboard } from "@/components/e-uks/euks-nutrition-dashboard"
 import { euksHeroLogoUrl } from "@/lib/euks-logo"
 import { EuksHero } from "@/components/e-uks/euks-hero"
 import { EuksOfficerRail } from "@/components/e-uks/euks-officer-rail"
@@ -23,6 +24,7 @@ import {
   readEuksSettings,
   readEuksTrendVisits,
   readEuksVisitDateRange,
+  readSchoolNutritionSnapshot,
 } from "@/lib/server-euks"
 import { schoolMonthOf } from "@/lib/school-date"
 
@@ -51,6 +53,11 @@ export default async function EuksHomePage() {
     officers: [], facilities: [], complaintOptions: [], heroImages: [], heroLogos: [],
   }
   const canManage = canContent && await pageCan("euks.profile.update")
+  // Ringkasan status gizi diturunkan dari pengukuran kesehatan, jadi haknya
+  // adalah hak baca pengukuran itu sendiri — bukan hak ringkasan kunjungan.
+  // Tanpa hak itu tidak ada query gizi yang dijalankan sama sekali, bukan
+  // sekadar disembunyikan di React.
+  const canMeasurements = await pageCan("euks.measurements.read")
 
   const activeOfficers = settings.officers.filter((officer) => officer.active)
   const activeFacilities = settings.facilities.filter((facility) => facility.active)
@@ -76,6 +83,7 @@ export default async function EuksHomePage() {
   const range = canOverview ? await readEuksVisitDateRange() : null
   const visits = canOverview && range ? await readEuksTrendVisits(range.first, range.last) : []
   const distinctStudents = canOverview && range ? await countDistinctVisitingStudents(range.first, range.last) : 0
+  const nutritionBuckets = canMeasurements ? await readSchoolNutritionSnapshot() : []
 
   const complaints = rankTerms(
     visits.map((visit) => visit.complaint),
@@ -161,6 +169,37 @@ export default async function EuksHomePage() {
           />
         )}
       </EuksSection>
+
+      {canMeasurements ? (
+        <EuksSection
+          eyebrow="Data"
+          title="Ringkasan Status Gizi Siswa"
+          description="Berdasarkan pengukuran kesehatan terbaru masing-masing siswa."
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              nativeButton={false}
+              render={<Link href="/e-uks/pantauan-kesehatan" />}
+            >
+              Lihat Pantauan Kesehatan
+            </Button>
+          }
+        >
+          {nutritionBuckets.length === 0 ? (
+            <div className="text-muted-foreground flex flex-col items-center gap-4 rounded-xl border border-dashed px-6 py-12 text-center">
+              <p className="max-w-sm text-sm text-pretty">
+                Belum ada data pengukuran kesehatan yang dapat ditampilkan.
+              </p>
+              <Button render={<Link href="/e-uks/pantauan-kesehatan" />} nativeButton={false}>
+                Catat Pengukuran
+              </Button>
+            </div>
+          ) : (
+            <EuksNutritionDashboard buckets={nutritionBuckets} />
+          )}
+        </EuksSection>
+      ) : null}
 
       <EuksSection
         eyebrow="Data"

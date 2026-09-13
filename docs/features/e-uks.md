@@ -103,6 +103,57 @@ Age comes from `ageInMonths()` at the measurement date, counted in full months
 so a birthday later in the month does not round up. Category colour is mapped
 once in `nutritionCategoryTone` so the card and any future table cannot disagree.
 
+## School nutrition summary (home page)
+
+The `/e-uks` home page carries a **Ringkasan Status Gizi Siswa** section that
+answers "what is the nutritional state of the school" without opening students
+one at a time.
+
+**The dashboard uses the latest valid health measurement per student, never
+every historical measurement.** A student examined four times counts once, so
+frequently-checked students do not outweigh the rest. The snapshot resolves the
+latest row per student in SQL (`LEFT JOIN LATERAL … ORDER BY measuredAt DESC,
+createdAt DESC, id DESC LIMIT 1` in `readSchoolNutritionSnapshot()`,
+`lib/server-euks.ts`), one query for the whole school, with `createdAt`/`id` as
+the deterministic tie-breakers for several rows on the same date. Active students only (`Student.active`), so
+alumni cannot drag the figures.
+
+Classification reuses `nutritionStatus()` — the same BMI-for-age resolver and
+the same Permenkes/WHO reference described above. There is no second algorithm
+and no adult cut-off anywhere in the dashboard; `tests/euks-nutrition.test.ts`
+asserts the aggregate categories equal what `nutritionStatus()` returns for the
+same input, including a case where a child is *gizi baik* at an IMT the adult
+scale would call underweight.
+
+A student is **measured** only when the latest row classifies. Everything else
+is counted as not-yet-measured and broken down by the resolver's own reason
+(`no_measurement`, `no_birth_date`, `no_gender`, `age_out_of_range`), so missing
+demographics never silently inflate a category. Percentages of the categories
+use measured students as the denominator; coverage uses the full roster.
+
+`lib/euks-nutrition.ts` is deliberately Prisma-free. The server builds the
+snapshot as **per-class buckets** — five counts plus a student total per class,
+not one row per student — and the client component re-aggregates those buckets
+for the grade filter. So the browser receives ~27 small objects instead of 840
+student rows, and switching Semua/VII/VIII/IX re-renders without a request.
+
+"Perlu perhatian" is derived (`ATTENTION_NUTRITION_CATEGORIES` = every category
+whose `nutritionCategoryTone` is not `ok`), never a hand-written list, so adding
+a category cannot leave it stale. Class ordering follows the existing
+`compareClassNames()`. Category colours live in `--gizi-*` tokens in
+`globals.css` rather than `--chart-*`, which is a deliberate greyscale in dark
+mode and would render every category identical.
+
+There is **no freshness rule**: the section shows the latest measurement date
+and coverage, and never labels data "expired", because the project has no
+owner-approved medical validity period. Raw IMT stays on
+`/e-uks/pantauan-kesehatan`; a school-wide IMT average is intentionally absent,
+as it is meaningless across mixed ages and sexes.
+
+Access is `euks.measurements.read`, the same permission that guards Pantauan
+Kesehatan Siswa. Without it the snapshot query never runs — the gate is in the
+server component, not a hidden element.
+
 ## KMS chart (height-for-age)
 
 `/e-uks/pantauan-kesehatan` plots the student's height against the WHO
@@ -284,9 +335,11 @@ a complaint could pass as new on the form yet merge in the statistics.
 ### Home page composition
 
 `/e-uks` is a landing page, not a dashboard: hero → pengurus → fasilitas →
-insight → CTA. Statistics are kept in full but moved below the identity
-sections, because a school profile page that opens with counters reads as an
-admin screen.
+ringkasan status gizi → insight → CTA. Statistics are kept in full but moved
+below the identity sections, because a school profile page that opens with
+counters reads as an admin screen. The nutrition summary follows the same rule —
+it sits under the identity sections, and only for holders of
+`euks.measurements.read` (see [School nutrition summary](#school-nutrition-summary-home-page)).
 
 `EuksHeroImage` holds the hero slideshow, added by
 `20260912110000_add_euks_hero_images` together with the nullable

@@ -83,6 +83,17 @@
   --sarpras-repair: oklch(0.62 0.2 18);
   --sarpras-moderate: oklch(0.75 0.15 70);
   --sarpras-good: oklch(0.65 0.16 155);
+  /* Status gizi E-UKS. Token tersendiri karena --chart-* sengaja menjadi skala
+     abu-abu di mode gelap, sedangkan kategori gizi harus tetap dapat dibedakan
+     satu sama lain. Kekurangan gizi memakai rona hangat (merah → oranye) dan
+     kelebihan memakai rona dingin-pekat (ungu → magenta), dengan normal hijau
+     di tengah, sehingga dua ujung spektrum tidak tertukar seperti bila
+     keduanya sama-sama merah. */
+  --gizi-buruk: oklch(0.55 0.19 25);
+  --gizi-kurang: oklch(0.75 0.15 65);
+  --gizi-baik: oklch(0.65 0.16 155);
+  --gizi-lebih: oklch(0.58 0.16 290);
+  --gizi-obesitas: oklch(0.5 0.19 330);
   /* Aksen E-UKS: hijau daun yang kalem. Dipakai hanya di modul E-UKS
      (eyebrow section, band insight, hero) sebagai warna identitas unit
      kesehatan; --primary aplikasi tetap violet dan tidak diubah. */
@@ -144,6 +155,13 @@
   --sarpras-repair: oklch(0.7 0.19 22);
   --sarpras-moderate: oklch(0.8 0.15 70);
   --sarpras-good: oklch(0.72 0.16 155);
+  /* Versi gelap: rona sama seperti mode terang, luminansi dinaikkan agar
+     kontras terhadap kartu gelap tetap memadai. */
+  --gizi-buruk: oklch(0.66 0.19 25);
+  --gizi-kurang: oklch(0.82 0.15 65);
+  --gizi-baik: oklch(0.72 0.16 155);
+  --gizi-lebih: oklch(0.68 0.16 290);
+  --gizi-obesitas: oklch(0.62 0.19 330);
   --euks-accent: oklch(0.68 0.09 148);
   --euks-accent-foreground: oklch(0.16 0.03 148);
   --euks-accent-soft: oklch(0.28 0.04 148);
@@ -188,6 +206,13 @@
   --sarpras-repair: oklch(0.7 0.19 22);
   --sarpras-moderate: oklch(0.8 0.15 70);
   --sarpras-good: oklch(0.72 0.16 155);
+  /* Versi gelap: rona sama seperti mode terang, luminansi dinaikkan agar
+     kontras terhadap kartu gelap tetap memadai. */
+  --gizi-buruk: oklch(0.66 0.19 25);
+  --gizi-kurang: oklch(0.82 0.15 65);
+  --gizi-baik: oklch(0.72 0.16 155);
+  --gizi-lebih: oklch(0.68 0.16 290);
+  --gizi-obesitas: oklch(0.62 0.19 330);
   --euks-accent: oklch(0.68 0.09 148);
   --euks-accent-foreground: oklch(0.16 0.03 148);
   --euks-accent-soft: oklch(0.28 0.04 148);

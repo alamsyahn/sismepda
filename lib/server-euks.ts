@@ -1,5 +1,12 @@
+import { Prisma } from "@/app/generated/prisma/client"
+import { databaseSchema } from "@/lib/database-config"
 import { prisma } from "@/lib/prisma"
 import type { EuksStudentOption, HealthMeasurement } from "@/lib/euks"
+import {
+  bucketByClass,
+  classifyStudentNutrition,
+  type ClassNutritionBucket,
+} from "@/lib/euks-nutrition"
 import type { TrendVisit } from "@/lib/euks-trends"
 import {
   compareSchoolDates,
@@ -362,4 +369,100 @@ export async function readStudentMonitoring(
       recordedByName: visit.recordedBy?.name ?? null,
     })),
   }
+}
+
+/**
+ * Nama tabel berkualifikasi skema, sama seperti pada tren absensi: basis data
+ * pengembangan berjalan di skema terisolasi, jadi SQL mentah tidak boleh
+ * mengandalkan `search_path`.
+ */
+function qualifiedTable(table: string) {
+  const schema = databaseSchema(process.env.DATABASE_URL ?? "")
+  const quote = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`
+  return Prisma.raw(`${quote(schema)}.${quote(table)}`)
+}
+
+/**
+ * Snapshot status gizi sekolah: satu keranjang per kelas, disusun dari
+ * pengukuran valid TERBARU tiap siswa aktif.
+ *
+ * Satu query untuk seluruh sekolah. `LEFT JOIN LATERAL ... LIMIT 1` memakai
+ * indeks `(studentId, measuredAt)` sehingga tidak ada N+1 dan riwayat
+ * pengukuran tidak pernah ditarik seluruhnya ke memori — hanya satu baris per
+ * siswa yang meninggalkan basis data. `LEFT JOIN` dipertahankan agar siswa yang
+ * belum pernah diukur tetap terhitung sebagai cakupan yang belum terpenuhi,
+ * bukan menghilang dari penyebut.
+ *
+ * Pengurutan pemenang deterministik: `measuredAt DESC`, lalu `createdAt DESC`,
+ * lalu `id DESC`. Dua baris pada tanggal sama sudah dicegah oleh
+ * `@@unique([studentId, measuredAt])`, tetapi urutan penuh membuat hasilnya
+ * tetap pasti seandainya batasan itu berubah.
+ *
+ * Tinggi/berat non-positif disaring di SQL agar tidak terpilih sebagai
+ * "terbaru" dan menyisihkan pengukuran sebelumnya yang sahih. Riwayat itu
+ * sendiri tidak diubah.
+ *
+ * Klasifikasi per siswa terjadi di server lalu langsung diringkas menjadi
+ * keranjang kelas: yang menyeberang ke browser adalah hitungan per kelas, bukan
+ * data kesehatan per siswa.
+ */
+export async function readSchoolNutritionSnapshot(): Promise<ClassNutritionBucket[]> {
+  const studentTable = qualifiedTable("Student")
+  const classTable = qualifiedTable("SchoolClass")
+  const measurementTable = qualifiedTable("StudentHealthMeasurement")
+
+  const rows = await prisma.$queryRaw<
+    Array<{
+      classId: string
+      className: string
+      grade: string
+      birthDate: string | null
+      gender: "LAKI_LAKI" | "PEREMPUAN" | null
+      measuredAt: string | null
+      heightCm: string | null
+      weightKg: string | null
+    }>
+  >`
+    SELECT
+      c."id" AS "classId",
+      c."name" AS "className",
+      c."grade" AS grade,
+      s."birthDate"::text AS "birthDate",
+      s."gender"::text AS gender,
+      m."measuredAt"::text AS "measuredAt",
+      m."heightCm"::text AS "heightCm",
+      m."weightKg"::text AS "weightKg"
+    FROM ${studentTable} s
+    JOIN ${classTable} c ON c."id" = s."classId"
+    LEFT JOIN LATERAL (
+      SELECT h."measuredAt", h."heightCm", h."weightKg"
+      FROM ${measurementTable} h
+      WHERE h."studentId" = s."id"
+        AND h."heightCm" > 0
+        AND h."weightKg" > 0
+      ORDER BY h."measuredAt" DESC, h."createdAt" DESC, h."id" DESC
+      LIMIT 1
+    ) m ON TRUE
+    WHERE s."active" = TRUE
+  `
+
+  return bucketByClass(
+    rows.map((row) =>
+      classifyStudentNutrition({
+        classId: row.classId,
+        className: row.className,
+        grade: row.grade,
+        birthDate: row.birthDate,
+        gender: row.gender,
+        latest:
+          row.measuredAt && row.heightCm !== null && row.weightKg !== null
+            ? {
+                measuredAt: row.measuredAt,
+                heightCm: Number(row.heightCm),
+                weightKg: Number(row.weightKg),
+              }
+            : null,
+      }),
+    ),
+  )
 }
