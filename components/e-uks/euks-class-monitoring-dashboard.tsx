@@ -54,6 +54,7 @@ import {
   SEARCH_PARAM,
   SORT_PARAM,
   studentDetailHref,
+  studentRowAnchor,
 } from "@/lib/euks-class-navigation"
 import { NUTRITION_CATEGORY_ORDER, formatShare } from "@/lib/euks-nutrition"
 import { TREND_GRANULARITIES, type TrendGranularity } from "@/lib/attendance-trend"
@@ -619,9 +620,28 @@ function StudentTable({
         </TableHeader>
         <TableBody>
           {rows.map((row, index) => (
-            <TableRow key={row.studentId}>
+            // id baris dipakai sebagai jangkar: tombol kembali membawa
+            // "#siswa-<id>" sehingga peramban menggulir ke siswa yang tadi
+            // dibuka, tanpa state-management tambahan.
+            <TableRow key={row.studentId} id={studentRowAnchor(row.studentId)}>
               <TableCell className="text-muted-foreground tabular-nums">{index + 1}</TableCell>
-              <TableCell className="font-medium whitespace-nowrap">{row.name}</TableCell>
+              <TableCell className="font-medium whitespace-nowrap">
+                {/*
+                  Hanya nama yang menjadi tautan, bukan seluruh baris: baris
+                  berisi kontrol lain, dan baris yang seluruhnya dapat diklik
+                  membuat interaksi tabel ambigu.
+                */}
+                <Link
+                  href={studentDetailHref({
+                    studentId: row.studentId,
+                    classId,
+                    returnTo: `${returnTo}#${studentRowAnchor(row.studentId)}`,
+                  })}
+                  className="hover:text-foreground focus-visible:ring-ring rounded-sm underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:outline-none"
+                >
+                  {row.name}
+                </Link>
+              </TableCell>
               <TableCell>
                 {row.gender === null ? (
                   <span title="Jenis kelamin belum tersedia" className="text-muted-foreground">

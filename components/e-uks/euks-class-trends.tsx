@@ -8,49 +8,65 @@ import type { ClassSickTrendBucket, ClassVisitTrendBucket } from "@/lib/euks-cla
  * Bucket kosong tetap digambar (bernilai nol) karena deretnya dibentuk
  * `bucketKeys()` — celah pada grafik berarti "tidak ada sakit", bukan "data
  * hilang", dan itu hanya benar jika periode kosong ikut ditampilkan.
+ *
+ * Tinggi batang memakai grid dengan baris `1fr` sebagai lajur, bukan rantai
+ * `h-full` di dalam flex `items-end`. Versi flex sebelumnya membuat kolom
+ * menyusut setinggi isinya, sehingga `height: N%` tidak punya acuan dan setiap
+ * batang bernilai jatuh ke 0px — justru batang nol yang terlihat karena
+ * tingginya piksel absolut. Lajur grid `1fr` punya tinggi pasti, jadi persen
+ * di dalamnya selalu resolve.
  */
 export function EuksClassSickTrend({ buckets }: { buckets: ClassSickTrendBucket[] }) {
-  const max = Math.max(1, ...buckets.map((bucket) => bucket.sickDays))
-  const hasData = buckets.some((bucket) => bucket.sickDays > 0)
-
   if (buckets.length === 0) {
     return <EmptyTrend message="Rentang periode tidak menghasilkan satu pun titik waktu." />
   }
 
+  const hasData = buckets.some((bucket) => bucket.sickDays > 0)
+  if (!hasData) {
+    // Sumbu kosong dengan garis nyaris tak terlihat mudah disalahartikan
+    // sebagai grafik rusak; nyatakan saja tidak ada sakit.
+    return <EmptyTrend message="Belum ada ketidakhadiran karena sakit pada periode ini." />
+  }
+
+  const max = Math.max(1, ...buckets.map((bucket) => bucket.sickDays))
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <div
-        className="flex h-40 items-end gap-1.5 overflow-x-auto pb-1"
+        className="grid h-44 auto-cols-fr grid-flow-col gap-1.5 overflow-x-auto"
         role="img"
-        aria-label={`Tren hari sakit: ${buckets
-          .map((bucket) => `${bucket.tooltipLabel} ${bucket.sickDays} hari`)
-          .join(", ")}`}
+        aria-label={`Tren hari sakit per periode: ${buckets
+          .map((bucket) => `${bucket.tooltipLabel} ${bucket.sickDays} hari sakit, ${bucket.students} siswa`)
+          .join("; ")}`}
       >
         {buckets.map((bucket) => (
-          <div key={bucket.key} className="flex min-w-8 flex-1 flex-col items-center gap-1">
-            <div className="flex h-full w-full items-end">
-              <div
-                className="bg-chart-2/80 w-full rounded-t-sm"
-                style={{
-                  // Batang nol tetap disisakan garis tipis supaya sumbu waktunya
-                  // terbaca utuh, tapi jelas berbeda dari batang bernilai.
-                  height: bucket.sickDays === 0 ? "2px" : `${(bucket.sickDays / max) * 100}%`,
-                  opacity: bucket.sickDays === 0 ? 0.3 : 1,
-                }}
-                title={`${bucket.tooltipLabel}\n${bucket.sickDays} hari sakit\n${bucket.students} siswa`}
-              />
+          <div key={bucket.key} className="grid min-w-9 grid-rows-[1fr_auto] gap-1">
+            <div
+              className="relative"
+              title={`${bucket.tooltipLabel}\nHari sakit: ${bucket.sickDays}\nSiswa sakit: ${bucket.students}`}
+            >
+              {bucket.sickDays > 0 ? (
+                <div
+                  className="bg-chart-2 absolute inset-x-0 bottom-0 rounded-t-sm"
+                  // Lantai 8% supaya satu hari sakit tetap terbaca sebagai
+                  // batang, bukan garis rambut, saat maksimum periode tinggi.
+                  style={{ height: `${Math.max(8, (bucket.sickDays / max) * 100)}%` }}
+                >
+                  <span className="text-muted-foreground absolute -top-4 inset-x-0 text-center text-[10px]">
+                    {bucket.sickDays}
+                  </span>
+                </div>
+              ) : null}
             </div>
-            <span className="text-muted-foreground w-full truncate text-center text-[10px]">
+            <span className="text-muted-foreground w-full truncate border-t pt-1 text-center text-[10px]">
               {bucket.label}
             </span>
           </div>
         ))}
       </div>
-      {!hasData ? (
-        <p className="text-muted-foreground text-xs">
-          Tidak ada ketidakhadiran karena sakit pada periode ini.
-        </p>
-      ) : null}
+      <p className="text-muted-foreground text-xs">
+        Batang menunjukkan jumlah hari absensi berstatus sakit; periode tanpa batang bernilai nol.
+      </p>
     </div>
   )
 }

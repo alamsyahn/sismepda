@@ -39,6 +39,7 @@ import {
   safeReturnPath,
   safeClassReturnPath,
   studentDetailHref,
+  studentRowAnchor,
 } from "../lib/euks-class-navigation"
 
 const date = (value: string): SchoolDate => {
@@ -403,6 +404,59 @@ test("tautan detail siswa membawa jalan pulang internal saja", () => {
     returnTo: "https://jahat.example",
   })
   assert.ok(!hostile.includes("returnTo"))
+})
+
+test("tren sakit mingguan menghasilkan dua belas bucket dengan nilai per kelas", () => {
+  // 12 minggu yang berakhir pada 2026-09-13 — sama seperti rentang default
+  // periode "mingguan" di halaman kelas.
+  const buckets = sickTrend({
+    students: [
+      student({
+        id: "a",
+        name: "A",
+        sickDates: [date("2026-08-17"), date("2026-08-18"), date("2026-09-01")],
+      }),
+      student({ id: "b", name: "B", sickDates: [date("2026-08-17")] }),
+    ],
+    from: date("2026-06-22"),
+    to: date("2026-09-13"),
+    granularity: "mingguan",
+  })
+
+  assert.equal(buckets.length, 12)
+  const agustus17 = buckets.find((bucket) => bucket.tooltipLabel.includes("17"))
+  assert.equal(agustus17?.sickDays, 3)
+  assert.equal(agustus17?.students, 2)
+  // Bucket tanpa absensi sakit tetap ada dan bernilai nol supaya sumbu waktu
+  // tidak melompat.
+  assert.ok(buckets.some((bucket) => bucket.sickDays === 0))
+  assert.equal(
+    buckets.reduce((sum, bucket) => sum + bucket.sickDays, 0),
+    4,
+  )
+})
+
+test("tren sakit hanya menghitung siswa kelas yang diberikan", () => {
+  // Pemanggil hanya mengirim siswa satu kelas; siswa kelas lain tidak boleh
+  // ikut karena bukan bagian dari input.
+  const buckets = sickTrend({
+    students: [student({ id: "kelas-ini", name: "A", sickDates: [date("2026-03-02")] })],
+    from: date("2026-03-01"),
+    to: date("2026-03-31"),
+    granularity: "bulanan",
+  })
+  assert.equal(buckets[0].sickDays, 1)
+  assert.equal(buckets[0].students, 1)
+})
+
+test("jangkar baris siswa memakai id stabil, bukan nama", () => {
+  assert.equal(studentRowAnchor("s1"), "siswa-s1")
+  const href = studentDetailHref({
+    studentId: "s1",
+    classId: "c1",
+    returnTo: `/e-uks/pantauan-kesehatan-kelas?classId=c1#${studentRowAnchor("s1")}`,
+  })
+  assert.ok(decodeURIComponent(href).includes("#siswa-s1"))
 })
 
 test("halaman kelas dan modul agregasinya tidak memuat pemeriksaan peran keras", () => {

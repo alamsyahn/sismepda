@@ -192,13 +192,25 @@ test("E-UKS adalah group di antara Kurikulum dan BOS", () => {
 
   const euks = entries[euksIndex]
   assert.ok(isNavGroup(euks), "E-UKS berupa group/submenu")
+  // Urutan mengikuti hierarki sekolah → kelas → siswa: Pantauan Kesehatan
+  // Kelas adalah level agregasi sebelum pemantauan per siswa.
   assert.deepEqual(euks.children.map((child) => child.href), [
     "/e-uks",
-    "/e-uks/pantauan-kesehatan",
     "/e-uks/pantauan-kesehatan-kelas",
+    "/e-uks/pantauan-kesehatan",
     "/e-uks/riwayat-kunjungan",
     "/e-uks/pengaturan",
   ])
+})
+
+test("route kelas tidak membajak active state Pantauan Kesehatan Siswa", () => {
+  // "/e-uks/pantauan-kesehatan" adalah awalan dari "-kelas"; pencocokan harus
+  // pada segmen, bukan sekadar prefix string.
+  assert.equal(
+    activeNavHref(mainNav, "/e-uks/pantauan-kesehatan-kelas"),
+    "/e-uks/pantauan-kesehatan-kelas",
+  )
+  assert.equal(activeNavHref(mainNav, "/e-uks/pantauan-kesehatan"), "/e-uks/pantauan-kesehatan")
 })
 
 test("submenu E-UKS mengikuti permission masing-masing", () => {

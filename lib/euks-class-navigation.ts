@@ -154,6 +154,17 @@ export function safeClassReturnPath(value: string | null | undefined): string | 
 }
 
 /**
+ * Id elemen baris siswa pada tabel kelas.
+ *
+ * Dipakai sebagai fragment pada `returnTo` supaya peramban memulihkan posisi
+ * gulir ke siswa yang tadi dibuka — cukup dengan perilaku jangkar bawaan,
+ * tanpa menyimpan posisi gulir di state tersendiri.
+ */
+export function studentRowAnchor(studentId: string): string {
+  return `siswa-${studentId}`
+}
+
+/**
  * Tautan ke Pantauan Kesehatan Siswa yang membawa jalan pulang.
  *
  * `returnTo` berisi URL halaman kelas lengkap dengan periode, filter, dan

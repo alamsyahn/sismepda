@@ -12,7 +12,7 @@ E-UKS is the school health unit (Unit Kesehatan Sekolah) module inside SISMEPDA.
 | `/e-uks/riwayat-kunjungan` | UKS visit log — the write surface and source of truth for every E-UKS statistic | `euks.view`, writes require `euks.edit` |
 | `/e-uks/pengaturan` | UKS identity, officers, facilities, and the standard complaint list | ADMIN |
 
-`lib/nav.ts` renders E-UKS as one collapsible group between Kurikulum and BOS; `match: "exact"` on `/e-uks` keeps the home item from staying active on sub-routes, and `activeNavGroupId` opens the group on every E-UKS route. Pantauan Kesehatan Kelas sits directly after Pantauan Kesehatan Siswa, matching the drill-down order home → class → student.
+`lib/nav.ts` renders E-UKS as one collapsible group between Kurikulum and BOS; `match: "exact"` on `/e-uks` keeps the home item from staying active on sub-routes, and `activeNavGroupId` opens the group on every E-UKS route. Pantauan Kesehatan Kelas sits directly *above* Pantauan Kesehatan Siswa, following the school → class → student hierarchy: the class view is the aggregation level an officer passes through before individual monitoring. Ordering is presentation only — both items keep `euks.monitoring.read`. Active state is safe despite `/e-uks/pantauan-kesehatan` being a string prefix of `/e-uks/pantauan-kesehatan-kelas`, because `matches()` in `lib/nav.ts` compares the full href or requires a `/` separator.
 
 ## Authorization
 
@@ -284,9 +284,15 @@ library was added.
   the opposite choice from the home-page heatmap, and for the opposite reason:
   here completeness is part of the class picture). Categories come from the
   canonical IMT/U resolver; clicking a category filters the student table.
-- **Tren Ketidakhadiran karena Sakit** — bars per bucket, with day count and
+- **Tren Ketidakhadiran karena Sakit** — one column per bucket, day count and
   unique-student count in the tooltip, plus a note on how many students hit the
-  sick-streak threshold. Empty buckets are rendered as zero, not skipped.
+  sick-streak threshold. Empty buckets are rendered as zero-value columns, not
+  skipped. Column heights come from a CSS grid whose bar row is `1fr`: a flex
+  `items-end` wrapper leaves columns at content height, so percentage bar
+  heights resolve to 0px and only the zero markers stay visible. Bars are
+  floored at 8% of the plot so a single sick day still reads as a bar, and when
+  all buckets are zero the card shows an explicit empty state instead of a
+  flat axis.
 - **Tren Kunjungan UKS** — area/line chart scoped to the selected class only.
 - **Keluhan Terbanyak** — horizontal ranking of complaints exactly as recorded.
   No synonym or medical mapping is applied; `ISPA` and `batuk pilek` stay
@@ -309,11 +315,21 @@ mislead. Nutrition status is a text badge, never colour alone. Search, nutrition
 filter, gender filter, attention-only toggle and sorting all write to the URL.
 On narrow screens the table scrolls horizontally inside its container.
 
-Each row's **Lihat Detail** goes to the existing
+Each row exposes two ways into the student page: the **name itself is a link**
+and the row keeps its **Lihat Detail** button. Only the name is clickable, not
+the whole row — the row carries other controls, and a fully clickable row makes
+table interaction ambiguous. Both use the stable `studentId`, never the name,
+and both go to the existing
 `/e-uks/pantauan-kesehatan?classId=…&studentId=…&returnTo=…`. No second student
 detail page was created. `returnTo` carries the full class-page URL, so the
 student page shows `← Kembali ke VII A` and returns to the same period, filters
 and sorting.
+
+Scroll position survives the round trip without any scroll-state store: each
+`<tr>` carries `id={studentRowAnchor(studentId)}` (`siswa-<id>`), and the name
+link appends that as a fragment to `returnTo`. Coming back, the browser's native
+anchor handling puts the student that was opened back into view instead of
+dumping the officer at the top of the charts.
 
 `returnTo` is validated twice: `safeReturnPath()` rejects absolute URLs, schemes,
 protocol-relative `//host`, backslashes and control characters, and

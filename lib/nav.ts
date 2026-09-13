@@ -258,17 +258,17 @@ export const mainNav: NavEntry[] = [
         match: "exact",
       },
       {
-        title: "Pantauan Kesehatan Siswa",
-        href: "/e-uks/pantauan-kesehatan",
-        icon: Stethoscope,
-        description: "Status gizi, riwayat sakit, dan pertumbuhan per siswa",
-        permissions: ["euks.monitoring.read"],
-      },
-      {
         title: "Pantauan Kesehatan Kelas",
         href: "/e-uks/pantauan-kesehatan-kelas",
         icon: Stethoscope,
         description: "Ringkasan gizi, sakit, dan kunjungan UKS satu kelas",
+        permissions: ["euks.monitoring.read"],
+      },
+      {
+        title: "Pantauan Kesehatan Siswa",
+        href: "/e-uks/pantauan-kesehatan",
+        icon: Stethoscope,
+        description: "Status gizi, riwayat sakit, dan pertumbuhan per siswa",
         permissions: ["euks.monitoring.read"],
       },
       {
