@@ -16,6 +16,7 @@
 import { prisma } from "@/lib/prisma"
 import { ApiError } from "@/lib/api-errors"
 import { getAuthorizationContext } from "@/lib/rbac-access"
+import { resolveAccountTargetPrivilege } from "@/lib/account-privilege"
 
 /**
  * Filter Prisma untuk populasi guru.
@@ -31,30 +32,49 @@ export function teacherPopulationWhere(): { OR: Array<{ isTeacher: boolean } | {
 }
 
 /**
- * Menolak operasi akun terhadap target yang memegang role TERPROTEKSI,
- * kecuali pemanggilnya system admin.
+ * Menolak operasi akun terhadap target ISTIMEWA, kecuali pemanggilnya system
+ * admin.
  *
- * Hanya `isProtected` yang dipakai sebagai penanda istimewa. `isSystem` berarti
- * "role bawaan seed" — `guru`, `pengawas`, dan lainnya ikut bertanda itu, jadi
- * memakainya di sini akan mengunci hampir semua akun guru biasa.
+ * Keistimewaan dinilai `lib/account-privilege.ts` dari kuasa NYATA target:
+ * key `system_admin`, flag `isProtected`, ATAU kepemilikan permission keluarga
+ * sensitif (`rbac.*`, `accounts.*`, `database.*`, dan dua key khusus).
  *
- * Tanpa proteksi ini, siapa pun yang diberi `teachers.accounts.update` atau
- * `accounts.credentials.manage` bisa mengambil alih akun administrator dengan
- * mereset sandinya — eskalasi hak yang sepenuhnya sah menurut permission-nya.
+ * Flag `isProtected` saja tidak cukup. Ia menandai role bawaan seed, bukan
+ * kuasa; role kustom tanpa flag apa pun yang memegang
+ * `accounts.credentials.manage` tetap dapat mereset sandi orang lain. Tanpa
+ * penilaian berbasis permission, pemegang `teachers.accounts.update` dapat
+ * mereset sandi manager RBAC dan mengambil alih akunnya — eskalasi hak yang
+ * tampak sepenuhnya sah menurut permission-nya sendiri.
+ *
+ * `isSystem` tetap TIDAK dipakai: `guru`, `pengawas`, dan role seed lain ikut
+ * bertanda itu, sehingga memakainya akan mengunci hampir semua akun guru biasa.
  */
 export async function assertTargetNotPrivileged(targetUserId: string): Promise<void> {
   const context = await getAuthorizationContext()
   if (context.isSystemAdmin) return
 
-  const target = await prisma.userRole.findFirst({
-    where: {
-      userId: targetUserId,
-      role: { isProtected: true },
+  const assignments = await prisma.userRole.findMany({
+    where: { userId: targetUserId },
+    select: {
+      role: {
+        select: {
+          key: true,
+          isProtected: true,
+          permissions: { select: { permission: { select: { key: true } } } },
+        },
+      },
     },
-    select: { roleId: true },
   })
 
-  if (target) {
+  const privilege = resolveAccountTargetPrivilege({
+    roles: assignments.map((assignment) => ({
+      key: assignment.role.key,
+      isProtected: assignment.role.isProtected,
+      permissionKeys: assignment.role.permissions.map((entry) => entry.permission.key),
+    })),
+  })
+
+  if (privilege.isPrivileged) {
     throw new ApiError(403, "Akun ini hanya dapat dikelola oleh administrator sistem")
   }
 }
