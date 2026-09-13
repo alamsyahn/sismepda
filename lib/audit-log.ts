@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma"
 import type { Prisma } from "@/app/generated/prisma/client"
+import type { RbacAuditAction, RbacAuditEntity } from "@/lib/rbac-audit"
 
 /** Entities tracked in the audit trail. Extend as other features adopt it. */
 export type AuditEntity =
@@ -21,6 +22,9 @@ export type AuditEntity =
   | "EuksHeroImage"
   | "EuksHeroLogo"
   | "EuksComplaintOption"
+  /// Entitas RBAC. Didefinisikan di lib/rbac-audit.ts agar UI dapat mengenali
+  /// baris RBAC tanpa ikut menarik lib/prisma.ts ke bundel klien.
+  | RbacAuditEntity
 
 export type AuditAction =
   | "WORKBOOK_LINK_UPDATED"
@@ -67,6 +71,8 @@ export type AuditAction =
   | "EUKS_COMPLAINT_OPTION_CREATED"
   | "EUKS_COMPLAINT_OPTION_UPDATED"
   | "EUKS_SICK_ABSENCE_UPDATED"
+  /// Aksi RBAC, disatukan ke trail yang sama agar tidak ada dua sistem audit.
+  | RbacAuditAction
 
 export type AuditEntry = {
   actorId: string | null
