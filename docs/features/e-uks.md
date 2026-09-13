@@ -8,10 +8,11 @@ E-UKS is the school health unit (Unit Kesehatan Sekolah) module inside SISMEPDA.
 |---|---|---|
 | `/e-uks` | Halaman Utama: visit totals plus complaint/treatment/monthly trends derived from visit history | `euks.view` |
 | `/e-uks/pantauan-kesehatan` | Per-student health monitoring: nutrition status, sick-absence history, UKS visit history, IMT and KMS charts | `euks.view` |
+| `/e-uks/pantauan-kesehatan-kelas` | Per-class health monitoring: nutrition distribution, sick/visit trends, top complaints, data completeness, student table | `euks.monitoring.read` |
 | `/e-uks/riwayat-kunjungan` | UKS visit log — the write surface and source of truth for every E-UKS statistic | `euks.view`, writes require `euks.edit` |
 | `/e-uks/pengaturan` | UKS identity, officers, facilities, and the standard complaint list | ADMIN |
 
-`lib/nav.ts` renders E-UKS as one collapsible group between Kurikulum and BOS; `match: "exact"` on `/e-uks` keeps the home item from staying active on sub-routes, and `activeNavGroupId` opens the group on every E-UKS route.
+`lib/nav.ts` renders E-UKS as one collapsible group between Kurikulum and BOS; `match: "exact"` on `/e-uks` keeps the home item from staying active on sub-routes, and `activeNavGroupId` opens the group on every E-UKS route. Pantauan Kesehatan Kelas sits directly after Pantauan Kesehatan Siswa, matching the drill-down order home → class → student.
 
 ## Authorization
 
@@ -185,6 +186,141 @@ as it is meaningless across mixed ages and sexes.
 Access is `euks.measurements.read`, the same permission that guards Pantauan
 Kesehatan Siswa. Without it the snapshot query never runs — the gate is in the
 server component, not a hidden element.
+
+Each class name in the first column is a link to
+`/e-uks/pantauan-kesehatan-kelas?classId=<id>` (`classMonitoringLink()`), so the
+heatmap doubles as the drill-down entry point. Only the class name is a link,
+not the whole row or the coloured cells: a fully clickable chart hides where the
+target actually is, and the name is the one element that reads as a class
+identity. It is a real `<a>` — keyboard focusable, with hover/focus styling and
+a `title` — and it always carries the stable `classId`, never the class name.
+
+## Pantauan Kesehatan Kelas (per-class monitoring)
+
+`/e-uks/pantauan-kesehatan-kelas` is the aggregation level between the E-UKS
+home page (all classes) and Pantauan Kesehatan Siswa (one student). It answers
+"how is this class doing, and who needs attention" and then hands off to the
+existing per-student page.
+
+Access is `euks.monitoring.read`. The permission already existed and is
+semantically exact — no new permission was registered. As with the rest of
+E-UKS, failing the check means the class query never runs.
+
+### URL is the source of truth
+
+Every piece of view state lives in the query string, parsed by
+`readClassMonitoringView()` in `lib/euks-class-navigation.ts`:
+`classId`, `periode`, `from`/`to`, `q` (search), `gizi`, `jk`, `perhatian`,
+`urut`, `desc`. Unknown or malformed values fall back to defaults instead of
+erroring, and an unknown `classId` renders the class-not-found notice with the
+selector still usable, rather than a 404. Consequences: a refresh keeps the
+selection, the URL can be shared, and returning from a student restores the
+exact table the officer left.
+
+With no `classId` the page renders only the heading, the selectors and "Pilih
+kelas untuk melihat ringkasan kesehatan siswa." — no skeleton dashboard of
+empty cards.
+
+### Period
+
+The period filter reuses the canonical trend granularities
+(`TREND_GRANULARITIES` in `lib/attendance-trend.ts`: `harian`, `mingguan`,
+`bulanan`, `semester`) together with `defaultRange()` and the school's semester
+start setting. No new academic-year or semester concept was introduced. Default
+is `bulanan`. If `semester` is selected while no semester start is configured,
+the page falls back to `bulanan` rather than producing an empty range.
+
+The period scopes sick days, sick trend, UKS visits, visit trend and top
+complaints. It deliberately does **not** scope anthropometry: height, weight,
+IMT and nutrition status always come from each student's latest valid
+measurement, because a "sum of IMT over a period" is meaningless.
+
+### Data and query shape
+
+`readClassMonitoring()` in `lib/server-euks.ts` fetches everything in **four
+queries total, independent of class size** — never `readStudentMonitoring()` in
+a loop:
+
+1. the class row (id, name);
+2. one raw SQL `LEFT JOIN LATERAL` returning every active student with their
+   latest valid measurement (the same lateral pattern as the school snapshot,
+   with `databaseSchema`-qualified tables and the same
+   `measuredAt DESC, createdAt DESC, id DESC` tie-breaker);
+3. `Attendance` rows with status `SAKIT` in range, joined through
+   `attendanceDay.date`;
+4. `EuksVisit` rows in range.
+
+Only the fields actually rendered are selected; no photos or blobs. No E-UKS
+copy of Student/SchoolClass exists — the database stays the source of truth, and
+no summary table caches chart numbers.
+
+Aggregation itself lives in `lib/euks-class-monitoring.ts`, a pure module with
+no Prisma and no React, so it is unit-testable and shared between the server
+component and the client dashboard.
+
+### Perlu Perhatian
+
+The count in the summary band is a clickable dialog listing every flagged
+student with **all** their reasons spelled out. There is deliberately no health
+score or risk index — only signals that already have data and logic in the app:
+
+- nutrition status is `Gizi buruk`, `Gizi kurang`, `Gizi lebih` or `Obesitas`
+  (derived from `nutritionCategoryTone`, not a hand-written list);
+- a sick streak of 3 days or more in the period, computed with the canonical
+  `lib/sick-streak.ts` helper, so holidays follow existing rules;
+- data that cannot be assessed: no measurement, no birth date, no gender, or age
+  outside the reference range.
+
+Each entry links straight to that student's detail page.
+
+### Visualisations
+
+All four are inline SVG or CSS, consistent with the rest of E-UKS; no chart
+library was added.
+
+- **Distribusi Status Gizi** — 100% stacked horizontal bar. Percentages divide by
+  the *whole class*, including `Belum dapat dinilai`, so the unassessed share
+  stays visible instead of being hidden by a measured-only denominator (this is
+  the opposite choice from the home-page heatmap, and for the opposite reason:
+  here completeness is part of the class picture). Categories come from the
+  canonical IMT/U resolver; clicking a category filters the student table.
+- **Tren Ketidakhadiran karena Sakit** — bars per bucket, with day count and
+  unique-student count in the tooltip, plus a note on how many students hit the
+  sick-streak threshold. Empty buckets are rendered as zero, not skipped.
+- **Tren Kunjungan UKS** — area/line chart scoped to the selected class only.
+- **Keluhan Terbanyak** — horizontal ranking of complaints exactly as recorded.
+  No synonym or medical mapping is applied; `ISPA` and `batuk pilek` stay
+  separate unless the canonical complaint list says otherwise.
+
+### Kelengkapan Data Kesehatan
+
+Reported with the canonical reasons kept distinct (`no_measurement`,
+`no_birth_date`, `no_gender`, `age_out_of_range`) rather than collapsed into a
+single `–`. The point is that "we have not measured this student" and "this
+student's age is outside the reference" require different follow-up from the UKS
+officer.
+
+### Student table and drill-down
+
+`Data Kesehatan Siswa — <class>` lists number, name, L/P, age, sick count, UKS
+visits, height, weight, IMT, nutrition status, and **Terakhir Diukur** — the
+measurement date is mandatory, because height/weight/IMT without a date can
+mislead. Nutrition status is a text badge, never colour alone. Search, nutrition
+filter, gender filter, attention-only toggle and sorting all write to the URL.
+On narrow screens the table scrolls horizontally inside its container.
+
+Each row's **Lihat Detail** goes to the existing
+`/e-uks/pantauan-kesehatan?classId=…&studentId=…&returnTo=…`. No second student
+detail page was created. `returnTo` carries the full class-page URL, so the
+student page shows `← Kembali ke VII A` and returns to the same period, filters
+and sorting.
+
+`returnTo` is validated twice: `safeReturnPath()` rejects absolute URLs, schemes,
+protocol-relative `//host`, backslashes and control characters, and
+`safeClassReturnPath()` additionally requires the path to be the class
+monitoring route itself. Internal-only is not enough — otherwise a crafted link
+could point the back button at an unrelated internal page. Anything else yields
+no back button at all.
 
 ## KMS chart (height-for-age)
 

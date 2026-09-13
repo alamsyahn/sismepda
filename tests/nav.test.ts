@@ -195,6 +195,7 @@ test("E-UKS adalah group di antara Kurikulum dan BOS", () => {
   assert.deepEqual(euks.children.map((child) => child.href), [
     "/e-uks",
     "/e-uks/pantauan-kesehatan",
+    "/e-uks/pantauan-kesehatan-kelas",
     "/e-uks/riwayat-kunjungan",
     "/e-uks/pengaturan",
   ])
@@ -207,6 +208,12 @@ test("submenu E-UKS mengikuti permission masing-masing", () => {
   assert.ok(!hrefs(GURU_GRANTS).includes("/e-uks"))
   assert.ok(hrefs([...GURU_GRANTS, "euks.content.read"]).includes("/e-uks"))
   assert.ok(hrefs([...GURU_GRANTS, "euks.monitoring.read"]).includes("/e-uks/pantauan-kesehatan"))
+  // Pantauan per kelas adalah data pantauan yang sama, hanya diagregasi, jadi
+  // dikunci oleh permission yang sama persis.
+  assert.ok(
+    hrefs([...GURU_GRANTS, "euks.monitoring.read"]).includes("/e-uks/pantauan-kesehatan-kelas"),
+  )
+  assert.ok(!hrefs(GURU_GRANTS).includes("/e-uks/pantauan-kesehatan-kelas"))
   assert.ok(hrefs([...GURU_GRANTS, "euks.visits.read"]).includes("/e-uks/riwayat-kunjungan"))
   assert.ok(!hrefs([...GURU_GRANTS, "euks.visits.create"]).includes("/e-uks/pengaturan"))
 })
@@ -224,6 +231,12 @@ test("active state E-UKS bekerja untuk seluruh route modul", () => {
   const entries = visibleNavEntries(mainNav, admin)
   assert.equal(activeNavHref(entries, "/e-uks"), "/e-uks")
   assert.equal(activeNavHref(entries, "/e-uks/pantauan-kesehatan"), "/e-uks/pantauan-kesehatan")
+  // Halaman kelas berbagi awalan dengan halaman siswa; yang aktif harus tetap
+  // masing-masing, bukan halaman siswa yang ikut menyala.
+  assert.equal(
+    activeNavHref(entries, "/e-uks/pantauan-kesehatan-kelas"),
+    "/e-uks/pantauan-kesehatan-kelas",
+  )
   assert.equal(activeNavHref(entries, "/e-uks/riwayat-kunjungan"), "/e-uks/riwayat-kunjungan")
   assert.equal(activeNavHref(entries, "/e-uks/pengaturan"), "/e-uks/pengaturan")
   // Halaman utama dicocokkan persis agar tidak ikut aktif di sub-route.
@@ -235,6 +248,7 @@ test("expanded state E-UKS terbuka untuk setiap sub-route", () => {
   for (const path of [
     "/e-uks",
     "/e-uks/pantauan-kesehatan",
+    "/e-uks/pantauan-kesehatan-kelas",
     "/e-uks/riwayat-kunjungan",
     "/e-uks/pengaturan",
   ]) {

@@ -265,6 +265,13 @@ export const mainNav: NavEntry[] = [
         permissions: ["euks.monitoring.read"],
       },
       {
+        title: "Pantauan Kesehatan Kelas",
+        href: "/e-uks/pantauan-kesehatan-kelas",
+        icon: Stethoscope,
+        description: "Ringkasan gizi, sakit, dan kunjungan UKS satu kelas",
+        permissions: ["euks.monitoring.read"],
+      },
+      {
         title: "Riwayat Kunjungan UKS",
         href: "/e-uks/riwayat-kunjungan",
         icon: ClipboardPlus,

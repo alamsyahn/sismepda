@@ -2,6 +2,7 @@ import { Prisma } from "@/app/generated/prisma/client"
 import { databaseSchema } from "@/lib/database-config"
 import { prisma } from "@/lib/prisma"
 import type { EuksStudentOption, HealthMeasurement } from "@/lib/euks"
+import type { ClassStudentInput } from "@/lib/euks-class-monitoring"
 import {
   bucketByClass,
   classifyStudentNutrition,
@@ -465,4 +466,132 @@ export async function readSchoolNutritionSnapshot(): Promise<ClassNutritionBucke
       }),
     ),
   )
+}
+
+/**
+ * Semua bahan mentah halaman Pantauan Kesehatan Kelas untuk SATU kelas.
+ *
+ * Sengaja BUKAN `readStudentMonitoring()` yang dipanggil per siswa: 32 siswa
+ * akan menjadi ~96 query. Yang dijalankan di sini tetap empat query saja untuk
+ * seluruh kelas —
+ *
+ *   1. siswa aktif kelas (hanya kolom demografis yang dipakai; foto tidak ada
+ *      pada Student dan tetap tidak diambil di mana pun),
+ *   2. pengukuran valid terbaru per siswa lewat satu `LEFT JOIN LATERAL`,
+ *      pola yang sama dengan snapshot gizi sekolah,
+ *   3. absensi berstatus SAKIT dalam periode,
+ *   4. kunjungan UKS dalam periode.
+ *
+ * Query 1 dan 2 digabung menjadi satu pernyataan SQL. Tidak ada tabel
+ * ringkasan baru: setiap angka tetap diturunkan dari Student, Attendance,
+ * EuksVisit, dan StudentHealthMeasurement.
+ */
+export type ClassMonitoringRaw = {
+  classId: string
+  className: string
+  students: ClassStudentInput[]
+  complaints: string[]
+  holidays: SchoolDate[]
+}
+
+export async function readClassMonitoring(
+  classId: string,
+  range: { from: SchoolDate; to: SchoolDate },
+): Promise<ClassMonitoringRaw | null> {
+  const schoolClass = await prisma.schoolClass.findUnique({
+    where: { id: classId },
+    select: { id: true, name: true },
+  })
+  if (!schoolClass) return null
+
+  const studentTable = qualifiedTable("Student")
+  const measurementTable = qualifiedTable("StudentHealthMeasurement")
+
+  const [studentRows, sickRows, visitRows] = await Promise.all([
+    prisma.$queryRaw<
+      Array<{
+        id: string
+        name: string
+        birthDate: string | null
+        gender: "LAKI_LAKI" | "PEREMPUAN" | null
+        measuredAt: string | null
+        heightCm: string | null
+        weightKg: string | null
+      }>
+    >`
+      SELECT
+        s."id" AS id,
+        s."name" AS name,
+        s."birthDate"::text AS "birthDate",
+        s."gender"::text AS gender,
+        m."measuredAt"::text AS "measuredAt",
+        m."heightCm"::text AS "heightCm",
+        m."weightKg"::text AS "weightKg"
+      FROM ${studentTable} s
+      LEFT JOIN LATERAL (
+        SELECT h."measuredAt", h."heightCm", h."weightKg"
+        FROM ${measurementTable} h
+        WHERE h."studentId" = s."id"
+          AND h."heightCm" > 0
+          AND h."weightKg" > 0
+        ORDER BY h."measuredAt" DESC, h."createdAt" DESC, h."id" DESC
+        LIMIT 1
+      ) m ON TRUE
+      WHERE s."active" = TRUE AND s."classId" = ${classId}
+    `,
+    prisma.attendance.findMany({
+      where: {
+        status: "SAKIT",
+        student: { classId, active: true },
+        attendanceDay: { date: prismaSchoolDateRange(range.from, range.to) },
+      },
+      select: { studentId: true, attendanceDay: { select: { date: true } } },
+    }),
+    prisma.euksVisit.findMany({
+      where: {
+        student: { classId, active: true },
+        occurredAt: prismaSchoolDateRange(range.from, range.to),
+      },
+      select: { studentId: true, occurredAt: true, complaint: true },
+    }),
+  ])
+
+  const sickByStudent = new Map<string, SchoolDate[]>()
+  for (const row of sickRows) {
+    const date = fromPrismaDate(row.attendanceDay.date)
+    sickByStudent.set(row.studentId, [...(sickByStudent.get(row.studentId) ?? []), date])
+  }
+  const visitsByStudent = new Map<string, SchoolDate[]>()
+  for (const row of visitRows) {
+    const date = fromPrismaDate(row.occurredAt)
+    visitsByStudent.set(row.studentId, [...(visitsByStudent.get(row.studentId) ?? []), date])
+  }
+
+  // Hari libur dibaca sekali untuk seluruh periode, bukan per siswa: aturan
+  // liburnya sama untuk semuanya dan penomoran rentetan memerlukan tanggal
+  // libur di antara hari sakit, bukan hanya pada hari sakit itu sendiri.
+  const holidays = [...(await readHolidayDates(eachSchoolDate(range.from, range.to))).keys()]
+
+  return {
+    classId: schoolClass.id,
+    className: schoolClass.name,
+    students: studentRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      birthDate: row.birthDate,
+      gender: row.gender,
+      latest:
+        row.measuredAt && row.heightCm !== null && row.weightKg !== null
+          ? {
+              measuredAt: row.measuredAt,
+              heightCm: Number(row.heightCm),
+              weightKg: Number(row.weightKg),
+            }
+          : null,
+      sickDates: sickByStudent.get(row.id) ?? [],
+      visitDates: visitsByStudent.get(row.id) ?? [],
+    })),
+    complaints: visitRows.map((row) => row.complaint),
+    holidays,
+  }
 }

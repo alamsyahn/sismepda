@@ -1,4 +1,7 @@
 import { pageCan, requirePagePermission } from "@/lib/page-guards"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { safeClassReturnPath } from "@/lib/euks-class-navigation"
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -25,7 +28,7 @@ import { fromPrismaDate } from "@/lib/school-date"
 export const dynamic = "force-dynamic"
 
 type Props = {
-  searchParams: Promise<{ classId?: string; studentId?: string }>
+  searchParams: Promise<{ classId?: string; studentId?: string; returnTo?: string }>
 }
 
 export default async function PantauanKesehatanPage({ searchParams }: Props) {
@@ -39,7 +42,7 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
     pageCan("euks.visits.read"),
   ])
 
-  const { classId = "", studentId = "" } = await searchParams
+  const { classId = "", studentId = "", returnTo = "" } = await searchParams
   const [classes, students] = await Promise.all([readEuksClassOptions(), readEuksStudentOptions()])
   const monitoring = studentId ? await readStudentMonitoring(studentId, {
     measurements: canMeasurements,
@@ -66,8 +69,32 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
       ? ageInYears(monitoring.student.birthDate, latest.measuredAt)
       : null
 
+  // Jalan pulang hanya diterima bila berupa path internal, sehingga `returnTo`
+  // tidak dapat dipakai mengarahkan pengguna ke situs luar. Labelnya memakai
+  // nama kelas bila kelasnya dikenal, supaya tombolnya berbunyi "Kembali ke
+  // VII A" alih-alih generik.
+  const safeBack = safeClassReturnPath(returnTo)
+  const backTarget = safeBack
+    ? {
+        href: safeBack,
+        label: classes.find((option) => option.id === classId)?.name ?? "Pantauan Kesehatan Kelas",
+      }
+    : null
+
   return (
     <PageContainer>
+      {backTarget ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          nativeButton={false}
+          className="w-fit"
+          render={<Link href={backTarget.href} />}
+        >
+          ← Kembali ke {backTarget.label}
+        </Button>
+      ) : null}
+
       <PageHeading
         title="Pantauan Kesehatan Siswa"
         description="Status gizi, riwayat sakit, dan tren IMT per siswa."

@@ -1,6 +1,9 @@
 "use client"
 
 import { useMemo } from "react"
+import Link from "next/link"
+
+import { classMonitoringLink } from "@/lib/euks-class-navigation"
 
 import {
   COVERAGE_COLUMN,
@@ -79,7 +82,16 @@ export function EuksNutritionHeatmap({
                   scope="row"
                   className="truncate px-1 text-left text-sm font-medium whitespace-nowrap"
                 >
-                  {row.className}
+                  {/* Nama kelas yang menjadi tautan drill-down, bukan seluruh
+                      selnya: target kliknya jelas dan tetap terjangkau
+                      keyboard, sementara sel angka tetap murni pembacaan. */}
+                  <Link
+                    href={classMonitoringLink(row.classId)}
+                    className="hover:text-primary focus-visible:ring-ring rounded-sm underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:outline-none"
+                    title={`Buka Pantauan Kesehatan Kelas ${row.className}`}
+                  >
+                    {row.className}
+                  </Link>
                 </th>
                 {row.cells.map((cell) => (
                   <HeatmapCell key={cell.column} cell={cell} row={row} />
