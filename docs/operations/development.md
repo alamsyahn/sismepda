@@ -28,7 +28,7 @@ Sync direction is always production → local. Never modify production to match 
 
 `npm run db:refresh-prodclone` automates this forward path into the disposable clone: dump → restore → `prisma migrate deploy` → RBAC seed → legacy backfill → local test account, with guards that refuse any target that is not the local clone. See [local database workflow](local-database-workflow.md); do not reconstruct the steps by hand.
 
-`prisma migrate deploy` currently stops on legacy attendance data (TD-014). Inspect it read-only with `npm run db:analyze-legacy-dates`, which reports how many rows would shift, which `(class, business date)` pairs collide, and which collisions are exact duplicates versus real conflicts. It never writes.
+`prisma migrate deploy` on this path is preceded by a legacy business-date repair (`prisma/legacy-date-repair.sql`), because older production data stored WIB midnight as `17:00:00` UTC. Inspect it read-only with `npm run db:analyze-legacy-dates`, which reports how many rows shift, which `(class, business date)` pairs collide, and which collisions are exact duplicates versus real conflicts. It never writes. See [local database workflow](local-database-workflow.md) for the details.
 
 The archive's own version still decides the path. A **pre-RBAC** dump has no `UserRole`/`RolePermission`/`RbacMigration` rows, so restoring it into a post-RBAC database leaves zero role membership and no usable account — which is why the refresh restores into an empty database first and only then migrates forward. `--apply` on the backfill refuses to run unless the named database matches `current_database()`.
 

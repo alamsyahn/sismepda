@@ -72,11 +72,28 @@ type RunOptions = {
   env?: Record<string, string>
   allowFailure?: boolean
   quiet?: boolean
+  /** Dikirim ke stdin proses; dipakai untuk menyuapkan skrip SQL ke psql. */
+  input?: string
 }
 
 function run(command: string, args: string[], options: RunOptions = {}) {
-  const result = spawnSync(command, args, {
-    stdio: options.quiet ? ["ignore", "pipe", "pipe"] : ["ignore", "inherit", "inherit"],
+  /**
+   * Di Windows, `npx`/`npm` adalah skrip `.cmd`, bukan executable, sehingga
+   * `spawnSync` langsung gagal dengan ENOENT. Dijalankan lewat `cmd.exe /c`
+   * dengan argumen terpisah — bukan `shell: true`, yang akan menggabungkan
+   * argumen menjadi satu string dan membuka celah injeksi.
+   */
+  const needsCmdShim = process.platform === "win32" && /^(npm|npx)$/.test(command)
+  const spawnCommand = needsCmdShim ? "cmd.exe" : command
+  const spawnArgs = needsCmdShim ? ["/c", command, ...args] : args
+
+  const result = spawnSync(spawnCommand, spawnArgs, {
+    stdio: options.input
+      ? ["pipe", "pipe", "pipe"]
+      : options.quiet
+        ? ["ignore", "pipe", "pipe"]
+        : ["ignore", "inherit", "inherit"],
+    input: options.input,
     encoding: "utf8",
     env: options.env ? { ...process.env, ...options.env } : process.env,
   })
@@ -330,8 +347,12 @@ for (let attempt = 0; attempt < 90; attempt += 1) {
    * entrypoint image postgres menjalankan server sementara pada socket Unix
    * selama inisialisasi, sehingga `pg_isready` sudah menjawab "accepting"
    * sebelum server yang sebenarnya mendengarkan koneksi kita.
+   *
+   * Kegagalan autentikasi tetap dihitung siap: artinya server TCP sudah
+   * menjawab, dan password yang tidak cocok diselaraskan tepat setelah ini.
    */
-  if (clonePsql("postgres", "select 1", { allowFailure: true }).ok) {
+  const probe = clonePsql("postgres", "select 1", { allowFailure: true })
+  if (probe.ok || /password authentication failed/i.test(probe.stderr)) {
     ready = true
     break
   }
@@ -342,12 +363,48 @@ if (!ready) fail(`Container ${CLONE_CONTAINER} tidak menjadi ready dalam 90 deti
 const cloneVersion = clonePsql("postgres", "show server_version").stdout
 console.log(`  PostgreSQL clone siap: ${cloneVersion}`)
 
+/**
+ * `POSTGRES_PASSWORD` hanya berlaku saat volume diinisialisasi pertama kali.
+ * Container yang dipakai ulang masih memegang password dari pembuatan awal,
+ * sehingga password yang baru dibangkitkan akan ditolak saat autentikasi lewat
+ * TCP. Menyelaraskannya di sini membuat refresh berulang tetap bekerja tanpa
+ * perlu menghapus container atau volume.
+ *
+ * Perintah dijalankan sebagai superuser lokal container lewat socket Unix
+ * (`-U` tanpa `-h`), yang memakai autentikasi `trust`/`peer` bawaan image,
+ * sehingga tetap berhasil meskipun password TCP saat ini sudah tidak cocok.
+ */
+const syncPassword = docker(
+  [
+    "exec",
+    CLONE_CONTAINER,
+    "psql",
+    "-U",
+    CLONE_SUPERUSER,
+    "-d",
+    "postgres",
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-c",
+    `ALTER USER ${CLONE_SUPERUSER} WITH PASSWORD '${clonePassword.replace(/'/g, "''")}'`,
+  ],
+  { allowFailure: true, quiet: true },
+)
+if (!syncPassword.ok) {
+  fail(
+    "Gagal menyelaraskan password container clone.\n" +
+      `Bila perlu, hapus container lalu ulangi: docker rm -f ${CLONE_CONTAINER}`,
+  )
+}
+
 // ---------------------------------------------------------------------------
 // 6. Recreate HANYA database clone
 // ---------------------------------------------------------------------------
 
 step(`Membuat ulang database lokal ${CLONE_DATABASE}`)
 
+// Password di-encode karena bisa memuat karakter non-URL. URL ini tidak pernah
+// dicetak: `describeTarget()` hanya menampilkan host, port, database, dan schema.
 const cloneUrl = `postgresql://${CLONE_SUPERUSER}:${encodeURIComponent(clonePassword)}@localhost:${CLONE_PORT}/${CLONE_DATABASE}`
 const planned = parseDatabaseUrl(cloneUrl)
 if (!planned.ok) fail(planned.reason)
@@ -453,6 +510,44 @@ console.log(`  ${CLONE_ENV_FILE} ditulis (sudah ter-gitignore).`)
 // 9. Migrasi repo terbaru
 // ---------------------------------------------------------------------------
 
+/**
+ * Perbaikan data legacy dijalankan sebelum migrasi, bukan sebagai migrasi baru.
+ * Migrasi `20260909100000_use_date_for_business_dates` sudah menjadi bagian
+ * riwayat, jadi isinya maupun guard-nya tidak boleh diubah; guard itu justru
+ * tetap menjadi pemeriksa terakhir setelah repair ini berjalan.
+ *
+ * Skrip SQL-nya idempoten, sehingga refresh terhadap clone yang sudah bersih
+ * tidak mengubah apa pun.
+ */
+step("Memperbaiki tanggal bisnis legacy (TD-014)")
+const repairSql = readFileSync(resolve(process.cwd(), "prisma/legacy-date-repair.sql"), "utf8")
+const repair = run(
+  "docker",
+  [
+    "exec",
+    "-i",
+    "-e",
+    `PGPASSWORD=${clonePassword}`,
+    CLONE_CONTAINER,
+    "psql",
+    "-h",
+    "127.0.0.1",
+    "-U",
+    CLONE_SUPERUSER,
+    "-d",
+    CLONE_DATABASE,
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-f",
+    "-",
+  ],
+  { input: repairSql, allowFailure: true, quiet: true },
+)
+if (!repair.ok) {
+  fail(`Perbaikan data legacy gagal:\n${repair.stderr.slice(0, 1500)}`)
+}
+console.log("  Tanggal bisnis legacy dinormalkan; tabrakan diselesaikan.")
+
 step("Menerapkan migrasi repository terbaru (prisma migrate deploy)")
 
 /**
@@ -468,6 +563,7 @@ const migrate = run("npx", ["prisma", "migrate", "deploy"], {
 if (!migrate.ok) {
   fail(
     "prisma migrate deploy gagal.\n" +
+      `${migrate.stderr || migrate.stdout || "(tanpa keluaran)"}\n\n` +
       "Jangan memperbaiki dengan `db push --force-reset` atau membuat migrasi baru.\n" +
       "Laporkan pesan di atas: kemungkinan drift, migrasi hilang, atau migrasi gagal di produksi.",
   )
@@ -531,7 +627,9 @@ step("Validasi clone")
 const counts = clonePsql(
   CLONE_DATABASE,
   'select (select count(*) from "User"), (select count(*) from "Student"), ' +
-    '(select count(*) from "Role"), (select count(*) from "UserRole")',
+    // Model Prisma `Role` dipetakan ke tabel "RbacRole"; nama "Role" dipakai
+    // enum legacy yang sudah dihapus migrasi RBAC.
+    '(select count(*) from "RbacRole"), (select count(*) from "UserRole")',
 ).stdout.split("|")
 console.log(`  User ${counts[0]} · Student ${counts[1]} · Role ${counts[2]} · UserRole ${counts[3]}`)
 

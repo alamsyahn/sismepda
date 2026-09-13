@@ -84,6 +84,7 @@ produksi
   → dump lokal di .prodclone/
   → recreate HANYA database sismepda_prodclone
   → pg_restore
+  → perbaikan data legacy tanggal bisnis (sebelum migrasi)
   → prisma migrate deploy (migrasi repo terbaru)
   → seed registry RBAC + backfill legacy + akun uji lokal
   → validasi jumlah baris
@@ -108,18 +109,55 @@ Rincian tiap langkah:
    yang berbeda dari container PostgreSQL lain di mesin.
 7. **Recreate** — `DROP DATABASE` hanya setelah seluruh guard lolos.
 8. **Restore** — jumlah tabel hasil restore dibandingkan dengan produksi.
-9. **Migrasi** — `prisma migrate deploy`. Bukan `migrate dev`, bukan `db push`,
+9. **Perbaikan data legacy** — `prisma/legacy-date-repair.sql` dijalankan
+   **sebelum** migrasi; lihat bagian di bawah.
+10. **Migrasi** — `prisma migrate deploy`. Bukan `migrate dev`, bukan `db push`,
    tidak pernah `migrate reset`.
-10. **Bootstrap lokal** — `prisma db seed` (registry RBAC), backfill legacy, lalu
+11. **Bootstrap lokal** — `prisma db seed` (registry RBAC), backfill legacy, lalu
     akun uji lokal lewat `scripts/ensure-local-test-user.ts` yang sudah ada.
-11. **Validasi** — jumlah `Student` clone harus sama persis dengan produksi.
-12. **Verifikasi produksi** — baseline dibandingkan ulang; selisih apa pun
+12. **Validasi** — jumlah `Student` clone harus sama persis dengan produksi.
+13. **Verifikasi produksi** — baseline dibandingkan ulang; selisih apa pun
     dianggap kegagalan serius.
-13. **Bersih-bersih** — dump dihapus kecuali `--keep-dump`.
+14. **Bersih-bersih** — dump dihapus kecuali `--keep-dump`.
 
 Data uji synthetic **tidak** dibuat oleh refresh. Clone merepresentasikan data
 produksi + schema terbaru, titik. Bila memang perlu, jalankan
 `npm run dev:euks-seed` secara eksplisit setelah refresh.
+
+## Perbaikan data legacy tanggal bisnis
+
+Data produksi lama menyimpan tanggal bisnis sebagai proyeksi timezone: midnight
+WIB ditulis sebagai `17:00:00` UTC hari sebelumnya. Migrasi
+`20260909100000_use_date_for_business_dates` mengubah kolom itu menjadi `DATE`
+dan **sengaja abort** bila menemukan jam bukan midnight, karena `::date` polos
+akan menggeser 151 hari absensi ke tanggal yang salah tanpa suara.
+
+`prisma/legacy-date-repair.sql` menyelesaikan itu sebelum migrasi berjalan.
+Skrip ini idempoten, hanya menyentuh clone, dan berhenti sendiri bila menemukan
+kondisi di luar yang sudah dianalisis.
+
+Yang dikerjakan:
+
+1. `17:00:00` dipetakan ke tanggal kalender WIB-nya (`+1 hari`), bukan `::date`.
+2. 15 tabrakan `(kelas, tanggal bisnis)` pada 2026-09-07 direkonsiliasi: 11
+   duplikat persis, 1 (IX D) beda redaksi note saja — note paling informatif
+   yang dipertahankan, 3 konflik nyata memakai baris yang disubmit belakangan.
+3. Baris `AttendanceDay` duplikat dihapus setelah `Attendance` anaknya
+   dipindahkan, sehingga tidak ada absensi siswa yang hilang.
+
+Verifikasi bawaan skrip: setiap pasangan `(kelas, tanggal, siswa)` harus tetap
+unik dan jumlahnya sama dengan jumlah baris `Attendance` yang tersisa.
+
+Ketiga konflik nyata diselesaikan **berdasarkan kebijakan pemilik data, bukan
+bukti**. Forensik tidak menemukan jejak koreksi; lihat TD-015 di
+[technical debt](../technical-debt/README.md) untuk rinciannya dan siapa yang
+harus mengonfirmasi.
+
+Analisis read-only tanpa mengubah apa pun:
+
+```bash
+npm run db:analyze-legacy-dates
+```
 
 ## Apa yang tidak disentuh
 
