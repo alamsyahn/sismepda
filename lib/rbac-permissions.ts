@@ -542,6 +542,8 @@ export const PERMISSIONS: readonly PermissionDefinition[] = [
     action: "read",
     module: "rbac",
     label: "Lihat role dan permission",
+    description: "Mengungkap struktur kewenangan sekolah, termasuk siapa yang memegang role sensitif.",
+    sensitive: true,
   }),
   def({
     key: "rbac.roles.manage",
@@ -575,6 +577,40 @@ export const PERMISSIONS: readonly PermissionDefinition[] = [
 /// bukan oleh nama tampilan maupun oleh flag `isProtected` yang bisa ikut
 /// tersalin saat role diduplikasi.
 export const SYSTEM_ADMIN_ROLE_KEY = "system_admin"
+
+/**
+ * Keluarga permission yang merupakan KEWENANGAN SENSITIF: mengubah siapa yang
+ * punya akses, menyentuh identitas/kredensial akun, atau menyentuh berkas
+ * database.
+ *
+ * Notasi di sini adalah METADATA, bukan wildcard runtime. Tidak ada evaluator
+ * yang pernah memberi grant berdasarkan prefiks: `isSensitiveAuthority`
+ * hanya MENGKLASIFIKASIKAN key yang sudah ada di registry, dipakai untuk
+ * membatasi pendelegasian dan untuk memberi tanda di UI.
+ *
+ * Pencocokan dilakukan per SEGMEN key, sehingga `teachers.accounts.read`
+ * (kewenangan direktori guru biasa) tidak tertarik oleh keluarga `accounts`.
+ */
+export const SENSITIVE_AUTHORITY_FAMILIES: readonly string[] = [
+  "rbac",
+  "accounts",
+  "database",
+  "school.class_access.manage",
+  "homerooms.assign",
+]
+
+/**
+ * Apakah sebuah key termasuk kewenangan sensitif.
+ *
+ * Sebuah key cocok bila ia sama dengan nama keluarga, atau berada langsung di
+ * bawahnya sebagai segmen penuh (`rbac` cocok dengan `rbac.roles.manage`,
+ * tetapi TIDAK dengan `rbacx.foo` maupun dengan `teachers.accounts.read`).
+ */
+export function isSensitiveAuthority(key: string): boolean {
+  return SENSITIVE_AUTHORITY_FAMILIES.some(
+    (family) => key === family || key.startsWith(`${family}.`),
+  )
+}
 
 /// Key yang tidak boleh dipakai role buatan pengguna.
 export const RESERVED_ROLE_KEYS: readonly string[] = [SYSTEM_ADMIN_ROLE_KEY]
