@@ -113,8 +113,15 @@ test("dashboard tidak aktif di halaman lain", () => {
 })
 
 test("account nav: profil terbuka, pengaturan menerima setiap domain yang dirender", () => {
-  assert.deepEqual(accountNav.map((item) => item.href), ["/profil", "/pengaturan"])
+  assert.deepEqual(accountNav.map((item) => item.href), [
+    "/profil",
+    "/pengaturan",
+    "/pengaturan/pengguna",
+    "/pengaturan/akses",
+  ])
   // "Profil Saya" sengaja tanpa daftar permission: setiap sesi sah memilikinya.
+  // Administrasi RBAC TIDAK boleh ikut kategori ini — bila salah satu kehilangan
+  // daftar permission-nya, tautannya akan tampil bagi setiap guru.
   assert.deepEqual(
     accountNav.filter((item) => !item.permissions?.length).map((item) => item.href),
     ["/profil"],

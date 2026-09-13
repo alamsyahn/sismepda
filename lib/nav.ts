@@ -13,6 +13,7 @@ import {
   Send,
   CircleUserRound,
   Settings,
+  ShieldCheck,
   FileDown,
   MessageCircleMore,
   Wallet,
@@ -355,6 +356,23 @@ export const accountNav: NavItem[] = [
       "school.holidays.update", "school.holidays.delete", "school.holidays.export",
       "database.backup", "database.restore",
     ],
+  },
+  {
+    title: "Pengguna",
+    href: "/pengaturan/pengguna",
+    icon: UserCog,
+    description: "Role, status, dan siklus hidup akun",
+    permissions: [
+      "rbac.assignments.manage", "accounts.credentials.manage",
+      "accounts.status.manage", "accounts.delete",
+    ],
+  },
+  {
+    title: "Akses",
+    href: "/pengaturan/akses",
+    icon: ShieldCheck,
+    description: "Role dan permission",
+    permissions: ["rbac.roles.read", "rbac.roles.manage"],
   },
 ]
 

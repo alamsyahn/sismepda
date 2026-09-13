@@ -103,6 +103,21 @@ The legacy `DELETE /api/admin/teachers` does **not** yet apply this policy — s
 
 ## Surface policy model
 
+### Nested route guards
+
+A Next.js layout guard covers every child route, so the guard on `/pengaturan`
+must be the **union** of what its children need — otherwise an RBAC manager
+without `school.settings.read` cannot reach `/pengaturan/akses` at all.
+
+Widening a layout guard does not authorize the layout's own page. `/pengaturan`
+therefore carries its own `school.settings.read` guard on the page, and the
+school settings form lives in a sibling component rather than in `page.tsx`.
+Removing that page guard makes school settings readable by anyone holding only
+RBAC rights — verified by mutation, not assumed.
+
+The rule: a layout guard is a **filter**, never the authorization for any
+individual page. Each page states its own requirement.
+
 Every page, route handler, server loader and non-API handler carries exactly one policy:
 
 - `public`: `/login`, `/api/auth/*` (Auth.js), static assets, `GET /app-logo`, `GET /favicon.ico`, `GET /site-branding.json`.
@@ -308,7 +323,9 @@ Legend — **Current guard**: `U` = `requireUser()` (session + `active` re-read)
 | `/guru/[teacherId]` | `U`; editors shown if ADMIN or `canManageTeacherProfiles` | teacher profile | `teachers.directory.read`; editors by `teachers.profile.update` |
 | `/wali-kelas/input` (client) | Proxy adminOnly → `/api/admin/homerooms` | — | `homerooms.assign` |
 | `/profil` | `U` | own user row | authenticated |
-| `/pengaturan` (client) | Proxy adminOnly → `/api/admin/*` | — | `school.settings.read` |
+| `/pengaturan` | `school.settings.read` (page guard) | school settings | `school.settings.read` |
+| `/pengaturan/pengguna` | any of `rbac.assignments.manage`, `accounts.credentials.manage`, `accounts.status.manage`, `accounts.delete` | accounts, roles | same |
+| `/pengaturan/akses` | any of `rbac.roles.read`, `rbac.roles.manage` | roles, permission catalog | same |
 | `/supervisi-buku-kerja` | `Dom(workbook viewer)` | supervision overview | `workbook.supervision.read` |
 | `/supervisi-buku-kerja/kelola` | `U` + DB role ADMIN | scope list | `workbook.scope.manage` |
 | `/bos` | `Dom(bos.view)` | budget, entries | `bos.read` |
