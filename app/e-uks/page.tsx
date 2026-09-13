@@ -1,10 +1,12 @@
 import Link from "next/link"
+import { CalendarRange, ClipboardPlus, Users, type LucideIcon } from "lucide-react"
 
 import { PageContainer } from "@/components/layout/page-container"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { EuksTermRanking } from "@/components/e-uks/euks-term-ranking"
-import { EuksMonthlyVisitsChart } from "@/components/e-uks/euks-monthly-visits-chart"
+import { EuksComplaintRanking } from "@/components/e-uks/euks-complaint-ranking"
+import { EuksTreatmentRanking } from "@/components/e-uks/euks-treatment-ranking"
+import { EuksVisitTrendChart } from "@/components/e-uks/euks-visit-trend-chart"
 import { EuksNutritionDashboard } from "@/components/e-uks/euks-nutrition-dashboard"
 import { euksHeroLogoUrl } from "@/lib/euks-logo"
 import { EuksHero } from "@/components/e-uks/euks-hero"
@@ -18,7 +20,14 @@ import {
   euksOfficerPhotoUrl,
   officerDisplayName,
 } from "@/lib/euks-settings"
-import { monthlyVisitCounts, rankTerms, formatMonthLabel } from "@/lib/euks-trends"
+import {
+  isPartialFinalMonth,
+  monthlyVisitCounts,
+  monthlyVisitStats,
+  peakMonth,
+  rankTerms,
+  formatMonthLabel,
+} from "@/lib/euks-trends"
 import {
   countDistinctVisitingStudents,
   readEuksSettings,
@@ -26,7 +35,7 @@ import {
   readEuksVisitDateRange,
   readSchoolNutritionSnapshot,
 } from "@/lib/server-euks"
-import { schoolMonthOf } from "@/lib/school-date"
+import { formatSchoolDate, schoolMonthOf } from "@/lib/school-date"
 
 export const dynamic = "force-dynamic"
 
@@ -94,6 +103,15 @@ export default async function EuksHomePage() {
     TOP_TERMS,
   )
   const monthly = monthlyVisitCounts(visits)
+  // Seri untuk grafik: jumlah kunjungan sama persis dengan `monthly`, ditambah
+  // jumlah siswa berbeda per bulan untuk tooltip.
+  const monthlyStats = monthlyVisitStats(visits)
+  const averagePerMonth = monthly.length > 0 ? visits.length / monthly.length : 0
+  const peak = peakMonth(monthlyStats)
+  // Bulan terakhir ditandai belum genap berdasarkan tanggal kunjungan terakhir
+  // yang benar-benar tercatat, bukan berdasarkan "hari ini".
+  const lastVisitDate = range?.last ?? null
+  const partialFinalMonth = lastVisitDate ? isPartialFinalMonth(lastVisitDate) : false
 
   const periodLabel = range
     ? `${formatMonthLabel(schoolMonthOf(range.first))} – ${formatMonthLabel(schoolMonthOf(range.last))}`
@@ -220,61 +238,95 @@ export default async function EuksHomePage() {
             </Button>
           </div>
         ) : (
-          <div className="space-y-4">
-            {/* Band statistik: tiga angka dalam satu kartu, bukan tiga kartu
+          <div className="space-y-6">
+            {/* Band statistik: tiga angka dalam satu permukaan, bukan tiga kartu
                 terpisah — supaya terbaca sebagai ringkasan, bukan sebagai
-                deretan KPI tile dashboard. */}
+                deretan KPI tile dashboard. Ikon hanya membantu pemindaian. */}
             <Card>
               <CardContent className="divide-border grid gap-6 py-6 sm:grid-cols-3 sm:gap-0 sm:divide-x">
                 <SummaryStat
+                  icon={ClipboardPlus}
                   label="Total Kunjungan"
-                  value={String(visits.length)}
+                  value={visits.length.toLocaleString("id-ID")}
                   hint={periodLabel ?? undefined}
                 />
                 <SummaryStat
+                  icon={Users}
                   label="Siswa Berkunjung"
-                  value={String(distinctStudents)}
+                  value={distinctStudents.toLocaleString("id-ID")}
                   hint="Siswa berbeda pada periode ini"
                 />
                 <SummaryStat
+                  icon={CalendarRange}
                   label="Rata-rata per Bulan"
                   value={
                     monthly.length > 0
-                      ? (visits.length / monthly.length).toFixed(1).replace(".", ",")
+                      ? averagePerMonth.toLocaleString("id-ID", { maximumFractionDigits: 1 })
                       : "-"
                   }
-                  hint={monthly.length > 0 ? `${monthly.length} bulan tercatat` : undefined}
+                  hint={monthly.length > 0 ? `kunjungan / bulan • ${monthly.length} bulan` : undefined}
                 />
               </CardContent>
             </Card>
 
+            {/* Tren mendapat lebar penuh: ini satu-satunya blok yang menjawab
+                "bergerak ke mana", jadi dia yang memimpin hierarki. */}
             <Card>
               <CardHeader>
-                <CardTitle>Kunjungan per Bulan</CardTitle>
+                <CardTitle>Tren Kunjungan UKS</CardTitle>
+                <CardDescription>
+                  {periodLabel
+                    ? `Jumlah kunjungan siswa per bulan • ${periodLabel}`
+                    : "Jumlah kunjungan siswa per bulan"}
+                </CardDescription>
               </CardHeader>
-              <CardContent>
-                <EuksMonthlyVisitsChart points={monthly} />
+              <CardContent className="space-y-3">
+                <EuksVisitTrendChart
+                  points={monthlyStats}
+                  average={averagePerMonth}
+                  partialFinalMonth={partialFinalMonth}
+                />
+                {/* Satu ringkasan deterministik saja — diturunkan langsung dari
+                    seri, tanpa menyimpulkan sebab apa pun. */}
+                {peak ? (
+                  <p className="text-muted-foreground text-xs">
+                    {`${formatMonthLabel(peak.month)} adalah bulan dengan kunjungan terbanyak: ${peak.count} kunjungan.`}
+                    {partialFinalMonth && lastVisitDate
+                      ? ` Data ${formatMonthLabel(schoolMonthOf(lastVisitDate))} baru sampai ${formatSchoolDate(lastVisitDate, { day: "numeric", month: "long", year: "numeric" })} (ditandai *), jadi bulan itu belum genap.`
+                      : null}
+                  </p>
+                ) : null}
               </CardContent>
             </Card>
 
-            {/* Keluhan dan tindakan disejajarkan: keduanya daftar peringkat
-                sejenis, jadi dibaca berpasangan, bukan bertumpuk. */}
+            {/* Keluhan dan tindakan disejajarkan sebagai dua kartu bersaudara,
+                tetapi digambar berbeda: batang berperingkat vs lollipop.
+                Bentuk yang identik membuat keduanya terbaca sebagai satu blok
+                berulang. */}
             <div className="grid gap-4 lg:grid-cols-2">
               <Card>
                 <CardHeader>
                   <CardTitle>Keluhan Terbanyak</CardTitle>
+                  <CardDescription>Peringkat menurut jumlah kunjungan yang mencatatnya.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <EuksTermRanking rows={complaints} emptyLabel="Belum ada keluhan tercatat." />
+                  <EuksComplaintRanking
+                    rows={complaints}
+                    emptyLabel="Belum ada keluhan tercatat."
+                  />
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader>
                   <CardTitle>Tindakan Terbanyak</CardTitle>
+                  <CardDescription>Titik menunjukkan posisi relatif terhadap tindakan terbanyak.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <EuksTermRanking rows={treatments} emptyLabel="Belum ada tindakan tercatat." />
+                  <EuksTreatmentRanking
+                    rows={treatments}
+                    emptyLabel="Belum ada tindakan tercatat."
+                  />
                 </CardContent>
               </Card>
             </div>
@@ -282,6 +334,8 @@ export default async function EuksHomePage() {
             <p className="text-muted-foreground text-xs">
               Keluhan dan tindakan dikelompokkan menurut teks yang dicatat petugas, bukan menurut
               klasifikasi medis. Penulisan yang berbeda untuk hal yang sama akan terhitung terpisah.
+              Satu kunjungan mencatat keluhan dan tindakannya masing-masing, sehingga persentase
+              dihitung terhadap seluruh entri yang terisi pada kategori itu.
             </p>
           </div>
         )}
@@ -290,19 +344,24 @@ export default async function EuksHomePage() {
   )
 }
 
-/** Satu angka dalam band ringkasan. */
+/** Satu angka dalam band ringkasan. Ikon kecil, hanya bantu pemindaian. */
 function SummaryStat({
+  icon: Icon,
   label,
   value,
   hint,
 }: {
+  icon: LucideIcon
   label: string
   value: string
   hint?: string
 }) {
   return (
     <div className="space-y-1 sm:px-6">
-      <p className="text-muted-foreground text-sm font-medium">{label}</p>
+      <p className="text-muted-foreground flex items-center gap-2 text-sm font-medium">
+        <Icon className="text-euks-accent size-4 shrink-0" aria-hidden />
+        {label}
+      </p>
       <p className="text-3xl font-semibold tabular-nums">{value}</p>
       {hint ? <p className="text-muted-foreground text-xs">{hint}</p> : null}
     </div>

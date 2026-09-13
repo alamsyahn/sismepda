@@ -19,6 +19,12 @@ export type TrendVisit = {
   occurredAt: SchoolDate
   complaint: string
   treatment: string
+  /**
+   * Siswa yang berkunjung. Opsional karena beberapa pemanggil hanya butuh
+   * agregasi teks; bila tidak diisi, jumlah siswa per bulan tidak dihitung
+   * alih-alih ditebak.
+   */
+  studentId?: string
 }
 
 /** Satu baris peringkat keluhan atau tindakan. */
@@ -97,6 +103,75 @@ export function rankTerms(values: string[], limit: number): TrendCount[] {
   }
 
   return rows
+}
+
+/** Satu bulan pada grafik tren, lengkap dengan jumlah siswa berbeda. */
+export type MonthlyVisitStat = {
+  month: SchoolMonth
+  count: number
+  /** Siswa berbeda yang berkunjung pada bulan itu. */
+  students: number
+}
+
+/**
+ * Seri bulanan untuk grafik tren: jumlah kunjungan sekaligus siswa berbeda.
+ *
+ * Dipisahkan dari `monthlyVisitCounts()` supaya bentuk seri lama tetap utuh
+ * bagi pemanggil yang hanya butuh jumlah kunjungan. Deret bulannya sama persis
+ * — fungsi ini memakai `monthlyVisitCounts()` sebagai sumber, bukan menghitung
+ * ulang, sehingga angka kunjungan tidak mungkin berbeda antara keduanya.
+ *
+ * Siswa berbeda dihitung per bulan, jadi seorang siswa yang berkunjung pada
+ * dua bulan terhitung pada masing-masing bulan. Jumlah kolom `students` karena
+ * itu TIDAK sama dengan total siswa berkunjung pada periode.
+ */
+export function monthlyVisitStats(visits: TrendVisit[]): MonthlyVisitStat[] {
+  const base = monthlyVisitCounts(visits)
+  const students = new Map<string, Set<string>>()
+
+  for (const visit of visits) {
+    if (!visit.studentId) continue
+    const month = schoolMonthOf(visit.occurredAt)
+    const set = students.get(month) ?? new Set<string>()
+    set.add(visit.studentId)
+    students.set(month, set)
+  }
+
+  return base.map((point) => ({
+    ...point,
+    students: students.get(point.month)?.size ?? 0,
+  }))
+}
+
+/**
+ * Bulan dengan kunjungan terbanyak, atau null bila seluruh bulan nol.
+ *
+ * Bila ada beberapa bulan dengan jumlah sama, yang paling awal dipilih supaya
+ * hasilnya stabil antar-render.
+ */
+export function peakMonth<T extends { month: SchoolMonth; count: number }>(
+  points: T[],
+): T | null {
+  let best: T | null = null
+  for (const point of points) {
+    if (point.count === 0) continue
+    if (best === null || point.count > best.count) best = point
+  }
+  return best
+}
+
+/**
+ * Apakah bulan terakhir pada seri belum genap sebulan.
+ *
+ * Dihitung dari tanggal kunjungan terakhir yang benar-benar ada di basis data,
+ * bukan dari "hari ini": grafik hanya boleh mengklaim datanya sampai tanggal
+ * yang memang tercatat. Tanpa penanda ini, bulan berjalan terbaca sebagai
+ * penurunan tajam padahal bulannya memang belum selesai.
+ */
+export function isPartialFinalMonth(lastDate: SchoolDate): boolean {
+  const [year, month, day] = lastDate.split("-").map(Number)
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return day < daysInMonth
 }
 
 /** Satu bulan pada grafik tren tindakan. */

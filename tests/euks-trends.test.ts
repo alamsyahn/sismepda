@@ -4,8 +4,11 @@ import { test } from "node:test"
 import {
   formatMonthLabel,
   formatMonthShort,
+  isPartialFinalMonth,
   monthlyVisitCounts,
+  monthlyVisitStats,
   normalizeTerm,
+  peakMonth,
   rankTerms,
   visitsBetween,
 } from "../lib/euks-trends"
@@ -129,6 +132,73 @@ test("penyaringan rentang tanggal mengikutkan batas", () => {
   ]
   const inRange = visitsBetween(visits, d("2026-01-01"), d("2026-01-31"))
   assert.deepEqual(inRange.map((item) => item.complaint), ["A", "B", "C"])
+})
+
+test("seri bulanan untuk grafik memakai angka kunjungan yang sama persis", () => {
+  const visits = [
+    { ...visit("2026-01-10", "Demam"), studentId: "s1" },
+    { ...visit("2026-01-20", "Batuk"), studentId: "s1" },
+    // Februari sengaja kosong.
+    { ...visit("2026-03-05", "Demam"), studentId: "s2" },
+    { ...visit("2026-03-06", "Demam"), studentId: "s3" },
+  ]
+
+  const base = monthlyVisitCounts(visits)
+  const stats = monthlyVisitStats(visits)
+
+  // Redesign grafik tidak boleh mengubah angka apa pun.
+  assert.deepEqual(
+    stats.map((point) => ({ month: point.month, count: point.count })),
+    base,
+  )
+  // Siswa berbeda dihitung per bulan: dua kunjungan siswa yang sama pada Januari
+  // tetap satu siswa.
+  assert.deepEqual(
+    stats.map((point) => point.students),
+    [1, 0, 2],
+  )
+})
+
+test("bulan kosong tetap ada pada seri grafik dengan nol siswa", () => {
+  const stats = monthlyVisitStats([
+    { ...visit("2026-01-10", "Demam"), studentId: "s1" },
+    { ...visit("2026-03-05", "Demam"), studentId: "s1" },
+  ])
+  assert.equal(stats.length, 3)
+  assert.deepEqual(stats[1], { month: m("2026-02"), count: 0, students: 0 })
+})
+
+test("kunjungan tanpa studentId tidak menghasilkan jumlah siswa palsu", () => {
+  const stats = monthlyVisitStats([visit("2026-01-10", "Demam")])
+  assert.equal(stats[0].count, 1)
+  assert.equal(stats[0].students, 0)
+})
+
+test("tanpa kunjungan tidak ada seri grafik", () => {
+  assert.deepEqual(monthlyVisitStats([]), [])
+})
+
+test("bulan tertinggi memilih yang paling awal ketika jumlahnya imbang", () => {
+  const peak = peakMonth([
+    { month: m("2026-01"), count: 4 },
+    { month: m("2026-02"), count: 9 },
+    { month: m("2026-03"), count: 9 },
+  ])
+  assert.equal(peak?.month, "2026-02")
+})
+
+test("seluruh bulan nol tidak menghasilkan bulan tertinggi", () => {
+  assert.equal(peakMonth([{ month: m("2026-01"), count: 0 }]), null)
+  assert.equal(peakMonth([]), null)
+})
+
+test("bulan terakhir dianggap belum genap hanya bila tanggalnya belum akhir bulan", () => {
+  assert.equal(isPartialFinalMonth(d("2026-09-13")), true)
+  assert.equal(isPartialFinalMonth(d("2026-09-30")), false)
+  assert.equal(isPartialFinalMonth(d("2026-01-31")), false)
+  // Februari tahun kabisat: 29 hari, jadi tanggal 29 sudah genap.
+  assert.equal(isPartialFinalMonth(d("2024-02-29")), false)
+  assert.equal(isPartialFinalMonth(d("2026-02-28")), false)
 })
 
 test("normalizeTerm merapikan spasi dan huruf besar-kecil", () => {

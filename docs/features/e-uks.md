@@ -634,6 +634,40 @@ there.
 Empty months inside the range are kept at zero rather than skipped, so a quiet
 month reads as quiet instead of vanishing from the axis.
 
+### Ringkasan Kunjungan visual grammar
+
+The visit summary deliberately uses a *different shape per kind of question*,
+because four blocks drawn as the same blue bar read as one repeated block and
+the reader stops distinguishing them. Every number still comes from
+`monthlyVisitCounts()` / `monthlyVisitStats()` / `rankTerms()` — the redesign
+changed drawing only, not aggregation.
+
+| Block | Shape | Question it answers |
+|---|---|---|
+| KPI band | three segments in one surface, small lucide icon each | how large |
+| Tren Kunjungan UKS | line + soft area, full width | movement over time |
+| Keluhan Terbanyak | ranked bars with `#n`, count and share | complaint ranking |
+| Tindakan Terbanyak | lollipop (neutral stem + accent dot) | treatment ranking |
+
+`monthlyVisitStats()` adds distinct visitors per month on top of the existing
+month series; its `count` values are asserted equal to `monthlyVisitCounts()`
+so a redesign can never silently move a number. Visits whose `studentId` is not
+selected report `students: 0` rather than inventing a count.
+
+The trend chart carries one thin dashed average reference line, one `Tertinggi`
+marker, and nothing else — annotation past that competes with the data. The
+final month is flagged `Sep*` when `isPartialFinalMonth()` says the last
+recorded visit date is before the month's end, so a month still in progress is
+not read as a collapse. One deterministic sentence sits under the chart (peak
+month, plus the partial-month caveat); no causal claim is made, because nothing
+in the data supports one.
+
+Colour stays inside one accent family (`--euks-accent`) with hierarchy carried
+by opacity and weight, never by hue per category, and every value is also
+present as text or an SVG `<title>` so no information depends on colour. Point
+hit areas are transparent 14px circles with `tabIndex`, so tooltips are
+reachable by tap and keyboard, not hover only.
+
 ### Why there is no weight-for-age chart
 
 Wireframe 06 shows two charts, hand-labelled "Tinggi Badan" and "Berat Badan".

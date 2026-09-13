@@ -166,7 +166,7 @@ export async function readAssignableTeachers() {
 export async function readEuksTrendVisits(from: SchoolDate, to: SchoolDate): Promise<TrendVisit[]> {
   const visits = await prisma.euksVisit.findMany({
     where: { occurredAt: prismaSchoolDateRange(from, to) },
-    select: { occurredAt: true, complaint: true, treatment: true },
+    select: { occurredAt: true, complaint: true, treatment: true, studentId: true },
     orderBy: { occurredAt: "asc" },
   })
 
@@ -174,6 +174,7 @@ export async function readEuksTrendVisits(from: SchoolDate, to: SchoolDate): Pro
     occurredAt: fromPrismaDate(visit.occurredAt),
     complaint: visit.complaint,
     treatment: visit.treatment,
+    studentId: visit.studentId,
   }))
 }
 
