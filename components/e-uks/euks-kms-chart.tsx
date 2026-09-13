@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 
+import { ChartTooltip, ChartTooltipFrame } from "@/components/e-uks/chart-tooltip"
 import {
   HEIGHT_REFERENCE_MAX_MONTHS,
   HEIGHT_REFERENCE_MIN_MONTHS,
@@ -124,6 +125,7 @@ export function EuksKmsChart({
   }
 
   return (
+    <ChartTooltipFrame>
     <svg
       viewBox={`0 0 ${width} ${height}`}
       className="h-auto min-h-72 w-full"
@@ -242,41 +244,6 @@ export function EuksKmsChart({
         )
       })}
 
-      {/* Tooltip hover untuk desktop. Detail lengkap tetap ada di panel bawah
-          chart, jadi perangkat sentuh tidak bergantung pada hover. */}
-      {hoveredPoint ? (
-        <g pointerEvents="none">
-          {(() => {
-            const cx = x(hoveredPoint.ageMonths)
-            const cy = y(hoveredPoint.heightCm)
-            const boxWidth = 150
-            const boxHeight = 42
-            // Jaga tooltip tetap di dalam bingkai grafik di kedua tepi.
-            const left = Math.min(Math.max(cx - boxWidth / 2, 2), width - boxWidth - 2)
-            const top = cy - boxHeight - 12 < 2 ? cy + 12 : cy - boxHeight - 12
-            return (
-              <>
-                <rect
-                  x={left}
-                  y={top}
-                  width={boxWidth}
-                  height={boxHeight}
-                  rx="6"
-                  fill="var(--popover)"
-                  stroke="var(--border)"
-                />
-                <text x={left + 8} y={top + 17} fill="var(--popover-foreground)" fontSize="11">
-                  {`${hoveredPoint.heightCm} cm · ${hoveredPoint.ageLabel}`}
-                </text>
-                <text x={left + 8} y={top + 32} fill="var(--muted-foreground)" fontSize="10">
-                  {hoveredPoint.band ?? "Di luar tabel rujukan"}
-                </text>
-              </>
-            )
-          })()}
-        </g>
-      ) : null}
-
       <text
         x={margin.left}
         y={height - 12}
@@ -287,6 +254,20 @@ export function EuksKmsChart({
         Umur (tahun)
       </text>
     </svg>
+
+      {/* Tooltip memakai kartu bersama seluruh chart E-UKS. Detail lengkap tetap
+          ada di panel bawah chart, jadi perangkat sentuh tidak bergantung pada
+          hover. */}
+      {hoveredPoint ? (
+        <ChartTooltip
+          xRatio={x(hoveredPoint.ageMonths) / width}
+          yRatio={y(hoveredPoint.heightCm) / height}
+          title={hoveredPoint.ageLabel}
+          value={`${hoveredPoint.heightCm} cm`}
+          rows={[hoveredPoint.band ?? "Di luar tabel rujukan"]}
+        />
+      ) : null}
+    </ChartTooltipFrame>
   )
 }
 

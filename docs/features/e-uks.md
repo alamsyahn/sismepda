@@ -276,7 +276,8 @@ Each entry links straight to that student's detail page.
 ### Visualisations
 
 All four are inline SVG or CSS, consistent with the rest of E-UKS; no chart
-library was added.
+library was added. Every one of them uses the shared tooltip described under
+[Chart tooltips](#chart-tooltips).
 
 - **Distribusi Status Gizi** — 100% stacked horizontal bar. Percentages divide by
   the *whole class*, including `Belum dapat dinilai`, so the unassessed share
@@ -292,8 +293,14 @@ library was added.
   heights resolve to 0px and only the zero markers stay visible. Bars are
   floored at 8% of the plot so a single sick day still reads as a bar, and when
   all buckets are zero the card shows an explicit empty state instead of a
-  flat axis.
+  flat axis. Bars use the warm `--chart-4` amber rather than the informational
+  blue of the visit trend: sick absence is a "needs attention" signal, and
+  reserving red for genuine errors keeps the two readable apart. The active bar
+  gains a tinted track plus a full-opacity fill, so the state survives
+  greyscale printing and colour-blind viewing.
 - **Tren Kunjungan UKS** — area/line chart scoped to the selected class only.
+  Each bucket carries a visible dot; hit areas span the full plot height so a
+  nearest-x hover never requires aiming at the 6px dot itself.
 - **Keluhan Terbanyak** — horizontal ranking of complaints exactly as recorded.
   No synonym or medical mapping is applied; `ISPA` and `batuk pilek` stay
   separate unless the canonical complaint list says otherwise.
@@ -338,6 +345,38 @@ monitoring route itself. Internal-only is not enough — otherwise a crafted lin
 could point the back button at an unrelated internal page. Anything else yields
 no back button at all.
 
+## Chart tooltips
+
+Every E-UKS chart is hand-drawn SVG or CSS, so there is no library tooltip to
+configure. What is shared is `lib/chart-tooltip.ts` (pure arithmetic, unit
+tested) plus `components/e-uks/chart-tooltip.tsx` (the visual card), used by the
+visit trend, the nutrition donut, the class visit trend, the class nutrition bar,
+the sick-absence bars, the IMT chart and the KMS chart.
+
+Positions are expressed as **ratios** of the drawing box, never pixels. An SVG
+`viewBox` scales linearly with render width, so a ratio points at the right spot
+at any screen size without measuring the DOM — and no measurement means no
+layout shift. `tooltipPlacement()` flips the card below the point in the top
+third and pins it to the left or right edge within 18% of a side, which is what
+keeps it inside the card on the first and last month.
+
+The card itself is absolutely positioned HTML inside a `relative` wrapper, not
+`<text>` inside the SVG: HTML text keeps browser font sizing and wrapping,
+whereas SVG text scales with the `viewBox` and changes size with the parent card.
+It is `aria-hidden` on purpose — each point or bar already carries the same
+reading in an `aria-label` or `<title>`, so screen readers must not hear it
+twice.
+
+Interaction is uniform: hover, keyboard focus and tap all open the same tooltip,
+and hit targets are deliberately larger than the visible mark (full-height
+columns for nearest-x line charts, `r=12` circles for scatter points). On touch
+devices a browser fires `pointerleave` immediately after `touchend`, which would
+close a tooltip the moment a finger lifts; `isMousePointer()` ignores leave
+events from non-mouse pointers, so a tap keeps its tooltip until the next tap
+moves it. Legends are interactive where they exist (donut and class bar): hover,
+focus or tap on a legend row emphasises the matching segment and opens its
+tooltip, which is how thin slices stay reachable.
+
 ## KMS chart (height-for-age)
 
 `/e-uks/pantauan-kesehatan` plots the student's height against the WHO
@@ -375,6 +414,14 @@ diisi…") and offers a temporary curve selector. That selector is **view-only**
 it never writes to the student record, and a stored gender always wins over it,
 so a student whose gender is filled in cannot be shown the wrong curve from
 client state.
+
+Because the curve differs materially by gender, the card header carries a
+`Kurva rujukan: Laki-laki` / `Perempuan` badge — blue for boys, rose for girls —
+instead of hiding that fact in the subtitle, and `kmsReferenceLabel()` therefore
+names only the indicator and the WHO table. The gender is always written out, so
+the distinction never depends on colour alone; a fallback curve is marked
+`(sementara)` on the badge itself. The header wraps, so on a phone the badge
+drops to its own line rather than squeezing the title.
 
 ### Point details
 
@@ -738,7 +785,12 @@ Colour stays inside one accent family (`--euks-accent`) with hierarchy carried
 by opacity and weight, never by hue per category, and every value is also
 present as text or an SVG `<title>` so no information depends on colour. Point
 hit areas are transparent 14px circles with `tabIndex`, so tooltips are
-reachable by tap and keyboard, not hover only.
+reachable by tap and keyboard, not hover only. The tooltip itself is the shared
+card (see [Chart tooltips](#chart-tooltips)); it repeats the month, the visit
+count, the distinct-visitor count, and — on the final month only — the
+partial-month caveat, so the asterisk in the axis label is never the only place
+that context exists. Hover also widens the nearest-x hit column, which is why a
+month is selectable anywhere in its vertical strip.
 
 ### Why there is no weight-for-age chart
 

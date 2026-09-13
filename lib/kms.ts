@@ -14,7 +14,6 @@
 import type { HeightPoint } from "@/lib/euks"
 import { heightZScore } from "@/lib/height-for-age"
 import type { Gender } from "@/lib/lms"
-import { genderLabels } from "@/lib/student-input"
 
 /**
  * Kurva yang dipakai ketika jenis kelamin siswa belum diisi.
@@ -46,9 +45,15 @@ export function resolveKmsReference(
   return { gender: override ?? KMS_FALLBACK_GENDER, isFallback: true }
 }
 
-/** Subjudul kartu, mis. "Tinggi badan menurut umur · WHO 5-19 tahun · Perempuan". */
-export function kmsReferenceLabel(reference: KmsReference): string {
-  return `Tinggi badan menurut umur · WHO 5-19 tahun · ${genderLabels[reference.gender]}`
+/**
+ * Subjudul kartu: indikator dan tabel rujukan saja.
+ *
+ * Jenis kelamin sengaja TIDAK ikut di sini. Kurva laki-laki dan perempuan
+ * berbeda nyata, jadi informasi itu terlalu penting untuk diselipkan ke dalam
+ * subjudul kecil; kartu menampilkannya sebagai badge tersendiri di header.
+ */
+export function kmsReferenceLabel(): string {
+  return "Tinggi badan menurut umur · WHO 5-19 tahun"
 }
 
 /**

@@ -46,9 +46,33 @@ export function EuksKmsCard({
   return (
     <Card>
       <CardHeader className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
+        <div className="min-w-0 space-y-1.5">
           <CardTitle>Kartu Menuju Sehat (KMS)</CardTitle>
-          <CardDescription>{kmsReferenceLabel(reference)}</CardDescription>
+          <CardDescription>{kmsReferenceLabel()}</CardDescription>
+          {/* Badge jenis kelamin, bukan bagian subjudul: kurva laki-laki dan
+              perempuan berbeda, jadi pembaca harus langsung tahu kurva mana
+              yang sedang dilihat. Teks dieja penuh — warna hanya penguat,
+              bukan satu-satunya pembeda. Ditaruh di baris sendiri supaya pada
+              layar sempit badge tidak berdesakan dengan judul. */}
+          <p
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+              reference.gender === "LAKI_LAKI"
+                ? "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+                : "border-pink-500/40 bg-pink-500/10 text-pink-700 dark:text-pink-300"
+            }`}
+          >
+            <span
+              aria-hidden
+              className={`size-1.5 rounded-full ${
+                reference.gender === "LAKI_LAKI" ? "bg-sky-500" : "bg-pink-500"
+              }`}
+            />
+            <span className="sr-only">Kurva rujukan: </span>
+            {genderLabels[reference.gender]}
+            {reference.isFallback ? (
+              <span className="font-normal opacity-80">(sementara)</span>
+            ) : null}
+          </p>
         </div>
 
         {reference.isFallback && points.length > 0 ? (

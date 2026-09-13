@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ChartTooltip, ChartTooltipFrame, isMousePointer } from "@/components/e-uks/chart-tooltip"
 import { EuksNutritionHeatmap } from "@/components/e-uks/euks-nutrition-heatmap"
 import { nutritionCategoryLabels } from "@/lib/bmi-for-age"
 import {
@@ -229,6 +230,10 @@ const EMPTY_MESSAGE = "Belum ada data pengukuran kesehatan yang dapat ditampilka
  * garis tipis palsu.
  */
 function NutritionDonut({ summary }: { summary: NutritionSummary }) {
+  // Kategori aktif dibagi antara busur dan legenda, jadi menyorot salah satu
+  // selalu ikut menegaskan pasangannya.
+  const [activeCategory, setActiveCategory] = useState<string | null>(null)
+
   const total = summary.measuredStudents
   if (total === 0) {
     return <p className="text-muted-foreground py-10 text-center text-sm">{EMPTY_MESSAGE}</p>
@@ -248,77 +253,143 @@ function NutritionDonut({ summary }: { summary: NutritionSummary }) {
     // Sisakan celah tipis antar-segmen, kecuali bila hanya satu kategori
     // terisi — celah pada lingkaran penuh akan terlihat seperti cacat.
     const dash = Math.max(0, circumference * (item.count / total) - (segments.length > 1 ? 2 : 0))
+    // Sudut tengah busur menentukan tempat tooltip muncul, sehingga kartu
+    // selalu menempel pada irisan yang sedang aktif — bukan pada titik tetap.
+    const midAngle = ((before + item.count / 2) / total) * 2 * Math.PI - Math.PI / 2
     return {
       ...item,
       dash,
       gap: circumference - dash,
       rotation: (before / total) * 360,
+      midX: center + Math.cos(midAngle) * radius,
+      midY: center + Math.sin(midAngle) * radius,
     }
   })
 
+  const active = arcs.find((arc) => arc.category === activeCategory) ?? null
+  const clear = (category: string) =>
+    setActiveCategory((current) => (current === category ? null : current))
+
   return (
     <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center sm:gap-8">
-      <svg
-        viewBox={`0 0 ${size} ${size}`}
-        className="h-auto w-44 shrink-0 sm:w-56"
-        role="img"
-        aria-label={`Sebaran status gizi dari ${total} siswa terukur`}
-      >
-        <g transform={`rotate(-90 ${center} ${center})`}>
-          {arcs.map((arc) => (
-            <circle
-              key={arc.category}
-              cx={center}
-              cy={center}
-              r={radius}
-              fill="none"
-              stroke={nutritionCategoryColor[arc.category]}
-              strokeWidth={stroke}
-              strokeDasharray={`${arc.dash} ${arc.gap}`}
-              transform={`rotate(${arc.rotation} ${center} ${center})`}
-            >
-              <title>{`${arc.label}: ${arc.count} siswa (${formatShare(arc.share)})`}</title>
-            </circle>
-          ))}
-        </g>
-        <text
-          x={center}
-          y={center - 4}
-          textAnchor="middle"
-          className="fill-foreground"
-          fontSize="30"
-          fontWeight="600"
+      <ChartTooltipFrame className="w-44 shrink-0 sm:w-56">
+        <svg
+          viewBox={`0 0 ${size} ${size}`}
+          className="h-auto w-full"
+          role="img"
+          aria-label={`Sebaran status gizi dari ${total} siswa terukur`}
         >
-          {total}
-        </text>
-        <text
-          x={center}
-          y={center + 20}
-          textAnchor="middle"
-          className="fill-muted-foreground"
-          fontSize="13"
-        >
-          Siswa terukur
-        </text>
-      </svg>
+          <g transform={`rotate(-90 ${center} ${center})`}>
+            {arcs.map((arc) => {
+              const isActive = arc.category === activeCategory
+              return (
+                <circle
+                  key={arc.category}
+                  cx={center}
+                  cy={center}
+                  r={radius}
+                  fill="none"
+                  stroke={nutritionCategoryColor[arc.category]}
+                  // Irisan aktif sedikit lebih tebal dan pekat; irisan lain
+                  // diredam supaya penegasan terbaca tanpa mengubah bentuk.
+                  strokeWidth={isActive ? stroke + 6 : stroke}
+                  opacity={activeCategory === null || isActive ? 1 : 0.45}
+                  strokeDasharray={`${arc.dash} ${arc.gap}`}
+                  transform={`rotate(${arc.rotation} ${center} ${center})`}
+                  tabIndex={0}
+                  className="focus-visible:outline-ring cursor-pointer transition-[stroke-width,opacity] duration-150 focus:outline-none focus-visible:outline-2"
+                  onPointerEnter={() => setActiveCategory(arc.category)}
+                  onPointerDown={() => setActiveCategory(arc.category)}
+                  onPointerLeave={(event) => {
+                    if (isMousePointer(event)) clear(arc.category)
+                  }}
+                  onFocus={() => setActiveCategory(arc.category)}
+                  onBlur={() => clear(arc.category)}
+                >
+                  <title>{`${arc.label}: ${arc.count} siswa (${formatShare(arc.share)})`}</title>
+                </circle>
+              )
+            })}
+          </g>
+          <text
+            x={center}
+            y={center - 4}
+            textAnchor="middle"
+            className="fill-foreground"
+            fontSize="30"
+            fontWeight="600"
+          >
+            {total}
+          </text>
+          <text
+            x={center}
+            y={center + 20}
+            textAnchor="middle"
+            className="fill-muted-foreground"
+            fontSize="13"
+          >
+            Siswa terukur
+          </text>
+        </svg>
 
-      <ul className="w-full space-y-2.5">
-        {summary.categories.map((item) => (
-          <li key={item.category} className="flex items-center gap-3 text-sm">
-            <span
-              aria-hidden
-              className="size-3 shrink-0 rounded-full"
-              style={{ background: nutritionCategoryColor[item.category] }}
-            />
-            <span className="min-w-0 flex-1 truncate">{item.label}</span>
-            <span className="text-muted-foreground shrink-0 tabular-nums">
-              {item.count} siswa
-            </span>
-            <span className="w-16 shrink-0 text-right font-medium tabular-nums">
-              {formatShare(item.share)}
-            </span>
-          </li>
-        ))}
+        {active ? (
+          <ChartTooltip
+            xRatio={active.midX / size}
+            yRatio={active.midY / size}
+            title={active.label}
+            value={`${active.count} siswa`}
+            rows={[`${formatShare(active.share)} dari ${total} siswa terukur`]}
+          />
+        ) : null}
+      </ChartTooltipFrame>
+
+      <ul className="w-full space-y-1">
+        {summary.categories.map((item) => {
+          const isActive = item.category === activeCategory
+          const isEmpty = item.count === 0
+          return (
+            <li key={item.category}>
+              {/* Legenda memakai elemen yang sama-sama dapat difokus supaya
+                  sorotan busur tidak hanya tercapai lewat hover pada busur
+                  tipis. Kategori kosong tidak dapat disorot: tidak ada busur
+                  yang bisa ditegaskan. */}
+              <button
+                type="button"
+                disabled={isEmpty}
+                aria-pressed={isActive}
+                onPointerEnter={() => !isEmpty && setActiveCategory(item.category)}
+                onPointerDown={() => !isEmpty && setActiveCategory(item.category)}
+                onPointerLeave={(event) => {
+                  if (isMousePointer(event)) clear(item.category)
+                }}
+                onFocus={() => !isEmpty && setActiveCategory(item.category)}
+                onBlur={() => clear(item.category)}
+                onClick={() =>
+                  setActiveCategory((current) => (current === item.category ? null : item.category))
+                }
+                className={`flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors disabled:cursor-default ${
+                  isActive ? "bg-accent text-accent-foreground" : "enabled:hover:bg-accent/50"
+                }`}
+              >
+                <span
+                  aria-hidden
+                  className="size-3 shrink-0 rounded-full"
+                  style={{
+                    background: nutritionCategoryColor[item.category],
+                    opacity: isEmpty ? 0.4 : 1,
+                  }}
+                />
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                <span className="text-muted-foreground shrink-0 tabular-nums">
+                  {item.count} siswa
+                </span>
+                <span className="w-16 shrink-0 text-right font-medium tabular-nums">
+                  {formatShare(item.share)}
+                </span>
+              </button>
+            </li>
+          )
+        })}
       </ul>
     </div>
   )

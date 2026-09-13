@@ -42,15 +42,12 @@ test("saat kosong, pilihan manual menentukan kurva tetapi tetap ditandai fallbac
   assert.equal(reference.isFallback, true)
 })
 
-test("label rujukan menyebut indikator dan jenis kelamin", () => {
-  assert.equal(
-    kmsReferenceLabel(resolveKmsReference("PEREMPUAN")),
-    "Tinggi badan menurut umur · WHO 5-19 tahun · Perempuan",
-  )
-  assert.equal(
-    kmsReferenceLabel(resolveKmsReference(null)),
-    "Tinggi badan menurut umur · WHO 5-19 tahun · Laki-laki",
-  )
+test("subjudul rujukan menyebut indikator dan tabel WHO tanpa jenis kelamin", () => {
+  // Jenis kelamin ditampilkan sebagai badge tersendiri pada header kartu, jadi
+  // subjudul tidak boleh mengulanginya dalam teks kecil.
+  assert.equal(kmsReferenceLabel(), "Tinggi badan menurut umur · WHO 5-19 tahun")
+  assert.ok(!kmsReferenceLabel().includes("Laki-laki"))
+  assert.ok(!kmsReferenceLabel().includes("Perempuan"))
 })
 
 test("z-score titik benar-benar berubah mengikuti jenis kelamin", () => {
