@@ -144,6 +144,38 @@ a category cannot leave it stale. Class ordering follows the existing
 `globals.css` rather than `--chart-*`, which is a deliberate greyscale in dark
 mode and would render every category identical.
 
+### Per-class heatmap
+
+The per-class breakdown is a **heatmap** (`EuksNutritionHeatmap`,
+`components/e-uks/euks-nutrition-heatmap.tsx`): one row per class, five category
+columns plus a `Terukur` column. It replaced a 100% stacked bar per class,
+because the question this page answers is "which class stands out on a given
+category" — across 27 classes, comparing one category on stacked bars means
+comparing segments that all start at different offsets, whereas a matrix column
+is already a direct comparison.
+
+The matrix is built by `nutritionHeatmap()` in `lib/euks-nutrition.ts`; the
+component renders and never computes a percentage itself. **The two column kinds
+use different denominators on purpose**: category cells divide by the class's
+*measured* students (so a class does not look healthy merely because half of it
+was never weighed), while the `Terukur` cell divides by the class roster,
+because there the point *is* data completeness. A class with zero measured
+students renders `–` rather than `0,0%`, since its categories have no
+denominator at all.
+
+Colour strength is normalised **per column against that column's own maximum**,
+not against 100%. In real data *Gizi baik* sits in the tens of percent while
+every other category is single-digit; normalising to 100% would wash out every
+column except one and destroy the between-class pattern the heatmap exists to
+show. Cells at zero get no tint; non-zero cells have a floor of `MIN_CELL_INTENSITY`
+so a small value still reads as present.
+
+Cell text uses the theme foreground and the colour sits in a separate layer
+behind it, so contrast survives both themes and any tint level — measured at
+162 cells, worst ratio 6.06 (light) and 5.14 (dark), all above WCAG AA. On
+narrow viewports the table keeps its column widths and scrolls horizontally
+inside its own container rather than being squeezed until numbers clip.
+
 There is **no freshness rule**: the section shows the latest measurement date
 and coverage, and never labels data "expired", because the project has no
 owner-approved medical validity period. Raw IMT stays on

@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { EuksNutritionHeatmap } from "@/components/e-uks/euks-nutrition-heatmap"
 import { nutritionCategoryLabels } from "@/lib/bmi-for-age"
 import {
   ALL_GRADES,
@@ -13,7 +14,6 @@ import {
   filterByGrade,
   formatShare,
   gradesOf,
-  measuredCountOf,
   nutritionCategoryColor,
   nutritionInsights,
   summarizeNutrition,
@@ -172,7 +172,7 @@ export function EuksNutritionDashboard({ buckets }: { buckets: ClassNutritionBuc
           <CardTitle>Status Gizi per Kelas</CardTitle>
         </CardHeader>
         <CardContent>
-          <NutritionClassBars summary={summary} />
+          <EuksNutritionHeatmap summary={summary} emptyMessage={EMPTY_MESSAGE} />
         </CardContent>
       </Card>
 
@@ -320,86 +320,6 @@ function NutritionDonut({ summary }: { summary: NutritionSummary }) {
           </li>
         ))}
       </ul>
-    </div>
-  )
-}
-
-/**
- * Batang bertumpuk 100% per kelas.
- *
- * Persentase dipakai sebagai default justru karena jumlah siswa per kelas
- * berbeda: batang absolut akan membuat kelas besar tampak "lebih bermasalah"
- * hanya karena lebih banyak siswanya. Jumlah siswa tetap tersedia pada tooltip
- * dan pada kolom kanan.
- *
- * Setiap kelas adalah satu baris HTML dengan tinggi tetap, bukan satu SVG
- * berskala — dengan 27 kelas, label pada SVG akan mengecil sampai tidak
- * terbaca, sedangkan baris HTML hanya menambah tinggi halaman.
- */
-function NutritionClassBars({ summary }: { summary: NutritionSummary }) {
-  const rows = summary.classes.filter((row) => row.students > 0)
-  if (rows.length === 0 || summary.measuredStudents === 0) {
-    return <p className="text-muted-foreground py-10 text-center text-sm">{EMPTY_MESSAGE}</p>
-  }
-
-  return (
-    <div className="space-y-3">
-      <ul className="space-y-2.5">
-        {rows.map((row) => {
-          const measured = measuredCountOf(row.counts)
-          return (
-            <li key={row.classId} className="grid grid-cols-[4.5rem_1fr_4rem] items-center gap-3">
-              <span className="truncate text-sm font-medium">{row.className}</span>
-              <div className="bg-muted flex h-5 overflow-hidden rounded-full">
-                {measured === 0 ? (
-                  <span className="sr-only">Belum ada siswa terukur di kelas ini</span>
-                ) : (
-                  summary.categories
-                    .map((category) => ({
-                      category: category.category,
-                      label: category.label,
-                      count: row.counts[category.category],
-                    }))
-                    .filter((segment) => segment.count > 0)
-                    .map((segment) => (
-                      <div
-                        key={segment.category}
-                        className="h-full"
-                        style={{
-                          width: `${(segment.count / measured) * 100}%`,
-                          background: nutritionCategoryColor[segment.category],
-                        }}
-                        title={`${row.className}\n${segment.label}\n${segment.count} siswa (${formatShare(
-                          (segment.count / measured) * 100,
-                        )})`}
-                      />
-                    ))
-                )}
-              </div>
-              <span className="text-muted-foreground text-right text-xs tabular-nums">
-                {measured}/{row.students}
-              </span>
-            </li>
-          )
-        })}
-      </ul>
-
-      <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-2 border-t pt-3 text-xs">
-        {summary.categories.map((item) => (
-          <span key={item.category} className="flex items-center gap-1.5">
-            <span
-              aria-hidden
-              className="size-2.5 rounded-full"
-              style={{ background: nutritionCategoryColor[item.category] }}
-            />
-            {item.label}
-          </span>
-        ))}
-      </div>
-      <p className="text-muted-foreground text-xs">
-        Setiap batang menampilkan proporsi kategori terhadap siswa terukur di kelas itu; angka di
-        kanan adalah jumlah siswa terukur dibanding seluruh siswa kelas.
-      </p>
     </div>
   )
 }

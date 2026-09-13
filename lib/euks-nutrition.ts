@@ -402,3 +402,121 @@ export function nutritionInsights(summary: NutritionSummary): string[] {
 export function formatShare(value: number): string {
   return `${value.toFixed(1).replace(".", ",")}%`
 }
+
+/** Kolom netral heatmap: cakupan pengukuran kelas. */
+export const COVERAGE_COLUMN = "terukur"
+
+/** Kolom heatmap, berurutan: lima kategori kanonik lalu kolom cakupan. */
+export type NutritionHeatmapColumn = NutritionCategory | typeof COVERAGE_COLUMN
+
+export const NUTRITION_HEATMAP_COLUMNS: readonly NutritionHeatmapColumn[] = [
+  ...NUTRITION_CATEGORY_ORDER,
+  COVERAGE_COLUMN,
+]
+
+export const nutritionHeatmapColumnLabels: Record<NutritionHeatmapColumn, string> = {
+  ...nutritionCategoryLabels,
+  [COVERAGE_COLUMN]: "Terukur",
+}
+
+/**
+ * Warna kolom heatmap. Kolom cakupan sengaja memakai warna netral tema
+ * (`--muted-foreground`) supaya tidak terbaca sebagai kategori status gizi
+ * keenam — nilainya memang jenis ukuran yang berbeda.
+ */
+export const nutritionHeatmapColumnColor: Record<NutritionHeatmapColumn, string> = {
+  ...nutritionCategoryColor,
+  [COVERAGE_COLUMN]: "var(--muted-foreground)",
+}
+
+export type NutritionHeatmapCell = {
+  column: NutritionHeatmapColumn
+  /** Siswa pada kategori ini; untuk kolom cakupan: siswa terukur. */
+  count: number
+  /** Pembagi: siswa terukur untuk kategori, seluruh siswa untuk cakupan. */
+  total: number
+  /** count/total dalam 0-100. */
+  share: number
+  /** Kuat warna 0-1; 0 berarti sel kosong. */
+  intensity: number
+  /** Kelas tanpa siswa terukur: kategori tak punya pembagi, jadi tak bernilai. */
+  empty: boolean
+}
+
+export type NutritionHeatmapRow = {
+  classId: string
+  className: string
+  /** Seluruh siswa aktif kelas ini. */
+  students: number
+  /** Siswa kelas ini yang punya kategori status gizi. */
+  measured: number
+  cells: NutritionHeatmapCell[]
+}
+
+export type NutritionHeatmap = {
+  columns: readonly NutritionHeatmapColumn[]
+  rows: NutritionHeatmapRow[]
+}
+
+/**
+ * Batas bawah kuat warna supaya sel bernilai kecil tetap terlihat sebagai
+ * "ada isinya", bukan tampak kosong seperti sel bernilai 0.
+ */
+const MIN_CELL_INTENSITY = 0.12
+
+/**
+ * Susun matriks kelas × kolom untuk heatmap.
+ *
+ * Persentase kategori memakai pembagi **siswa terukur kelas itu**, bukan
+ * seluruh siswa kelas — sama dengan aturan yang sudah dipakai ringkasan
+ * sekolah, sehingga satu kelas tidak terlihat "sehat" hanya karena separuh
+ * siswanya belum diukur. Kolom cakupan justru sebaliknya: pembaginya seluruh
+ * siswa kelas, karena yang diukur memang kelengkapan datanya.
+ *
+ * Kuat warna dinormalkan **per kolom** terhadap nilai tertinggi kolom itu,
+ * bukan terhadap 100%. Sebaran nyata membuat "Gizi baik" hampir selalu puluhan
+ * persen sementara kategori lain satu digit; kalau dinormalkan ke 100% semua
+ * kolom selain "Gizi baik" akan tampak seragam pucat dan pola antar kelas —
+ * justru guna heatmap ini — tidak terbaca.
+ */
+export function nutritionHeatmap(summary: NutritionSummary): NutritionHeatmap {
+  const rows = summary.classes.filter((row) => row.students > 0)
+
+  const valueOf = (row: ClassNutritionRow, column: NutritionHeatmapColumn) =>
+    column === COVERAGE_COLUMN
+      ? { count: row.measured, total: row.students }
+      : { count: row.counts[column], total: row.measured }
+
+  const columnPeak = new Map<NutritionHeatmapColumn, number>()
+  for (const column of NUTRITION_HEATMAP_COLUMNS) {
+    const peak = rows.reduce((max, row) => {
+      const { count, total } = valueOf(row, column)
+      return Math.max(max, share(count, total))
+    }, 0)
+    columnPeak.set(column, peak)
+  }
+
+  return {
+    columns: NUTRITION_HEATMAP_COLUMNS,
+    rows: rows.map((row) => ({
+      classId: row.classId,
+      className: row.className,
+      students: row.students,
+      measured: row.measured,
+      cells: NUTRITION_HEATMAP_COLUMNS.map((column) => {
+        const { count, total } = valueOf(row, column)
+        const value = share(count, total)
+        const peak = columnPeak.get(column) ?? 0
+        const ratio = peak > 0 ? value / peak : 0
+        return {
+          column,
+          count,
+          total,
+          share: value,
+          intensity: count === 0 ? 0 : MIN_CELL_INTENSITY + ratio * (1 - MIN_CELL_INTENSITY),
+          empty: total === 0,
+        }
+      }),
+    })),
+  }
+}

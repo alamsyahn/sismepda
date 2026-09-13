@@ -16,14 +16,17 @@ import { isKnownPermission } from "../lib/rbac-permissions"
 import {
   ALL_GRADES,
   ATTENTION_NUTRITION_CATEGORIES,
+  COVERAGE_COLUMN,
   NORMAL_NUTRITION_CATEGORY,
   NUTRITION_CATEGORY_ORDER,
+  NUTRITION_HEATMAP_COLUMNS,
   bucketByClass,
   classifyStudentNutrition,
   filterByGrade,
   formatShare,
   gradesOf,
   measuredCountOf,
+  nutritionHeatmap,
   nutritionInsights,
   summarizeNutrition,
   type StudentNutritionInput,
@@ -302,6 +305,144 @@ test("persentase diformat gaya Indonesia dengan satu desimal", () => {
   assert.equal(formatShare(100), "100,0%")
 })
 
+test("heatmap memakai pembagi berbeda untuk kategori dan untuk cakupan", () => {
+  // 4 siswa: 3 terukur (2 gizi baik, 1 gizi kurang), 1 belum diukur.
+  const summary = summaryOf([
+    student({ category: "gizi_baik" }),
+    student({ category: "gizi_baik" }),
+    student({ category: "gizi_kurang" }),
+    student({ latest: null }),
+  ])
+  const [row] = nutritionHeatmap(summary).rows
+
+  assert.equal(row.students, 4)
+  assert.equal(row.measured, 3)
+
+  const cell = (column: (typeof NUTRITION_HEATMAP_COLUMNS)[number]) =>
+    row.cells.find((item) => item.column === column)!
+
+  // Kategori: pembaginya siswa TERUKUR (3), bukan seluruh siswa (4).
+  assert.equal(cell("gizi_baik").count, 2)
+  assert.equal(cell("gizi_baik").total, 3)
+  assert.ok(Math.abs(cell("gizi_baik").share - (2 / 3) * 100) < 1e-9)
+
+  // Cakupan: pembaginya justru seluruh siswa kelas.
+  assert.equal(cell(COVERAGE_COLUMN).count, 3)
+  assert.equal(cell(COVERAGE_COLUMN).total, 4)
+  assert.equal(cell(COVERAGE_COLUMN).share, 75)
+})
+
+test("kolom heatmap adalah lima kategori kanonik lalu kolom cakupan", () => {
+  const summary = summaryOf([student()])
+  const heatmap = nutritionHeatmap(summary)
+
+  assert.deepEqual([...heatmap.columns], [...NUTRITION_CATEGORY_ORDER, COVERAGE_COLUMN])
+  // Tidak ada kategori yang diam-diam disederhanakan atau dibuang.
+  assert.equal(heatmap.columns.length, NUTRITION_CATEGORY_ORDER.length + 1)
+  for (const row of heatmap.rows) {
+    assert.deepEqual(
+      row.cells.map((cell) => cell.column),
+      [...heatmap.columns],
+    )
+  }
+})
+
+test("persentase kategori pada satu baris heatmap menjumlah 100 persen", () => {
+  const summary = summaryOf(
+    NUTRITION_CATEGORY_ORDER.map((category) => student({ category })),
+  )
+  const [row] = nutritionHeatmap(summary).rows
+  const total = row.cells
+    .filter((cell) => cell.column !== COVERAGE_COLUMN)
+    .reduce((sum, cell) => sum + cell.share, 0)
+
+  assert.ok(Math.abs(total - 100) < 1e-9, `Jumlah persentase kategori ${total}`)
+})
+
+test("kelas tanpa siswa terukur ditandai kosong, bukan nol persen", () => {
+  const summary = summaryOf([student({ latest: null }), student({ latest: null })])
+  const [row] = nutritionHeatmap(summary).rows
+
+  assert.equal(row.students, 2)
+  assert.equal(row.measured, 0)
+  for (const cell of row.cells) {
+    if (cell.column === COVERAGE_COLUMN) {
+      // Cakupan tetap bermakna: 0 dari 2 siswa.
+      assert.equal(cell.empty, false)
+      assert.equal(cell.share, 0)
+    } else {
+      // Kategori tidak punya pembagi, jadi tidak boleh disajikan sebagai 0,0%.
+      assert.equal(cell.empty, true)
+      assert.equal(cell.intensity, 0)
+    }
+  }
+})
+
+test("kuat warna dinormalkan per kolom sehingga nilai tertinggi kolom paling pekat", () => {
+  const summary = summaryOf([
+    // VII A: 1 dari 2 terukur gizi kurang (50%).
+    student({ category: "gizi_kurang" }),
+    student({ category: "gizi_baik" }),
+    // VII B: 1 dari 4 terukur gizi kurang (25%).
+    ...["gizi_kurang", "gizi_baik", "gizi_baik", "gizi_baik"].map((category) =>
+      student({
+        classId: "kelas-2",
+        className: "VII B",
+        category: category as (typeof NUTRITION_CATEGORY_ORDER)[number],
+      }),
+    ),
+  ])
+  const rows = nutritionHeatmap(summary).rows
+  const kurang = (className: string) =>
+    rows
+      .find((row) => row.className === className)!
+      .cells.find((cell) => cell.column === "gizi_kurang")!
+
+  assert.ok(kurang("VII A").share > kurang("VII B").share)
+  assert.ok(kurang("VII A").intensity > kurang("VII B").intensity)
+  // Nilai tertinggi pada kolomnya dipetakan ke kepekatan penuh.
+  assert.equal(kurang("VII A").intensity, 1)
+  // Sel bernilai kecil tetap terlihat, tidak jatuh ke nol.
+  assert.ok(kurang("VII B").intensity > 0)
+})
+
+test("sel bernilai nol tidak diberi warna sama sekali", () => {
+  const summary = summaryOf([student({ category: "gizi_baik" })])
+  const [row] = nutritionHeatmap(summary).rows
+  const obesitas = row.cells.find((cell) => cell.column === "obesitas")!
+
+  assert.equal(obesitas.count, 0)
+  assert.equal(obesitas.share, 0)
+  assert.equal(obesitas.intensity, 0)
+  assert.equal(obesitas.empty, false)
+})
+
+test("baris heatmap mengikuti urutan kelas SISMEPDA dan mengabaikan kelas kosong", () => {
+  const summary = summarizeNutrition([
+    {
+      classId: "kosong",
+      className: "VII Z",
+      grade: "VII",
+      students: 0,
+      counts: { gizi_buruk: 0, gizi_kurang: 0, gizi_baik: 0, gizi_lebih: 0, obesitas: 0 },
+      reasons: {},
+      latestMeasuredAt: null,
+    },
+    ...bucketByClass(
+      [
+        student({ classId: "b", className: "VIII A", grade: "VIII" }),
+        student({ classId: "a", className: "VII A", grade: "VII" }),
+      ].map(classifyStudentNutrition),
+    ),
+  ])
+  const rows = nutritionHeatmap(summary).rows
+
+  assert.deepEqual(
+    rows.map((row) => row.className),
+    ["VII A", "VIII A"],
+  )
+})
+
 /**
  * Dashboard ini tidak boleh membuka jalur akses baru: ia menumpang permission
  * yang sudah menjaga Pantauan Kesehatan Siswa, dan gate-nya dilakukan di server
@@ -319,7 +460,11 @@ test("halaman utama E-UKS menggerbangi ringkasan gizi dengan permission pengukur
 })
 
 test("modul gizi tidak memperkenalkan pemeriksaan peran keras", () => {
-  for (const file of ["../lib/euks-nutrition.ts", "../components/e-uks/euks-nutrition-dashboard.tsx"]) {
+  for (const file of [
+    "../lib/euks-nutrition.ts",
+    "../components/e-uks/euks-nutrition-dashboard.tsx",
+    "../components/e-uks/euks-nutrition-heatmap.tsx",
+  ]) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8")
     assert.doesNotMatch(source, /role\s*===|"ADMIN"|"GURU"|isAdmin|isGuru/, file)
   }
