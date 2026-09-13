@@ -361,6 +361,37 @@ call it, so the bands on the chart and the z-score behind a category can never
 diverge. A point sitting between the median and -1 SD is exactly a point whose
 z-score is between 0 and -1.
 
+### Gender-aware reference curve
+
+The reference dataset holds separate L/M/S tables for `LAKI_LAKI` and
+`PEREMPUAN`, so the median line, every SD band and the z-score behind each point
+all move with the student's gender — nothing about the curve is cosmetic.
+`Student.gender` is nullable, so `resolveKmsReference()` in `lib/kms.ts` decides
+which table is drawn: the student's own gender when present, otherwise
+`KMS_FALLBACK_GENDER` flagged as a fallback.
+
+When gender is missing the card says so in words ("Jenis kelamin siswa belum
+diisi…") and offers a temporary curve selector. That selector is **view-only**:
+it never writes to the student record, and a stored gender always wins over it,
+so a student whose gender is filled in cannot be shown the wrong curve from
+client state.
+
+### Point details
+
+`toKmsPoints()` attaches the age label, z-score and SD band to each measurement
+using the same `heightZScore()` that draws the bands, so the panel can never
+contradict the picture. Points outside the 5-19 year table report "umur di luar
+tabel rujukan" rather than an extrapolated number.
+
+Each point is a focusable `role="button"` with `aria-pressed`: hover (or focus)
+shows a compact tooltip, click/tap selects it, and the detail panel below the
+chart carries the full reading — date, age, height, SD band with z-score, and a
+positional sentence. The panel is the primary surface on touch devices, which
+have no hover. Because points can sit ~10px apart on a phone, hit targets stay
+moderate (r=12) and the panel adds prev/next buttons so every measurement stays
+reachable even when dots overlap. The band sentences stay descriptive
+("Berada di dalam pita rujukan WHO"), never diagnostic.
+
 ### Sick-absence table
 
 The sick-absence table on `/e-uks/pantauan-kesehatan` reads from `Attendance`
@@ -739,7 +770,3 @@ age outside the reference range.
 `/api/e-uks/hero-images` exposes `POST` (create), `PATCH` (edit caption, toggle `active`, or `move` one position) and `DELETE`, all ADMIN-only, each writing an `EUKS_HERO_IMAGE_*` `AuditLog` entry in the same transaction. `PUT /api/e-uks/hero-images/[imageId]/photo` uploads or replaces the image; `GET` serves it to any `euks.view` reader. See Home page composition.
 
 `/api/e-uks/hero-logos` mirrors that shape for the hero logo overlay: `POST`, `PATCH` (rename, toggle `active`, or `move` one position) and `DELETE`, ADMIN-only, each writing an `EUKS_HERO_LOGO_*` `AuditLog` entry in the same transaction. `PUT /api/e-uks/hero-logos/[logoId]/logo` uploads or replaces the file (JPG/PNG/SVG/WebP, 512 KB), `DELETE` clears it while keeping the row, and `GET` serves it to any `euks.view` reader. See Hero logos for the SVG validation rules.
-
-## Open reference-data requirement
-
-KMS (Kartu Menuju Sehat) growth charts require an official reference dataset (WHO/Kemenkes LMS or SD tables). No such dataset exists in the repository, so KMS curve values must not be invented, interpolated or read off a screenshot. See the technical debt registry.

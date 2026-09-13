@@ -9,7 +9,7 @@ import { EuksStudentSelector } from "@/components/e-uks/euks-student-selector"
 import { EuksMeasurementTable } from "@/components/e-uks/euks-measurement-table"
 import { EuksSickAbsenceTable } from "@/components/e-uks/euks-sick-absence-table"
 import { EuksBmiChart } from "@/components/e-uks/euks-bmi-chart"
-import { EuksKmsChart } from "@/components/e-uks/euks-kms-chart"
+import { EuksKmsCard } from "@/components/e-uks/euks-kms-card"
 import {
   ageInYears,
   formatBmi,
@@ -207,20 +207,9 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
             </CardContent>
           </Card> : null}
 
-          {canMeasurements ? <Card>
-            <CardHeader>
-              <CardTitle>Kartu Menuju Sehat (KMS)</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <EuksKmsChart points={heightSeries} gender={monitoring.student.gender} />
-              <p className="text-muted-foreground text-xs">
-                Tinggi badan menurut umur terhadap kurva rujukan WHO 5-19 tahun. Pita hijau
-                menandai rentang -2 s.d. +2 SD, kuning -3 s.d. -2 SD dan +2 s.d. +3 SD. Grafik ini
-                menyajikan data, bukan diagnosis; penilaian pertumbuhan adalah kewenangan tenaga
-                kesehatan.
-              </p>
-            </CardContent>
-          </Card> : null}
+          {canMeasurements ? (
+            <EuksKmsCard points={heightSeries} gender={monitoring.student.gender} />
+          ) : null}
         </>
       )}
     </PageContainer>

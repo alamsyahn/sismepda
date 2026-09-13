@@ -1,14 +1,14 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 
-import type { HeightPoint } from "@/lib/euks"
 import {
   HEIGHT_REFERENCE_MAX_MONTHS,
   HEIGHT_REFERENCE_MIN_MONTHS,
   SD_LINES,
   heightReferenceCurves,
 } from "@/lib/height-for-age"
+import type { KmsPoint } from "@/lib/kms"
 import type { Gender } from "@/lib/lms"
 
 /**
@@ -18,14 +18,24 @@ import type { Gender } from "@/lib/lms"
  * Digambar sebagai SVG mentah mengikuti chart lain di SISMEPDA (project ini
  * tidak memakai chart library). Pita dihitung dari L/M/S yang sama dengan yang
  * menilai siswa, jadi posisi titik terhadap pita selalu konsisten.
+ *
+ * Kurva mengikuti `gender` yang dikirim pemanggil; komponen ini tidak memilih
+ * sendiri agar penanda "memakai kurva fallback" tidak tercecer di dua tempat.
  */
 export function EuksKmsChart({
   points,
   gender,
+  selectedId,
+  onSelect,
 }: {
-  points: HeightPoint[]
+  points: KmsPoint[]
   gender: Gender | null
+  selectedId: string | null
+  onSelect: (id: string) => void
 }) {
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const hoveredPoint = points.find((point) => point.id === hoveredId) ?? null
+
   const curves = useMemo(() => {
     if (!gender || points.length === 0) return []
     // Beri ruang setahun di kiri-kanan agar titik tidak menempel di tepi.
@@ -34,14 +44,6 @@ export function EuksKmsChart({
     const to = Math.max(...ages) + 12
     return heightReferenceCurves(gender, from, to)
   }, [gender, points])
-
-  if (!gender) {
-    return (
-      <p className="text-muted-foreground py-10 text-center text-sm">
-        Jenis kelamin siswa belum diisi, sehingga kurva rujukan tidak dapat dipilih.
-      </p>
-    )
-  }
 
   if (points.length === 0) {
     return (
@@ -194,14 +196,86 @@ export function EuksKmsChart({
         strokeLinejoin="round"
       />
 
-      {points.map((point) => (
-        <g key={point.id}>
-          <circle cx={x(point.ageMonths)} cy={y(point.heightCm)} r="4" fill="var(--primary)" />
-          <title>
-            {`${point.measuredAt}: ${point.heightCm} cm pada umur ${Math.floor(point.ageMonths / 12)} tahun ${point.ageMonths % 12} bulan`}
-          </title>
+      {points.map((point) => {
+        const isSelected = point.id === selectedId
+        const isHovered = point.id === hoveredId
+        const cx = x(point.ageMonths)
+        const cy = y(point.heightCm)
+        return (
+          <g
+            key={point.id}
+            role="button"
+            tabIndex={0}
+            aria-label={pointLabel(point)}
+            aria-pressed={isSelected}
+            className="focus-visible:outline-ring cursor-pointer focus:outline-none focus-visible:outline-2"
+            onClick={() => onSelect(point.id)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault()
+                onSelect(point.id)
+              }
+            }}
+            onMouseEnter={() => setHoveredId(point.id)}
+            onMouseLeave={() => setHoveredId((current) => (current === point.id ? null : current))}
+            onFocus={() => setHoveredId(point.id)}
+            onBlur={() => setHoveredId((current) => (current === point.id ? null : current))}
+          >
+            {/* Sasaran sentuh lebih besar dari titiknya, tetapi tidak dibuat
+                selebar mungkin: pada layar HP jarak antar titik bisa hanya
+                ~10px, sehingga sasaran yang terlalu besar akan menutupi titik
+                tetangga. Titik yang berhimpit dijangkau lewat tombol navigasi
+                pada panel detail. */}
+            <circle cx={cx} cy={cy} r="12" fill="transparent" />
+            {isSelected ? (
+              <circle cx={cx} cy={cy} r="9" fill="none" stroke="var(--primary)" strokeWidth="2" />
+            ) : null}
+            <circle
+              cx={cx}
+              cy={cy}
+              r={isSelected || isHovered ? 6 : 4}
+              fill="var(--primary)"
+              stroke="var(--background)"
+              strokeWidth={isSelected ? 2 : 1}
+            />
+          </g>
+        )
+      })}
+
+      {/* Tooltip hover untuk desktop. Detail lengkap tetap ada di panel bawah
+          chart, jadi perangkat sentuh tidak bergantung pada hover. */}
+      {hoveredPoint ? (
+        <g pointerEvents="none">
+          {(() => {
+            const cx = x(hoveredPoint.ageMonths)
+            const cy = y(hoveredPoint.heightCm)
+            const boxWidth = 150
+            const boxHeight = 42
+            // Jaga tooltip tetap di dalam bingkai grafik di kedua tepi.
+            const left = Math.min(Math.max(cx - boxWidth / 2, 2), width - boxWidth - 2)
+            const top = cy - boxHeight - 12 < 2 ? cy + 12 : cy - boxHeight - 12
+            return (
+              <>
+                <rect
+                  x={left}
+                  y={top}
+                  width={boxWidth}
+                  height={boxHeight}
+                  rx="6"
+                  fill="var(--popover)"
+                  stroke="var(--border)"
+                />
+                <text x={left + 8} y={top + 17} fill="var(--popover-foreground)" fontSize="11">
+                  {`${hoveredPoint.heightCm} cm · ${hoveredPoint.ageLabel}`}
+                </text>
+                <text x={left + 8} y={top + 32} fill="var(--muted-foreground)" fontSize="10">
+                  {hoveredPoint.band ?? "Di luar tabel rujukan"}
+                </text>
+              </>
+            )
+          })()}
         </g>
-      ))}
+      ) : null}
 
       <text
         x={margin.left}
@@ -214,4 +288,10 @@ export function EuksKmsChart({
       </text>
     </svg>
   )
+}
+
+/** Label aksesibilitas satu titik: isi yang sama dengan tooltip. */
+function pointLabel(point: KmsPoint): string {
+  const position = point.band ? `, posisi ${point.band}` : ", umur di luar tabel rujukan"
+  return `Pengukuran ${point.measuredAt}: ${point.heightCm} cm pada umur ${point.ageLabel}${position}`
 }
