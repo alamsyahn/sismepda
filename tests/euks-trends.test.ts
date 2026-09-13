@@ -8,8 +8,11 @@ import {
   monthlyVisitCounts,
   monthlyVisitStats,
   normalizeTerm,
+  OTHER_TERMS_KEY,
   peakMonth,
   rankTerms,
+  termGroupMembers,
+  treatmentRankingByComplaint,
   visitsBetween,
 } from "../lib/euks-trends"
 import type { SchoolDate, SchoolMonth } from "../lib/school-date"
@@ -132,6 +135,120 @@ test("penyaringan rentang tanggal mengikutkan batas", () => {
   ]
   const inRange = visitsBetween(visits, d("2026-01-01"), d("2026-01-31"))
   assert.deepEqual(inRange.map((item) => item.complaint), ["A", "B", "C"])
+})
+
+test("anggota kelompok keluhan mengikuti peringkat yang ditampilkan", () => {
+  const values = ["Pusing", "Pusing", "Mual", "Batuk", "Pilek"]
+  const members = termGroupMembers(values, 2)
+  const rows = rankTerms(values, 2)
+
+  // Setiap baris peringkat punya kelompok anggota, dan sebaliknya.
+  assert.deepEqual([...members.keys()].sort(), rows.map((row) => row.key).sort())
+  assert.deepEqual([...members.get("pusing")!], ["pusing"])
+  // "Lainnya" bukan istilah literal: isinya seluruh kunci di luar peringkat.
+  // Peringkat: pusing (2), lalu Batuk/Mual/Pilek (1) alfabetis — jadi dua
+  // teratas adalah pusing dan batuk, sisanya masuk Lainnya.
+  assert.deepEqual([...members.get(OTHER_TERMS_KEY)!].sort(), ["mual", "pilek"])
+})
+
+test("tanpa sisa di luar peringkat tidak ada kelompok Lainnya", () => {
+  const members = termGroupMembers(["Pusing", "Mual"], 5)
+  assert.equal(members.has(OTHER_TERMS_KEY), false)
+  assert.deepEqual([...members.keys()].sort(), ["mual", "pusing"])
+})
+
+test("peringkat tindakan per keluhan hanya memakai kunjungan keluhan itu", () => {
+  const visits = [
+    { ...visit("2026-01-01", "Pusing"), treatment: "Istirahat di UKS" },
+    { ...visit("2026-01-02", "Pusing"), treatment: "Istirahat di UKS" },
+    { ...visit("2026-01-03", "Pusing"), treatment: "Diberi air hangat" },
+    { ...visit("2026-01-04", "Mual"), treatment: "Diberi air hangat" },
+  ]
+
+  const byComplaint = treatmentRankingByComplaint(visits, 10)
+
+  assert.deepEqual(
+    byComplaint["pusing"].map((row) => [row.label, row.count]),
+    [
+      ["Istirahat di UKS", 2],
+      ["Diberi air hangat", 1],
+    ],
+  )
+  // Denominator mengikuti himpunan bagian, bukan total global: 2 dari 3.
+  assert.equal(Math.round(byComplaint["pusing"][0].share), 67)
+  assert.deepEqual(
+    byComplaint["mual"].map((row) => [row.label, row.count]),
+    [["Diberi air hangat", 1]],
+  )
+})
+
+test("penyaringan memakai istilah ternormalisasi, bukan substring mentah", () => {
+  const visits = [
+    { ...visit("2026-01-01", "  PUSING  "), treatment: "Istirahat" },
+    // Substring "pusing" ada di dalamnya, tetapi ini istilah yang berbeda.
+    { ...visit("2026-01-02", "Pusing berat"), treatment: "Dirujuk" },
+  ]
+
+  const byComplaint = treatmentRankingByComplaint(visits, 10)
+
+  assert.deepEqual(byComplaint["pusing"].map((row) => row.label), ["Istirahat"])
+  assert.deepEqual(byComplaint["pusing berat"].map((row) => row.label), ["Dirujuk"])
+})
+
+test("peringkat tindakan Lainnya menggabungkan seluruh keluhan di luar peringkat", () => {
+  const visits = [
+    { ...visit("2026-01-01", "Pusing"), treatment: "Istirahat" },
+    { ...visit("2026-01-02", "Pusing"), treatment: "Istirahat" },
+    { ...visit("2026-01-03", "Batuk"), treatment: "Diberi air hangat" },
+    { ...visit("2026-01-04", "Pilek"), treatment: "Diberi air hangat" },
+  ]
+
+  const byComplaint = treatmentRankingByComplaint(visits, 1)
+
+  assert.deepEqual(
+    byComplaint[OTHER_TERMS_KEY].map((row) => [row.label, row.count]),
+    [["Diberi air hangat", 2]],
+  )
+})
+
+test("keluhan tanpa tindakan tercatat menghasilkan peringkat kosong", () => {
+  const visits = [
+    { ...visit("2026-01-01", "Pusing"), treatment: "   " },
+    { ...visit("2026-01-02", "Mual"), treatment: "Istirahat" },
+  ]
+
+  const byComplaint = treatmentRankingByComplaint(visits, 10)
+  // Kosong, bukan lollipop rusak — komponen menampilkan empty state.
+  assert.deepEqual(byComplaint["pusing"], [])
+  assert.equal(byComplaint["mual"].length, 1)
+})
+
+test("kunjungan dengan beberapa keluhan masuk ke setiap kelompok relevan", () => {
+  // Skema sekarang menyimpan satu istilah keluhan per kunjungan. Uji ini
+  // mengunci bahwa keanggotaan diuji per kelompok, bukan eksklusif, sehingga
+  // dua kunjungan berbeda keluhan tidak saling mengambil tindakan.
+  const visits = [
+    { ...visit("2026-01-01", "Pusing"), treatment: "Istirahat" },
+    { ...visit("2026-01-01", "Mual"), treatment: "Diberi air hangat" },
+  ]
+  const byComplaint = treatmentRankingByComplaint(visits, 10)
+  assert.deepEqual(byComplaint["pusing"].map((row) => row.label), ["Istirahat"])
+  assert.deepEqual(byComplaint["mual"].map((row) => row.label), ["Diberi air hangat"])
+})
+
+test("peringkat global tidak berubah oleh pra-agregasi per keluhan", () => {
+  const visits = [
+    { ...visit("2026-01-01", "Pusing"), treatment: "Istirahat" },
+    { ...visit("2026-01-02", "Mual"), treatment: "Istirahat" },
+    { ...visit("2026-01-03", "Mual"), treatment: "Diberi air hangat" },
+  ]
+  const before = rankTerms(visits.map((v) => v.treatment), 10)
+  treatmentRankingByComplaint(visits, 10)
+  assert.deepEqual(rankTerms(visits.map((v) => v.treatment), 10), before)
+  assert.deepEqual(before.map((row) => [row.label, row.count]), [
+    ["Istirahat", 2],
+    ["Diberi air hangat", 1],
+  ])
 })
 
 test("seri bulanan untuk grafik memakai angka kunjungan yang sama persis", () => {

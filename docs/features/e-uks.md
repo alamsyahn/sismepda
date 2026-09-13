@@ -649,6 +649,47 @@ changed drawing only, not aggregation.
 | Keluhan Terbanyak | ranked bars with `#n`, count and share | complaint ranking |
 | Tindakan Terbanyak | lollipop (neutral stem + accent dot) | treatment ranking |
 
+#### Complaint → treatment drill-down
+
+The two ranking cards share one piece of state, `selectedComplaint`, which
+defaults to **Semua Keluhan** (global ranking — the pre-existing behaviour).
+Clicking a complaint row and choosing from the `Saring menurut keluhan` select
+in the treatment card header are two views of that single value, so the
+highlighted row and the select can never disagree. Clicking the already-selected
+row clears back to Semua Keluhan.
+
+Filtering matches on the **normalised complaint key**, the same one
+`rankTerms()` groups by — never a raw substring. `Pusing berat` is therefore a
+different group from `Pusing`, exactly as it is in the ranking above it.
+Membership is tested per group rather than exclusively, so a visit recording
+several complaints would land in each relevant group; today's schema stores one
+complaint term per visit (verified against the data: zero rows contain a
+separator), which is why no splitting is applied.
+
+`Lainnya` *is* selectable, because its members are mappable: `termGroupMembers()`
+derives them from the same tally and ordering as the ranking, so the row means
+"every complaint outside the top N", not a complaint literally spelled
+"Lainnya". The subtitle says so in words rather than echoing the label.
+
+Percentages are re-computed inside the subset: `rankTerms()` divides by all
+non-empty treatment entries on the *selected* visits, so a filtered panel
+answers "of the treatments given for this complaint" just as the global panel
+answers it for all visits. Global counts are untouched — selecting a complaint
+never mutates the global ranking.
+
+`treatmentRankingByComplaint()` pre-aggregates every group on the server in one
+pass over the already-fetched visits: no extra query, no per-complaint request,
+and no raw `EuksVisit` rows shipped to the browser. Switching complaints is a
+dataset swap, so it is instant and never navigates. The state stays local rather
+than in the URL — this is a glance-level drill-down on a profile page, and the
+home page has no canonical query-param state to join.
+
+A complaint whose visits record no treatment shows an explicit empty state
+("Belum ada tindakan yang tercatat…") with the filter still usable, not a broken
+lollipop. Rows are real `<button>`s with `aria-pressed`, and selection is marked
+by a check icon, bolder label, tinted background and an accent edge — never by
+colour alone.
+
 `monthlyVisitStats()` adds distinct visitors per month on top of the existing
 month series; its `count` values are asserted equal to `monthlyVisitCounts()`
 so a redesign can never silently move a number. Visits whose `studentId` is not

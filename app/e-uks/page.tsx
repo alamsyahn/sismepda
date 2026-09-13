@@ -4,8 +4,7 @@ import { CalendarRange, ClipboardPlus, Users, type LucideIcon } from "lucide-rea
 import { PageContainer } from "@/components/layout/page-container"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { EuksComplaintRanking } from "@/components/e-uks/euks-complaint-ranking"
-import { EuksTreatmentRanking } from "@/components/e-uks/euks-treatment-ranking"
+import { EuksComplaintTreatmentInsights } from "@/components/e-uks/euks-complaint-treatment-insights"
 import { EuksVisitTrendChart } from "@/components/e-uks/euks-visit-trend-chart"
 import { EuksNutritionDashboard } from "@/components/e-uks/euks-nutrition-dashboard"
 import { euksHeroLogoUrl } from "@/lib/euks-logo"
@@ -26,6 +25,7 @@ import {
   monthlyVisitStats,
   peakMonth,
   rankTerms,
+  treatmentRankingByComplaint,
   formatMonthLabel,
 } from "@/lib/euks-trends"
 import {
@@ -102,6 +102,10 @@ export default async function EuksHomePage() {
     visits.map((visit) => visit.treatment),
     TOP_TERMS,
   )
+  // Pra-agregasi di server: peringkat tindakan untuk tiap baris keluhan.
+  // Bentuknya ringkas, sehingga menyaring di peramban hanya berarti mengganti
+  // dataset — tanpa kueri tambahan dan tanpa mengirim baris kunjungan mentah.
+  const treatmentByComplaint = treatmentRankingByComplaint(visits, TOP_TERMS)
   const monthly = monthlyVisitCounts(visits)
   // Seri untuk grafik: jumlah kunjungan sama persis dengan `monthly`, ditambah
   // jumlah siswa berbeda per bulan untuk tooltip.
@@ -303,33 +307,11 @@ export default async function EuksHomePage() {
                 tetapi digambar berbeda: batang berperingkat vs lollipop.
                 Bentuk yang identik membuat keduanya terbaca sebagai satu blok
                 berulang. */}
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Keluhan Terbanyak</CardTitle>
-                  <CardDescription>Peringkat menurut jumlah kunjungan yang mencatatnya.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <EuksComplaintRanking
-                    rows={complaints}
-                    emptyLabel="Belum ada keluhan tercatat."
-                  />
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Tindakan Terbanyak</CardTitle>
-                  <CardDescription>Titik menunjukkan posisi relatif terhadap tindakan terbanyak.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <EuksTreatmentRanking
-                    rows={treatments}
-                    emptyLabel="Belum ada tindakan tercatat."
-                  />
-                </CardContent>
-              </Card>
-            </div>
+            <EuksComplaintTreatmentInsights
+              complaints={complaints}
+              treatments={treatments}
+              treatmentByComplaint={treatmentByComplaint}
+            />
 
             <p className="text-muted-foreground text-xs">
               Keluhan dan tindakan dikelompokkan menurut teks yang dicatat petugas, bukan menurut

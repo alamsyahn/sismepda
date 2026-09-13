@@ -67,6 +67,9 @@ function dominantLabel(labels: Map<string, number>): string {
   return [...labels.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0]
 }
 
+/** Kunci baris gabungan "Lainnya" pada hasil `rankTerms()`. */
+export const OTHER_TERMS_KEY = "__lainnya__"
+
 /**
  * Peringkat teratas, dengan sisanya digabung ke satu baris "Lainnya".
  *
@@ -95,7 +98,7 @@ export function rankTerms(values: string[], limit: number): TrendCount[] {
   if (rest.length > 0) {
     const restCount = rest.reduce((sum, item) => sum + item.count, 0)
     rows.push({
-      key: "__lainnya__",
+      key: OTHER_TERMS_KEY,
       label: "Lainnya",
       count: restCount,
       share: (restCount / total) * 100,
@@ -103,6 +106,71 @@ export function rankTerms(values: string[], limit: number): TrendCount[] {
   }
 
   return rows
+}
+
+/**
+ * Anggota tiap baris peringkat: kunci normalisasi yang masuk ke baris itu.
+ *
+ * Dipakai untuk menyaring kunjungan berdasarkan baris peringkat yang dipilih
+ * pengguna. Memakai `tally()` dan urutan yang sama persis dengan `rankTerms()`,
+ * sehingga pengelompokannya tidak mungkin menyimpang dari peringkat yang
+ * ditampilkan — termasuk baris `Lainnya`, yang anggotanya adalah seluruh
+ * kunci di luar peringkat teratas, bukan istilah bernama "Lainnya".
+ */
+export function termGroupMembers(values: string[], limit: number): Map<string, Set<string>> {
+  const buckets = tally(values)
+  const ranked = [...buckets.entries()]
+    .map(([key, bucket]) => ({ key, label: dominantLabel(bucket.labels), count: bucket.count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+
+  const members = new Map<string, Set<string>>()
+  for (const item of ranked.slice(0, limit)) {
+    members.set(item.key, new Set([item.key]))
+  }
+  const rest = ranked.slice(limit)
+  if (rest.length > 0) {
+    members.set(OTHER_TERMS_KEY, new Set(rest.map((item) => item.key)))
+  }
+  return members
+}
+
+/**
+ * Peringkat tindakan untuk tiap baris keluhan, dihitung di server sekali jalan.
+ *
+ * Bentuknya ringkas (sejumlah baris keluhan × sejumlah baris tindakan), jadi
+ * penyaringan di peramban hanya berarti mengganti dataset — tanpa navigasi
+ * halaman, tanpa permintaan tambahan, dan tanpa mengirim baris `EuksVisit`
+ * mentah ke peramban.
+ *
+ * Penyaringan memakai kunci ternormalisasi yang sama dengan peringkat keluhan,
+ * bukan pencocokan substring pada teks mentah: kunjungan ikut terhitung bila
+ * istilah keluhannya memang ada pada kelompok itu. Bila kelak satu kunjungan
+ * dapat mencatat beberapa keluhan, kunjungan itu otomatis masuk ke setiap
+ * kelompok yang relevan karena keanggotaan diuji per kelompok, bukan eksklusif.
+ *
+ * Porsi dihitung ulang di dalam himpunan bagian: `rankTerms()` membagi dengan
+ * seluruh entri tindakan tidak kosong pada kunjungan terpilih, bukan dengan
+ * total global — sehingga persentasenya menjawab "dari tindakan pada keluhan
+ * ini", persis seperti versi global menjawabnya untuk seluruh kunjungan.
+ */
+export function treatmentRankingByComplaint(
+  visits: TrendVisit[],
+  limit: number,
+): Record<string, TrendCount[]> {
+  const members = termGroupMembers(
+    visits.map((visit) => visit.complaint),
+    limit,
+  )
+
+  const result: Record<string, TrendCount[]> = {}
+  for (const [rowKey, keys] of members) {
+    const subset = visits.filter((visit) => keys.has(normalizeTerm(visit.complaint)))
+    result[rowKey] = rankTerms(
+      subset.map((visit) => visit.treatment),
+      limit,
+    )
+  }
+  return result
 }
 
 /** Satu bulan pada grafik tren, lengkap dengan jumlah siswa berbeda. */
