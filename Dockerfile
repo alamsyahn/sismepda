@@ -53,6 +53,11 @@ RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nod
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Titik mount penyimpanan media. Direktori sengaja dibuat dan di-chown SEBELUM
+# volume dipasang: volume Docker yang masih kosong mewarisi kepemilikan dari
+# direktori ini, dan tanpa langkah ini proses uid 1001 tidak akan bisa menulis
+# unggahan ke dalamnya. Isinya sendiri tidak pernah masuk image.
+RUN mkdir -p /app/media && chown nextjs:nodejs /app/media
 USER nextjs
 EXPOSE 3000
 CMD ["node", "server.js"]

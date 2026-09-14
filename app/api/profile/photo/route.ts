@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma"
 import { detectProfilePhotoType, profilePhotoUrl } from "@/lib/profile"
 import { describeAuthFailure } from "@/lib/api-errors"
 import { assertDetectedType } from "@/lib/upload-policy"
+import { resolveMedia } from "@/lib/server-media"
+import { storeMedia } from "@/lib/server-media-storage"
 import {
   assertRequestSizeWithinSlot,
   assertUploadAllowedForSlot,
@@ -15,15 +17,24 @@ export async function GET() {
     const sessionUser = await requireUser()
     const user = await prisma.user.findUnique({
       where: { id: sessionUser.id },
-      select: { photoData: true, photoMimeType: true },
+      select: { photoKey: true, photoData: true, photoMimeType: true },
     })
-    if (!user?.photoData || !user.photoMimeType) {
+    // Kunci baru lebih dulu, byte legacy sebagai cadangan; kontrak 404 ketika
+    // belum ada foto sama sekali tidak berubah.
+    const media = user
+      ? await resolveMedia({
+          key: user.photoKey,
+          mimeType: user.photoMimeType,
+          legacyBytes: user.photoData,
+        })
+      : null
+    if (!media) {
       return NextResponse.json({ error: "Foto profil belum tersedia" }, { status: 404 })
     }
-    return new Response(user.photoData, {
+    return new Response(media.bytes, {
       headers: {
-        "Content-Type": user.photoMimeType,
-        "Content-Length": String(user.photoData.byteLength),
+        "Content-Type": media.mimeType,
+        "Content-Length": String(media.bytes.byteLength),
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
       },
@@ -61,9 +72,20 @@ export async function PUT(request: Request) {
     })
     const mimeType = assertDetectedType(policy, detectProfilePhotoType(bytes))
 
+    // Berkas ditulis dan diverifikasi DULU; baru database menunjuk kuncinya.
+    // Bila langkah ini gagal, tidak ada baris yang mengarah ke berkas hilang.
+    const stored = await storeMedia("users/avatar", bytes, mimeType)
     const updated = await prisma.user.update({
       where: { id: sessionUser.id },
-      data: { photoData: bytes, photoMimeType: mimeType, photoUpdatedAt: new Date() },
+      data: {
+        photoKey: stored.key,
+        photoSize: stored.size,
+        photoMimeType: stored.mimeType,
+        photoUpdatedAt: new Date(),
+        // Byte legacy dikosongkan hanya untuk baris yang baru saja pindah ke
+        // penyimpanan: isinya sudah digantikan berkas, bukan data yang hilang.
+        photoData: null,
+      },
       select: { photoUpdatedAt: true },
     })
     return NextResponse.json({ photoUrl: profilePhotoUrl(updated.photoUpdatedAt) })
@@ -86,7 +108,16 @@ export async function DELETE(request: Request) {
     const sessionUser = await requireUser()
     await prisma.user.update({
       where: { id: sessionUser.id },
-      data: { photoData: null, photoMimeType: null, photoUpdatedAt: null },
+      // Referensi database dibersihkan; berkasnya sengaja dibiarkan yatim.
+      // Garbage collection adalah fase terpisah — menghapus berkas di sini
+      // berarti kehilangan jalur pemulihan bila penghapusan ternyata keliru.
+      data: {
+        photoKey: null,
+        photoSize: null,
+        photoData: null,
+        photoMimeType: null,
+        photoUpdatedAt: null,
+      },
     })
     return NextResponse.json({ photoUrl: null })
   } catch (error) {

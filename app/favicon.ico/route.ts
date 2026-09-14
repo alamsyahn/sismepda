@@ -8,26 +8,37 @@ import {
   assertRequestSizeWithinSlot,
   assertUploadAllowedForSlot,
 } from "@/lib/server-upload-policy"
+import { resolveMedia } from "@/lib/server-media"
+import { storeMedia } from "@/lib/server-media-storage"
 
 export async function GET(request: Request) {
   try {
     const setting = await prisma.schoolSetting.findUnique({
       where: { id: "default" },
-      select: { faviconData: true, faviconMimeType: true, faviconUpdatedAt: true },
+      select: { faviconKey: true, faviconData: true, faviconMimeType: true, faviconUpdatedAt: true },
     })
-    if (!setting?.faviconData || !setting.faviconMimeType) {
+    // Kunci penyimpanan bila ada, byte legacy bila belum dimigrasikan;
+    // bila keduanya kosong, perilaku redirect ke aset default tidak berubah.
+    const media = setting
+      ? await resolveMedia({
+          key: setting.faviconKey,
+          mimeType: setting.faviconMimeType,
+          legacyBytes: setting.faviconData,
+        })
+      : null
+    if (!media) {
       return NextResponse.redirect(new URL("/icon.svg", request.url))
     }
 
     const download = new URL(request.url).searchParams.get("download") === "1"
-    const extension = setting.faviconMimeType === "image/png" ? "png" : "ico"
-    return new Response(setting.faviconData, {
+    const extension = media.mimeType === "image/png" ? "png" : "ico"
+    return new Response(media.bytes, {
       headers: {
-        "Content-Type": setting.faviconMimeType,
-        "Content-Length": String(setting.faviconData.byteLength),
+        "Content-Type": media.mimeType,
+        "Content-Length": String(media.bytes.byteLength),
         "Cache-Control": download ? "private, no-store" : "public, max-age=0, must-revalidate",
         "Content-Disposition": `${download ? "attachment" : "inline"}; filename="favicon.${extension}"`,
-        "Last-Modified": setting.faviconUpdatedAt?.toUTCString() ?? new Date(0).toUTCString(),
+        "Last-Modified": setting?.faviconUpdatedAt?.toUTCString() ?? new Date(0).toUTCString(),
         "X-Content-Type-Options": "nosniff",
       },
     })
@@ -54,10 +65,27 @@ export async function PUT(request: Request) {
     const bytes = new Uint8Array(await favicon.arrayBuffer())
     const mimeType = assertDetectedType(policy, detectFaviconType(bytes))
 
+    // Berkas ditulis dan diverifikasi sebelum database menunjuk kuncinya.
+    const stored = await storeMedia("branding/favicon", bytes, mimeType)
+
     const updated = await prisma.schoolSetting.upsert({
       where: { id: "default" },
-      update: { faviconData: bytes, faviconMimeType: mimeType, faviconUpdatedAt: new Date() },
-      create: { faviconData: bytes, faviconMimeType: mimeType, faviconUpdatedAt: new Date() },
+      update: {
+        faviconKey: stored.key,
+        faviconSize: stored.size,
+        faviconMimeType: stored.mimeType,
+        faviconUpdatedAt: new Date(),
+        // Byte legacy dikosongkan untuk baris yang sudah pindah.
+        faviconData: null,
+      },
+      create: {
+        faviconKey: stored.key,
+        faviconSize: stored.size,
+        faviconMimeType: stored.mimeType,
+        faviconUpdatedAt: new Date(),
+        // Byte legacy dikosongkan untuk baris yang sudah pindah.
+        faviconData: null,
+      },
       select: { faviconUpdatedAt: true },
     })
     return NextResponse.json({ faviconUrl: faviconUrl(updated.faviconUpdatedAt), hasFavicon: true })

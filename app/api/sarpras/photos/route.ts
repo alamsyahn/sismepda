@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { detectProfilePhotoType } from "@/lib/profile"
 import { authFailureResponse } from "@/lib/api-errors"
 import { requireSarprasPermission } from "@/lib/sarpras-access"
+import { storeMedia } from "@/lib/server-media-storage"
 import { assertDetectedType } from "@/lib/upload-policy"
 import {
   assertRequestSizeWithinSlot,
@@ -49,10 +50,18 @@ export async function POST(request: Request) {
     // Trust the file's magic bytes, never the client-supplied content type.
     const mimeType = assertDetectedType(policy, detectProfilePhotoType(bytes))
 
+    // Berkas ditulis dan diverifikasi sebelum baris dibuat: unggahan yang
+    // gagal tidak meninggalkan baris yang menunjuk berkas tidak ada.
+    const stored = await storeMedia("sarpras/item", bytes, mimeType)
+
     const created = await prisma.sarprasPhoto.create({
       data: {
         itemId: item.id,
-        data: bytes,
+        mediaKey: stored.key,
+        mediaSize: stored.size,
+        // Kolom bytes legacy dibiarkan null untuk unggahan baru; ia hanya
+        // menyimpan foto lama sampai fase CONTRACT.
+        data: null,
         mimeType,
         caption: typeof caption === "string" && caption.trim().length > 0 ? caption.trim() : null,
         sortOrder: item._count.photos,

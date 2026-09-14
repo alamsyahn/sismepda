@@ -25,12 +25,26 @@ services:
       AUTH_TRUST_HOST: "true"
       AUTH_URL: https://${DOMAIN}
       NEXTAUTH_URL: https://${DOMAIN}
+      # Akar penyimpanan media di DALAM container. Nilainya dipasangkan ke
+      # volume `media` di bawah; jangan diubah tanpa memindahkan volume-nya.
+      MEDIA_STORAGE_ROOT: /app/media
+    volumes:
+      # Media HARUS berada di volume, bukan di writable layer container:
+      # `docker compose up --force-recreate` membuang layer itu, dan bersamanya
+      # seluruh foto yang diunggah sejak deploy terakhir.
+      - media:/app/media
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 5
     networks: [database]
+
+volumes:
+  # Dikelola Docker, terpisah dari volume database. Konsekuensinya: backup
+  # PostgreSQL saja TIDAK lagi merupakan backup aplikasi yang lengkap.
+  # Lihat docs/architecture/media-storage.md.
+  media:
 
 networks:
   database:

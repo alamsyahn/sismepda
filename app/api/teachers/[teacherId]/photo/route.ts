@@ -3,6 +3,7 @@ import { requirePermission } from "@/lib/rbac-access"
 import { authFailureResponse } from "@/lib/api-errors"
 import { prisma } from "@/lib/prisma"
 import { teacherPopulationWhere } from "@/lib/teacher-population"
+import { resolveMedia } from "@/lib/server-media"
 
 export async function GET(_request: Request, { params }: { params: Promise<{ teacherId: string }> }) {
   try {
@@ -11,15 +12,24 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tea
     const { teacherId } = await params
     const teacher = await prisma.user.findFirst({
       where: { id: teacherId, ...teacherPopulationWhere() },
-      select: { photoData: true, photoMimeType: true },
+      select: { photoKey: true, photoData: true, photoMimeType: true },
     })
-    if (!teacher?.photoData || !teacher.photoMimeType) {
+    // Foto guru dibaca lewat resolver yang sama dengan foto profil: kunci baru
+    // jika ada, byte legacy bila belum dimigrasikan.
+    const media = teacher
+      ? await resolveMedia({
+          key: teacher.photoKey,
+          mimeType: teacher.photoMimeType,
+          legacyBytes: teacher.photoData,
+        })
+      : null
+    if (!media) {
       return NextResponse.json({ error: "Foto guru belum tersedia" }, { status: 404 })
     }
-    return new Response(teacher.photoData, {
+    return new Response(media.bytes, {
       headers: {
-        "Content-Type": teacher.photoMimeType,
-        "Content-Length": String(teacher.photoData.byteLength),
+        "Content-Type": media.mimeType,
+        "Content-Length": String(media.bytes.byteLength),
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
       },

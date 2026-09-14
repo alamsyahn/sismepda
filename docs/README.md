@@ -11,6 +11,7 @@ This directory is the canonical description of the system as it works now. Start
 | Target RBAC model, permission catalog, surface policy inventory, migration phases | [Role-based access control](architecture/rbac.md) | Any authorization change, new protected surface, role/permission work |
 | Models, ownership, lifecycle, migrations, binary data | [Database](architecture/database.md) | Schema, queries, backup/restore, data behavior |
 | Upload slot registry, policy resolution, size/type enforcement, grandfathering | [Upload architecture](architecture/uploads.md) | Any feature that accepts a file or image from a user |
+| Where uploaded bytes live, media keys, legacy bytea fallback, media migration, media backup | [Media storage](architecture/media-storage.md) | Any feature that stores, serves, or migrates binary media |
 | Runtime topology, external networks, proxy, containers | [Deployment architecture](architecture/deployment.md) | Production/configuration changes |
 
 ## Features

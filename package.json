@@ -8,6 +8,8 @@
     "dev:prodclone": "tsx scripts/with-db.ts prodclone -- next dev",
     "db:refresh-prodclone": "tsx scripts/refresh-prodclone.ts",
     "db:analyze-legacy-dates": "tsx scripts/analyze-legacy-dates.ts",
+    "media:migrate": "tsx scripts/migrate-media.ts",
+    "media:migrate:local": "tsx scripts/with-db.ts local -- tsx scripts/migrate-media.ts",
     "db:studio:local": "tsx scripts/with-db.ts local -- prisma studio",
     "db:studio:prodclone": "tsx scripts/with-db.ts prodclone -- prisma studio",
     "build": "next build",

@@ -55,6 +55,11 @@ model User {
   photoData Bytes?
   photoMimeType String?
   photoUpdatedAt DateTime?
+  /// Kunci media di penyimpanan kanonik (lihat docs/architecture/media-storage.md).
+  /// Aditif: `photoData` DIPERTAHANKAN sebagai fallback sampai produksi selesai
+  /// dimigrasikan dan diverifikasi. Null berarti foto masih di kolom bytes.
+  photoKey String?
+  photoSize Int?
   role LegacyRole @default(GURU)
   active Boolean @default(true)
   createdAt DateTime @default(now())
@@ -285,6 +290,9 @@ model EuksHeroImage {
   photoData Bytes?
   photoMimeType String?
   photoUpdatedAt DateTime?
+  /// Kunci media kanonik; kolom bytes di atas DIPERTAHANKAN sebagai fallback.
+  photoKey String?
+  photoSize Int?
   sortOrder Int @default(0)
   active Boolean @default(true)
   createdAt DateTime @default(now())
@@ -311,6 +319,9 @@ model EuksHeroLogo {
   /// Termasuk image/svg+xml, yang tidak berlaku untuk foto hero.
   logoMimeType String?
   logoUpdatedAt DateTime?
+  /// Kunci media kanonik; kolom bytes di atas DIPERTAHANKAN sebagai fallback.
+  logoKey String?
+  logoSize Int?
   sortOrder Int @default(0)
   active Boolean @default(true)
   createdAt DateTime @default(now())
@@ -337,6 +348,9 @@ model EuksOfficer {
   photoData Bytes?
   photoMimeType String?
   photoUpdatedAt DateTime?
+  /// Kunci media kanonik; kolom bytes di atas DIPERTAHANKAN sebagai fallback.
+  photoKey String?
+  photoSize Int?
   sortOrder Int @default(0)
   active Boolean @default(true)
   createdAt DateTime @default(now())
@@ -360,6 +374,9 @@ model EuksFacility {
   photoData Bytes?
   photoMimeType String?
   photoUpdatedAt DateTime?
+  /// Kunci media kanonik; kolom bytes di atas DIPERTAHANKAN sebagai fallback.
+  photoKey String?
+  photoSize Int?
   sortOrder Int @default(0)
   active Boolean @default(true)
   createdAt DateTime @default(now())
@@ -417,11 +434,17 @@ model SchoolSetting {
   faviconData Bytes?
   faviconMimeType String?
   faviconUpdatedAt DateTime?
+  /// Kunci media kanonik; kolom bytes di atas DIPERTAHANKAN sebagai fallback.
+  faviconKey String?
+  faviconSize Int?
   appName String @default("SISMEPDA")
   appFullName String @default("Sistem Informasi Sekolah")
   appLogoData Bytes?
   appLogoMimeType String?
   appLogoUpdatedAt DateTime?
+  /// Kunci media kanonik; kolom bytes di atas DIPERTAHANKAN sebagai fallback.
+  appLogoKey String?
+  appLogoSize Int?
   schoolName String @default("SMP Negeri 1 Contoh")
   npsn String?
   academicYear String @default("2025/2026")
@@ -668,8 +691,14 @@ model SarprasItem {
 model SarprasPhoto {
   id String @id @default(cuid())
   itemId String
-  data Bytes
+  /// Historisnya NOT NULL. Dilonggarkan menjadi nullable — bukan dihapus —
+  /// karena tanpa itu setiap unggahan Sarpras baru tetap wajib menulis bytea.
+  /// Melonggarkan constraint tidak menyentuh satu pun baris yang sudah ada.
+  data Bytes?
   mimeType String
+  /// Kunci media kanonik; kolom bytes di atas DIPERTAHANKAN sebagai fallback.
+  mediaKey String?
+  mediaSize Int?
   caption String?
   sortOrder Int @default(0)
   createdAt DateTime @default(now())

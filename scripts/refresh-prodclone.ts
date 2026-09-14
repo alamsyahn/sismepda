@@ -686,5 +686,11 @@ console.log(
     "",
     `Database development ${databaseTargets.local.expectedDatabase} tidak disentuh sama sekali.`,
     "",
+    "Catatan: refresh ini hanya menyalin DATABASE, bukan media.",
+    "Media yang sudah dimigrasikan ke penyimpanan berkas tidak ikut terbawa,",
+    "sehingga record ber-mediaKey akan tampil tanpa gambar di clone kecuali",
+    "byte legacy-nya masih ada. Sinkronisasi media adalah perintah terpisah",
+    "yang belum diimplementasikan; lihat docs/architecture/media-storage.md.",
+    "",
   ].join("\n"),
 )

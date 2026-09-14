@@ -130,3 +130,13 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Reason:** "Later" here means "entered afterwards", not "verified correct"; no history survived that records the true final status.
 - **Direction:** Confirm the three statuses with the teachers who entered them — IX B: Krisna Purnawati, M.Pd and Muhammad Yoga Saputra, S.Pd; IX F: Aviana Trisepti Rusdiana, S.Pd; VII A: Miss Novita Hidayatun Nisa, S.Pd — and correct any that disagree before this data is trusted for reporting.
 - **Exit criteria:** Each of the three 2026-09-07 statuses is confirmed or corrected against the entering teacher, recorded in the repair script, and the repair still reproduces on a fresh clone.
+
+## TD-016 — Media produksi belum tercakup backup, dan byte legacy belum dipensiunkan
+
+- **Area / severity:** Operations / data durability — **Medium**
+- **Current condition:** Penyimpanan media kanonik sudah ada (`docs/architecture/media-storage.md`) dan unggahan baru menulis ke volume `media`, tetapi rutinitas backup produksi masih hanya membuat dump PostgreSQL. Kolom `bytea` legacy juga masih terisi penuh di seluruh delapan sumber media.
+- **Evidence:** `compose.yaml` (volume `media` terpisah dari volume database); `lib/deployment.ts` `remoteBackupScript()` hanya mengarsipkan dump PostgreSQL; `prisma/schema.prisma` masih memuat `photoData`/`logoData`/`appLogoData`/`faviconData`/`SarprasPhoto.data`.
+- **Impact:** Media yang diunggah **setelah** deploy hanya ada di volume dan tidak tersalin ke backup mana pun — kehilangan volume berarti kehilangan media tersebut. Media lama belum berisiko karena byte legacy-nya masih ikut di dump. Sebaliknya, selama byte legacy ada, ukuran dump belum berkurang sama sekali, sehingga manfaat arsitektur baru belum terealisasi.
+- **Reason:** Fase ini sengaja hanya EXPAND: penghapusan byte legacy dan perubahan cron backup produksi keduanya berisiko dan memerlukan verifikasi produksi lebih dulu.
+- **Direction:** Tambahkan arsip volume media ke backup produksi berdampingan dengan dump PostgreSQL dan verifikasi keterbacaannya; setelah itu jalankan migrasi media di produksi, verifikasi seluruh record punya kunci, baru rencanakan fase CONTRACT.
+- **Exit criteria:** Backup produksi menghasilkan dump database **dan** arsip media yang terverifikasi terbaca; seluruh record media produksi punya kunci; keputusan penghapusan kolom bytea diambil secara eksplisit dengan persetujuan pemilik.

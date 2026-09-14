@@ -10,6 +10,8 @@ import {
   assertRequestSizeWithinSlot,
   assertUploadAllowedForSlot,
 } from "@/lib/server-upload-policy"
+import { resolveMedia } from "@/lib/server-media"
+import { storeMedia } from "@/lib/server-media-storage"
 
 /**
  * Byte foto hero UKS.
@@ -28,16 +30,24 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ima
 
     const image = await prisma.euksHeroImage.findUnique({
       where: { id: imageId },
-      select: { photoData: true, photoMimeType: true },
+      select: { photoKey: true, photoData: true, photoMimeType: true },
     })
-    if (!image?.photoData || !image.photoMimeType) {
+    // Kunci penyimpanan bila sudah dimigrasikan, byte legacy bila belum.
+    const media = image
+      ? await resolveMedia({
+          key: image.photoKey,
+          mimeType: image.photoMimeType,
+          legacyBytes: image.photoData,
+        })
+      : null
+    if (!media) {
       return NextResponse.json({ error: "Foto hero belum tersedia" }, { status: 404 })
     }
 
-    return new Response(image.photoData, {
+    return new Response(media.bytes, {
       headers: {
-        "Content-Type": image.photoMimeType,
-        "Content-Length": String(image.photoData.byteLength),
+        "Content-Type": media.mimeType,
+        "Content-Length": String(media.bytes.byteLength),
         // Foto hero adalah aset terbesar di halaman ini dan URL-nya sudah
         // mengandung `?v=photoUpdatedAt`, jadi query-nya berubah setiap foto
         // diganti. Karena itu responsnya boleh disimpan lama: cache basi tidak
@@ -82,10 +92,21 @@ export async function PUT(request: Request, { params }: { params: Promise<{ imag
     // Percayai magic bytes berkasnya, bukan content-type dari klien.
     const mimeType = assertDetectedType(policy, detectProfilePhotoType(bytes))
 
+    // Berkas ditulis dan diverifikasi sebelum transaksi database dibuka.
+    // Kegagalan menulis berarti database sama sekali tidak berubah.
+    const stored = await storeMedia("euks/hero", bytes, mimeType)
+
     const updated = await prisma.$transaction(async (tx) => {
       const saved = await tx.euksHeroImage.update({
         where: { id: image.id },
-        data: { photoData: bytes, photoMimeType: mimeType, photoUpdatedAt: new Date() },
+        data: {
+          photoKey: stored.key,
+          photoSize: stored.size,
+          photoMimeType: stored.mimeType,
+          photoUpdatedAt: new Date(),
+          // Byte legacy dikosongkan untuk baris yang sudah pindah.
+          photoData: null,
+        },
         select: { id: true, photoUpdatedAt: true },
       })
       await recordAuditLog(
@@ -125,7 +146,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     await prisma.$transaction(async (tx) => {
       await tx.euksHeroImage.update({
         where: { id: image.id },
-        data: { photoData: null, photoMimeType: null, photoUpdatedAt: null },
+        data: { photoKey: null, photoSize: null, photoData: null, photoMimeType: null, photoUpdatedAt: null },
       })
       await recordAuditLog(
         {

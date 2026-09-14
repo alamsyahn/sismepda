@@ -12,6 +12,8 @@ import {
   assertRequestSizeWithinSlot,
   assertUploadAllowedForSlot,
 } from "@/lib/server-upload-policy"
+import { resolveMedia } from "@/lib/server-media"
+import { storeMedia } from "@/lib/server-media-storage"
 
 /**
  * Logo aplikasi disajikan dari database (pola yang sama dengan /favicon.ico)
@@ -23,19 +25,28 @@ export async function GET(request: Request) {
   try {
     const setting = await prisma.schoolSetting.findUnique({
       where: { id: "default" },
-      select: { appLogoData: true, appLogoMimeType: true, appLogoUpdatedAt: true },
+      select: { appLogoKey: true, appLogoData: true, appLogoMimeType: true, appLogoUpdatedAt: true },
     })
-    if (!setting?.appLogoData || !setting.appLogoMimeType) {
+    // Kunci penyimpanan bila ada, byte legacy bila belum dimigrasikan;
+    // bila keduanya kosong, perilaku redirect ke aset default tidak berubah.
+    const media = setting
+      ? await resolveMedia({
+          key: setting.appLogoKey,
+          mimeType: setting.appLogoMimeType,
+          legacyBytes: setting.appLogoData,
+        })
+      : null
+    if (!media) {
       return NextResponse.redirect(new URL(DEFAULT_APP_LOGO_URL, request.url))
     }
 
-    return new Response(setting.appLogoData, {
+    return new Response(media.bytes, {
       headers: {
-        "Content-Type": setting.appLogoMimeType,
-        "Content-Length": String(setting.appLogoData.byteLength),
+        "Content-Type": media.mimeType,
+        "Content-Length": String(media.bytes.byteLength),
         "Cache-Control": "public, max-age=0, must-revalidate",
         "Content-Disposition": "inline",
-        "Last-Modified": setting.appLogoUpdatedAt?.toUTCString() ?? new Date(0).toUTCString(),
+        "Last-Modified": setting?.appLogoUpdatedAt?.toUTCString() ?? new Date(0).toUTCString(),
         "X-Content-Type-Options": "nosniff",
       },
     })
@@ -62,10 +73,27 @@ export async function PUT(request: Request) {
     const bytes = new Uint8Array(await logo.arrayBuffer())
     const mimeType = assertDetectedType(policy, detectAppLogoType(bytes))
 
+    // Berkas ditulis dan diverifikasi sebelum database menunjuk kuncinya.
+    const stored = await storeMedia("branding/app-logo", bytes, mimeType)
+
     const updated = await prisma.schoolSetting.upsert({
       where: { id: "default" },
-      update: { appLogoData: bytes, appLogoMimeType: mimeType, appLogoUpdatedAt: new Date() },
-      create: { appLogoData: bytes, appLogoMimeType: mimeType, appLogoUpdatedAt: new Date() },
+      update: {
+        appLogoKey: stored.key,
+        appLogoSize: stored.size,
+        appLogoMimeType: stored.mimeType,
+        appLogoUpdatedAt: new Date(),
+        // Byte legacy dikosongkan untuk baris yang sudah pindah.
+        appLogoData: null,
+      },
+      create: {
+        appLogoKey: stored.key,
+        appLogoSize: stored.size,
+        appLogoMimeType: stored.mimeType,
+        appLogoUpdatedAt: new Date(),
+        // Byte legacy dikosongkan untuk baris yang sudah pindah.
+        appLogoData: null,
+      },
       select: { appLogoUpdatedAt: true },
     })
     return NextResponse.json({ appLogoUrl: appLogoUrl(updated.appLogoUpdatedAt), hasAppLogo: true })
@@ -80,7 +108,7 @@ export async function DELETE() {
     await requirePermission("school.branding.update")
     await prisma.schoolSetting.upsert({
       where: { id: "default" },
-      update: { appLogoData: null, appLogoMimeType: null, appLogoUpdatedAt: null },
+      update: { appLogoKey: null, appLogoSize: null, appLogoData: null, appLogoMimeType: null, appLogoUpdatedAt: null },
       create: { id: "default" },
       select: { id: true },
     })

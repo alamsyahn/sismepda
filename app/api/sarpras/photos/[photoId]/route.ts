@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { authFailureResponse } from "@/lib/api-errors"
 import { requireSarprasPermission } from "@/lib/sarpras-access"
+import { resolveMedia } from "@/lib/server-media"
 
 /**
  * Stream one Sarpras photo. Requires sarpras.view — inventory photos are not
@@ -14,14 +15,22 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pho
 
     const photo = await prisma.sarprasPhoto.findUnique({
       where: { id: photoId },
-      select: { data: true, mimeType: true },
+      select: { mediaKey: true, data: true, mimeType: true },
     })
-    if (!photo) return NextResponse.json({ error: "Foto tidak ditemukan" }, { status: 404 })
+    // Kunci penyimpanan bila sudah dimigrasikan, byte legacy bila belum.
+    const media = photo
+      ? await resolveMedia({
+          key: photo.mediaKey,
+          mimeType: photo.mimeType,
+          legacyBytes: photo.data,
+        })
+      : null
+    if (!media) return NextResponse.json({ error: "Foto tidak ditemukan" }, { status: 404 })
 
-    return new Response(photo.data, {
+    return new Response(media.bytes, {
       headers: {
-        "Content-Type": photo.mimeType,
-        "Content-Length": String(photo.data.byteLength),
+        "Content-Type": media.mimeType,
+        "Content-Length": String(media.bytes.byteLength),
         "Cache-Control": "private, max-age=300",
         "X-Content-Type-Options": "nosniff",
       },

@@ -13,6 +13,8 @@ import {
   assertRequestSizeWithinSlot,
   assertUploadAllowedForSlot,
 } from "@/lib/server-upload-policy"
+import { resolveMedia } from "@/lib/server-media"
+import { storeMedia } from "@/lib/server-media-storage"
 
 /**
  * Byte berkas logo hero UKS.
@@ -31,16 +33,24 @@ export async function GET(_request: Request, { params }: { params: Promise<{ log
 
     const logo = await prisma.euksHeroLogo.findUnique({
       where: { id: logoId },
-      select: { logoData: true, logoMimeType: true },
+      select: { logoKey: true, logoData: true, logoMimeType: true },
     })
-    if (!logo?.logoData || !logo.logoMimeType) {
+    // Kunci penyimpanan bila sudah dimigrasikan, byte legacy bila belum.
+    const media = logo
+      ? await resolveMedia({
+          key: logo.logoKey,
+          mimeType: logo.logoMimeType,
+          legacyBytes: logo.logoData,
+        })
+      : null
+    if (!media) {
       return NextResponse.json({ error: "Logo belum tersedia" }, { status: 404 })
     }
 
-    return new Response(logo.logoData, {
+    return new Response(media.bytes, {
       headers: {
-        "Content-Type": logo.logoMimeType,
-        "Content-Length": String(logo.logoData.byteLength),
+        "Content-Type": media.mimeType,
+        "Content-Length": String(media.bytes.byteLength),
         // URL sudah mengandung `?v=logoUpdatedAt`, jadi cache basi tidak mungkin
         // terpakai. `private` karena rute ini di balik autentikasi.
         "Cache-Control": "private, max-age=31536000, immutable",
@@ -103,10 +113,21 @@ export async function PUT(request: Request, { params }: { params: Promise<{ logo
       }
     }
 
+    // Berkas ditulis dan diverifikasi sebelum transaksi database dibuka.
+    // Kegagalan menulis berarti database sama sekali tidak berubah.
+    const stored = await storeMedia("euks/hero-logo", bytes, mimeType)
+
     const updated = await prisma.$transaction(async (tx) => {
       const saved = await tx.euksHeroLogo.update({
         where: { id: logo.id },
-        data: { logoData: bytes, logoMimeType: mimeType, logoUpdatedAt: new Date() },
+        data: {
+          logoKey: stored.key,
+          logoSize: stored.size,
+          logoMimeType: stored.mimeType,
+          logoUpdatedAt: new Date(),
+          // Byte legacy dikosongkan untuk baris yang sudah pindah.
+          logoData: null,
+        },
         select: { id: true, logoUpdatedAt: true },
       })
       await recordAuditLog(
@@ -145,7 +166,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     await prisma.$transaction(async (tx) => {
       await tx.euksHeroLogo.update({
         where: { id: logo.id },
-        data: { logoData: null, logoMimeType: null, logoUpdatedAt: null },
+        data: { logoKey: null, logoSize: null, logoData: null, logoMimeType: null, logoUpdatedAt: null },
       })
       await recordAuditLog(
         {
