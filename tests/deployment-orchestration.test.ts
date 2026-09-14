@@ -392,6 +392,23 @@ test("redactSecrets menyembunyikan URL database dan variabel rahasia", () => {
   assert.equal(redactSecrets("tidak ada rahasia"), "tidak ada rahasia")
 })
 
+test("verifikasi arsip membaca backup dari stdin, bukan dari berkas bernama '-'", () => {
+  const script = remoteBackupScript("2026-09-14_13-30-25_aaaaaaa.dump")
+  // pg_restore memakai stdin justru ketika nama arsip DIHILANGKAN; `-` di
+  // posisi itu diperlakukan sebagai nama berkas literal dan gagal dengan
+  // "could not open input file". Redirection-lah yang menyalurkan dump.
+  assert.doesNotMatch(
+    script,
+    /pg_restore\s+--list\s+-(?:\s|$)/,
+    "`pg_restore --list -` membuat verifikasi backup selalu gagal",
+  )
+  assert.match(
+    script,
+    /pg_restore --list < '[^']+\.dump'/,
+    "arsip harus dialirkan ke pg_restore lewat redirection stdin",
+  )
+})
+
 test("skrip backup tidak memuat password pada argumen", () => {
   const script = remoteBackupScript("2026-09-14_13-30-25_aaaaaaa.dump")
   assert.doesNotMatch(script, /PGPASSWORD=/)

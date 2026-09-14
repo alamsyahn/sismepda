@@ -216,8 +216,10 @@ export function remoteBackupScript(fileName: string): string {
     `test -s ${shellQuote(target)} || { echo "ABORT: berkas backup kosong" >&2; exit 4; }`,
     `SIZE=$(stat -c %s ${shellQuote(target)})`,
     `test "$SIZE" -gt 1024 || { echo "ABORT: backup hanya $SIZE byte" >&2; exit 4; }`,
-    // Verifikasi isi arsip, bukan sekadar keberadaan berkas.
-    `docker exec -i "$DB_ID" pg_restore --list - < ${shellQuote(target)} > /dev/null || { echo "ABORT: arsip backup tidak dapat dibaca pg_restore" >&2; exit 4; }`,
+    // Verifikasi isi arsip, bukan sekadar keberadaan berkas. Nama arsip
+    // sengaja dihilangkan: pg_restore membaca stdin hanya ketika argumen itu
+    // tidak ada, sedangkan `-` diperlakukan sebagai nama berkas literal.
+    `docker exec -i "$DB_ID" pg_restore --list < ${shellQuote(target)} > /dev/null || { echo "ABORT: arsip backup tidak dapat dibaca pg_restore" >&2; exit 4; }`,
     `echo "BACKUP=${target}"`,
     `echo "SIZE=$SIZE"`,
     // Retention: hanya direktori predeploy, hanya berkas berpola predeploy.
