@@ -10,6 +10,38 @@
 import { production, shellQuote } from "@/lib/deployment"
 import { DATABASE_ARCHIVE, MEDIA_ARCHIVE } from "@/lib/backup-set"
 
+/**
+ * Jumlah baris yang sudah memiliki kunci media kanonik.
+ *
+ * Setiap tabel diperiksa lewat `information_schema` karena query ini juga
+ * dijalankan terhadap produksi yang BELUM menerima migrasi kunci media; di sana
+ * kolomnya memang belum ada. Kolom yang belum ada menghasilkan 0, bukan error —
+ * dan itu benar: tanpa kolom, mustahil ada kunci.
+ *
+ * Query ini murni `SELECT`. Ia tidak pernah menulis apa pun.
+ */
+export const MEDIA_KEY_COUNT_QUERY = [
+  `SELECT coalesce(sum(n), 0)::bigint FROM (`,
+  [
+    [`User`, `photoKey`],
+    [`SchoolSetting`, `faviconKey`],
+    [`SchoolSetting`, `appLogoKey`],
+    [`SarprasPhoto`, `mediaKey`],
+    [`EuksHeroImage`, `photoKey`],
+    [`EuksHeroLogo`, `logoKey`],
+    [`EuksOfficer`, `photoKey`],
+    [`EuksFacility`, `photoKey`],
+  ]
+    .map(
+      ([table, column]) =>
+        `SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns ` +
+        `WHERE table_name = '${table}' AND column_name = '${column}') ` +
+        `THEN (SELECT count(*) FROM "${table}" WHERE "${column}" IS NOT NULL) ELSE 0 END AS n`,
+    )
+    .join(" UNION ALL "),
+  `) AS keys`,
+].join(" ")
+
 /** Direktori induk set backup di produksi. */
 export const BACKUP_SET_ROOT = "/srv/backups/sismepda/sets"
 
@@ -53,10 +85,22 @@ export function backupSetScript(setId: string): string {
     `DB_BYTES=$(stat -c %s ${shellQuote(`${dir}/${DATABASE_ARCHIVE}`)})`,
     `echo "DATABASE_BYTES=$DB_BYTES"`,
     `echo "DATABASE_VERIFIED=yes"`,
-    // 3. Media, dibaca dari dalam container app supaya akar media persis sama
-    //    dengan yang dipakai aplikasi.
+    // 3. Keadaan media: fakta mentah dikumpulkan lebih dulu, keputusan diambil
+    //    di TypeScript (`classifyMediaActivation`), bukan di shell. Shell hanya
+    //    melaporkan apa adanya; menaruh aturan bootstrap di sini akan membuatnya
+    //    mustahil diuji tanpa produksi.
     `ROOT=$(docker exec "$APP_ID" printenv MEDIA_STORAGE_ROOT || true)`,
-    `test -n "$ROOT" || { echo "ABORT: MEDIA_STORAGE_ROOT tidak diset di container app" >&2; exit 5; }`,
+    `echo "RUNTIME_MEDIA_ROOT=${"$"}{ROOT:-}"`,
+    `if [ -n "$ROOT" ] && docker inspect --format '{{range .Mounts}}{{.Destination}}{{println}}{{end}}' "$APP_ID" | grep -qx "$ROOT"; then echo "RUNTIME_MEDIA_MOUNT=yes"; else echo "RUNTIME_MEDIA_MOUNT=no"; fi`,
+    // Jumlah baris yang sudah punya kunci media kanonik. Nol berarti media
+    // storage belum pernah dipakai; gagal query berarti TIDAK TERJAWAB, dan
+    // itu ditangani sebagai keadaan ambigu, bukan sebagai nol.
+    `if MEDIA_KEYS=$(docker exec -i "$DB_ID" psql -U "$PGU" -d "$PGDB" -At -c ${shellQuote(
+      MEDIA_KEY_COUNT_QUERY,
+    )} </dev/null 2>/dev/null); then echo "MEDIA_KEY_ROWS=$MEDIA_KEYS"; else echo "MEDIA_KEY_ROWS=unknown"; fi`,
+    `if [ -z "$ROOT" ]; then echo "MEDIA_ARCHIVE_SKIPPED=yes"; echo "SET_DIR=${dir}"; exit 0; fi`,
+    // 3b. Arsip media, dibaca dari dalam container app supaya akar media persis
+    //     sama dengan yang dipakai aplikasi.
     `MEDIA_COUNT=$(docker exec "$APP_ID" sh -c "find \\"$ROOT\\" -type f | wc -l" </dev/null)`,
     `docker exec "$APP_ID" tar -czf - -C "$ROOT" . > ${shellQuote(
       `${dir}/${MEDIA_ARCHIVE}`,

@@ -243,6 +243,28 @@ Selama byte legacy masih ada, dump database masih memuat semua media lama,
 sehingga belum ada risiko akut untuk media lama. Risiko itu nyata untuk media
 yang diunggah **setelah** deploy — media tersebut hanya ada di volume.
 
+### Dua mode backup set
+
+Aktivasi media storage memindahkan batas "apa itu backup lengkap", dan set
+backup produksi menyatakannya secara eksplisit lewat `backupMode` di
+`manifest.json`:
+
+| Mode | Kapan | Isi | `complete` |
+| --- | --- | --- | --- |
+| `pre-media-bootstrap` | sebelum media storage pernah aktif | `database.dump` saja | `false` |
+| `complete` | setelah media storage aktif | `database.dump` + `media.tar.gz` | `true` |
+
+Mode bootstrap sah karena sebelum aktivasi seluruh media memang berada di dalam
+dump database sebagai `bytea`. Mode ini tidak dapat dipilih operator: ia
+disimpulkan dari keadaan produksi (env runtime, keberadaan mount, dan jumlah
+baris berkunci media), dan keadaan yang ambigu selalu menghasilkan kegagalan,
+bukan bootstrap. Setelah aktivasi, hilangnya konfigurasi media adalah salah
+konfigurasi serius — bukan alasan untuk kembali ke mode bootstrap.
+
+Aturannya ada di `lib/media-activation.ts` (murni, teruji) dan dipakai oleh
+`scripts/backup-production.ts`. Set bootstrap **tidak** memenuhi syarat sebagai
+bekal migrasi media legacy.
+
 ### Perintah
 
 ```bash

@@ -84,8 +84,37 @@ container tanpa menyentuh named volume.
 
 Backup set membaca akar media dari container (`printenv MEDIA_STORAGE_ROOT`),
 bukan dari jalur yang ditulis ulang di skrip, sehingga backup selalu mengikuti
-konfigurasi yang sama dengan aplikasi. Bila variabel itu tidak diset, backup
-berhenti dengan `ABORT` alih-alih mengarsipkan direktori yang salah.
+konfigurasi yang sama dengan aplikasi. Akar media tidak pernah ditebak.
+
+Bila variabel itu tidak diset, arti keadaannya bergantung pada apakah media
+storage pernah aktif — dan itu diputuskan dari beberapa fakta sekaligus
+(env runtime, keberadaan mount, dan jumlah baris berkunci media di database),
+bukan dari env saja. Pada produksi pre-media hasilnya adalah backup bootstrap
+yang sah; pada produksi yang sudah memakai media hasilnya adalah `ABORT`.
+Keadaan yang tidak dapat dipastikan selalu `ABORT`.
+
+## Dua kasus yang tidak boleh dicampur
+
+Runbook PHASE 0–8 di bawah menjelaskan **rollout media pertama**, yang hanya
+terjadi sekali.
+
+```text
+ROLLOUT MEDIA PERTAMA (sekali seumur sistem)
+  preflight → backup bootstrap (DB saja) → deploy kode media-capable
+  → skema aditif → aktifkan volume → verifikasi media
+  → BACKUP LENGKAP DB+media → verifikasi → BERHENTI
+  → (jauh kemudian) pertimbangkan migrasi legacy
+```
+
+```text
+DEPLOYMENT NORMAL (setelah media aktif)
+  preflight → backup DB+media → verifikasi → deploy
+```
+
+Perbedaannya bukan gaya penulisan: pada kasus pertama dump database memang sudah
+memuat seluruh media; pada kasus kedua tidak, dan backup tanpa arsip media
+adalah backup yang tidak lengkap. Tooling menentukan sendiri kasus mana yang
+berlaku dari keadaan produksi, dan menolak melanjutkan bila keadaan itu ambigu.
 
 ## PHASE 0 — Prasyarat
 
@@ -96,17 +125,37 @@ npm run deploy:preflight
 Read-only terhadap produksi. Keluar non-nol dan mencetak `NOT READY` bila ada
 blocker. Jangan lanjut sebelum `READY`.
 
-## PHASE 1 — Backup lengkap
+## PHASE 1 — Backup sebelum rollout (mode bootstrap)
 
 ```bash
 npm run backup:production -- --dry-run   # tinjau rencana
 npm run backup:production
 ```
 
-Menghasilkan satu set pemulihan di `/srv/backups/sismepda/sets/<set-id>/`:
-`database.dump`, `media.tar.gz`, `manifest.json`.
+**Pada rollout pertama set ini sengaja TIDAK memuat `media.tar.gz`,** dan itu
+benar. Sebelum media storage aktif, seluruh media yang ada masih tersimpan
+sebagai `bytea` di dalam database, sehingga dump database sudah memuat
+semuanya. Manifest akan berbunyi:
 
-Urutannya **database dulu, media kemudian**. Alasannya: alur tulis media adalah
+```json
+{ "backupMode": "pre-media-bootstrap", "complete": false, "media": null }
+```
+
+`complete: false` bukan peringatan bahwa backup gagal; itu pernyataan jujur
+bahwa set ini bukan set DB+media. Set bootstrap **tidak** memenuhi syarat
+migrasi media legacy (lihat PHASE 6).
+
+Mode ini tidak dipilih operator dan tidak dapat dipaksakan lewat flag. Tooling
+menyimpulkannya dari keadaan produksi yang terbaca saat itu juga; bila keadaan
+itu ambigu, backup dibatalkan. Setelah media aktif, mode bootstrap tidak akan
+pernah terpilih lagi.
+
+Pada deployment normal (media sudah aktif) set yang sama menghasilkan
+`database.dump`, `media.tar.gz`, dan `manifest.json` dengan
+`"backupMode": "complete"`. Bila arsip media gagal dibuat pada keadaan itu,
+backup **abort** dan deploy tidak boleh dilanjutkan.
+
+Untuk set lengkap, urutannya **database dulu, media kemudian**. Alasannya: alur tulis media adalah
 `tulis berkas → perbarui referensi database`. Dengan urutan ini, berkas yang
 lahir di antara kedua backup tetap tertangkap arsip media meski belum ada di
 dump — kondisi yang aman (berkas yatim). Urutan terbalik akan menghasilkan
@@ -142,10 +191,26 @@ menambah kolom nullable dan melonggarkan CHECK constraint. Tidak ada
    termuat. Ini membuktikan fallback `bytea` hidup.
 3. Tulis media baru berhasil — lihat rencana smoke test di bawah.
 
-**CHECKPOINT.** Sampai titik ini belum ada byte legacy yang dipindahkan.
-Berhenti di sini aman dan boleh berlangsung berhari-hari.
+**CHECKPOINT.** `deploy:prod` mencetak status aktivasi media di akhir. Bila
+media baru saja aktif, keluarannya berbunyi:
 
-## PHASE 5 — Verifikasi backup menangkap media baru
+```text
+MEDIA STORAGE AKTIF
+BACKUP LENGKAP PASCA-AKTIVASI WAJIB DIBUAT
+MIGRASI MEDIA LEGACY BELUM DIIZINKAN
+```
+
+Sampai titik ini belum ada byte legacy yang dipindahkan. Berhenti di sini aman
+dan boleh berlangsung berhari-hari — dengan satu syarat: PHASE 5 dijalankan
+lebih dulu. Sejak media aktif, unggahan baru hanya ada di volume dan belum
+tercakup backup mana pun.
+
+## PHASE 5 — Backup lengkap pertama (WAJIB)
+
+Begitu volume media aktif, PostgreSQL berhenti menjadi satu-satunya sumber
+kebenaran: setiap unggahan baru sejak PHASE 4 hanya ada di volume. Set bootstrap
+dari PHASE 1 tidak memuatnya. Karena itu langkah ini wajib, bukan verifikasi
+formalitas.
 
 ```bash
 npm run backup:production
@@ -158,6 +223,20 @@ membuktikan media baru benar-benar masuk cakupan backup.
 
 **Tidak dijalankan otomatis oleh perintah deploy mana pun.** Ini tindakan
 eksplisit terpisah.
+
+**Prasyarat keras:** harus ada set backup terverifikasi dengan
+`"backupMode": "complete"` yang dibuat **setelah** media storage aktif (PHASE 5).
+Set `pre-media-bootstrap` dari PHASE 1 **tidak sah** untuk keperluan ini, karena
+dibuat sebelum volume ada dan tidak memuat satu pun berkas media.
+
+Alasannya konkret: migrasi legacy menulis berkas ke volume lalu memperbarui
+referensi database. Bila langkah itu gagal di tengah, pemulihan menuntut
+snapshot dari kedua sisi pada titik waktu yang sama. Set bootstrap hanya
+memulihkan sisi database, dan akan mengembalikannya ke keadaan di mana volume
+belum pernah ada.
+
+`npm run backup:production -- --verify <direktori set>` mencetak kelayakan ini
+secara eksplisit dan menolak set bootstrap untuk tujuan migrasi.
 
 ```bash
 npm run media:migrate -- --dry-run   # nol tulisan
@@ -240,6 +319,45 @@ Aplikasi tetap melayani: penyimpanan bila kuncinya valid, `bytea` bila tidak.
 - Media yang diunggah **setelah** rollout: hanya ada di penyimpanan → pulihkan
   dari arsip media set backup terakhir. Ini satu-satunya kelas data yang tidak
   punya jaring pengaman kedua, dan alasan backup media harus terjadwal.
+
+### F. Aktivasi gagal (build/migrasi lolos, container baru tidak sehat)
+
+Urutan yang dimaksud: backup bootstrap sukses → `git merge` sukses → build
+sukses → migrasi aditif sukses → aktivasi/health check gagal.
+
+1. Rollback aplikasi ke image sebelumnya bila perlu.
+2. **Biarkan skema aditif.** Kolom baru nullable; kode lama tidak menyebutnya.
+3. Legacy `bytea` tetap utuh dan tetap melayani seluruh gambar.
+4. Tidak ada migrasi media legacy yang berjalan — memang belum diizinkan.
+5. **Tidak perlu restore database.** Kegagalan ini tidak mengubah data;
+   restore destruktif justru menambah risiko tanpa manfaat.
+6. Set backup bootstrap dari PHASE 1 tetap tersimpan sebagai jaring pengaman.
+
+Keadaan akhir sama dengan sebelum rollout, kecuali kolom nullable tambahan.
+
+### G. Aktivasi sukses, backup lengkap PHASE 5 gagal
+
+Ini keadaan paling berbahaya dalam rollout, dan harus diperlakukan sebagai
+**rollout degraded — belum selesai**, bukan sebagai kegagalan kecil.
+
+Sebabnya: media storage sudah aktif, sehingga unggahan baru mendarat di volume
+dan **tidak** tercakup set bootstrap PHASE 1. Untuk berkas-berkas itu, saat ini
+tidak ada backup sama sekali.
+
+Tindakan:
+
+1. **Jangan** jalankan migrasi media legacy. Gerbang PHASE 6 memang menolaknya.
+2. Perbaiki penyebab kegagalan backup, lalu ulangi PHASE 5 sampai berhasil.
+3. Sampai backup lengkap berhasil, minimalkan unggahan baru. Lakukan rollout
+   pada jam sepi (di luar jam sekolah) supaya jendela ini sependek mungkin.
+4. Legacy `bytea` tetap menjadi jaring pengaman untuk seluruh media LAMA; yang
+   belum terlindungi hanyalah unggahan setelah aktivasi.
+5. Rollback aplikasi **tidak** memperbaiki keadaan ini dan dapat memperburuknya:
+   berkas yang sudah telanjur ditulis ke volume akan menjadi tidak terjangkau
+   oleh kode lama. Perbaiki backup, jangan mundur.
+
+SISMEPDA tidak memiliki maintenance mode, dan rollout ini bukan alasan untuk
+membuatnya. Pemilihan jam sepi sudah memadai untuk beban sekolah.
 
 ### Prinsip rollback database
 

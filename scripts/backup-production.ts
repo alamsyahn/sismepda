@@ -37,6 +37,7 @@ import path from "node:path"
 
 import {
   BackupSetError,
+  authorizeLegacyMediaMigration,
   DATABASE_ARCHIVE,
   MEDIA_ARCHIVE,
   BACKUP_SET_MANIFEST,
@@ -48,6 +49,7 @@ import {
 import { formatBytes } from "@/lib/rollout-preflight"
 import { production, redactSecrets, shellQuote } from "@/lib/deployment"
 import { BACKUP_SET_ROOT, backupSetScript } from "@/lib/backup-production-script"
+import { decideBackupMode, readActivationFacts } from "@/lib/media-activation"
 
 const args = process.argv.slice(2)
 const dryRun = args.includes("--dry-run")
@@ -92,12 +94,20 @@ async function verifyLocalSet(dir: string): Promise<number> {
   console.log(`Backup set ${manifest.setId}`)
   console.log(`  dibuat     ${manifest.createdAt}`)
   console.log(`  commit     ${manifest.commit ?? "(tidak dicatat)"}`)
+  console.log(`  mode       ${manifest.backupMode}`)
   console.log(`  database   ${manifest.database.file} ${formatBytes(manifest.database.bytes)}`)
-  console.log(
-    `  media      ${manifest.media.file} ${formatBytes(manifest.media.bytes)} (${manifest.media.fileCount} berkas)`,
-  )
+  if (manifest.media === null) {
+    console.log(
+      `  media      TIDAK BERLAKU — ${manifest.mediaNotApplicableReason ?? "alasan tidak dicatat"}`,
+    )
+  } else {
+    console.log(
+      `  media      ${manifest.media.file} ${formatBytes(manifest.media.bytes)} (${manifest.media.fileCount} berkas)`,
+    )
+  }
 
-  for (const component of [manifest.database, manifest.media]) {
+  const components = manifest.media === null ? [manifest.database] : [manifest.database, manifest.media]
+  for (const component of components) {
     const filePath = path.join(dir, component.file)
     try {
       const info = await stat(filePath)
@@ -113,11 +123,27 @@ async function verifyLocalSet(dir: string): Promise<number> {
   }
 
   if (problems.length > 0) {
-    console.log("\nSet TIDAK lengkap:")
+    console.log("\nSet BERMASALAH:")
     for (const problem of problems) console.log(`  - ${problem.message}`)
     return 1
   }
-  console.log("\nSet lengkap dan terverifikasi.")
+
+  // Verifikasi set sekaligus menjawab pertanyaan operasional berikutnya:
+  // bolehkah migrasi media legacy dijalankan dengan bekal set ini? Jawabannya
+  // diberikan di sini karena hanya di sinilah manifest benar-benar dibaca.
+  const migrationBlockers = authorizeLegacyMediaMigration(manifest)
+  if (manifest.backupMode === "pre-media-bootstrap") {
+    console.log("\nSet bootstrap terverifikasi (database saja; media belum berlaku).")
+  } else {
+    console.log("\nSet lengkap dan terverifikasi.")
+  }
+
+  if (migrationBlockers.length > 0) {
+    console.log("\nMigrasi media legacy BELUM boleh dijalankan dengan set ini:")
+    for (const blocker of migrationBlockers) console.log(`  - ${blocker.message}`)
+  } else {
+    console.log("\nSet ini memenuhi syarat sebagai backup sebelum migrasi media legacy.")
+  }
   return 0
 }
 
@@ -155,21 +181,38 @@ async function main(): Promise<number> {
   }
 
   const info = parse(result.stdout)
+
+  // Keadaan produksi ditentukan dari fakta yang baru saja dilaporkan skrip
+  // remote, bukan dari asumsi. Aturannya sendiri ada di `lib/media-activation`
+  // supaya dapat diuji tanpa produksi.
+  const decision = decideBackupMode(readActivationFacts(info), info.MEDIA_ARCHIVE_SKIPPED !== "yes")
+
+  console.log("\nKeadaan media produksi:")
+  for (const reason of decision.reasons) console.log(`  ${reason}`)
+
+  if (!decision.ok) {
+    fail(`BACKUP DIBATALKAN\n${decision.error}\nPerbaiki konfigurasi lebih dulu; jangan lanjutkan deploy.`)
+  }
+  const bootstrap = decision.bootstrap
+
   const manifest = buildManifest({
     setId,
     createdAt: now,
     commit: commit || null,
+    backupMode: bootstrap ? "pre-media-bootstrap" : "complete",
     database: {
       file: DATABASE_ARCHIVE,
       bytes: Number.parseInt(info.DATABASE_BYTES ?? "0", 10),
       verified: info.DATABASE_VERIFIED === "yes",
     },
-    media: {
-      file: MEDIA_ARCHIVE,
-      bytes: Number.parseInt(info.MEDIA_BYTES ?? "0", 10),
-      fileCount: Number.parseInt(info.MEDIA_COUNT ?? "0", 10),
-      verified: info.MEDIA_VERIFIED === "yes",
-    },
+    media: bootstrap
+      ? null
+      : {
+          file: MEDIA_ARCHIVE,
+          bytes: Number.parseInt(info.MEDIA_BYTES ?? "0", 10),
+          fileCount: Number.parseInt(info.MEDIA_COUNT ?? "0", 10),
+          verified: info.MEDIA_VERIFIED === "yes",
+        },
   })
 
   // Manifest ditulis dari mesin operator, lalu dikirim — bukan dirakit di shell
@@ -191,17 +234,33 @@ async function main(): Promise<number> {
   if (!upload.ok) fail(`Manifest gagal ditulis:\n${redactSecrets(upload.stderr).trim()}`)
 
   const problems = verifyBackupSet(manifest)
+  console.log(`\n  mode       ${manifest.backupMode}`)
   console.log(`  database   ${formatBytes(manifest.database.bytes)} terverifikasi`)
-  console.log(
-    `  media      ${formatBytes(manifest.media.bytes)} (${manifest.media.fileCount} berkas) terverifikasi`,
-  )
+  if (manifest.media === null) {
+    console.log("  media      TIDAK BERLAKU — belum ada media di luar database")
+  } else {
+    console.log(
+      `  media      ${formatBytes(manifest.media.bytes)} (${manifest.media.fileCount} berkas) terverifikasi`,
+    )
+  }
   console.log(`  manifest   ${path.join(localDir, BACKUP_SET_MANIFEST)} (salinan lokal)`)
 
   if (problems.length > 0) {
-    console.log("\nSet TIDAK lengkap:")
+    console.log("\nSet BERMASALAH:")
     for (const problem of problems) console.log(`  - ${problem.message}`)
     return 1
   }
+
+  if (manifest.backupMode === "pre-media-bootstrap") {
+    console.log(
+      "\nBackup bootstrap selesai dan terverifikasi.\n" +
+        "Set ini memuat SELURUH media yang ada, karena semuanya masih berada di dalam database.\n" +
+        "Set ini BUKAN backup lengkap: begitu media storage aktif, buat set lengkap baru\n" +
+        "sebelum mempertimbangkan migrasi media legacy.",
+    )
+    return 0
+  }
+
   console.log("\nBackup set lengkap.")
   return 0
 }

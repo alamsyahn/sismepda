@@ -29,6 +29,7 @@ import {
   remoteBackupScript,
   remoteBuildScript,
   remoteHealthScript,
+  remoteMediaActivationScript,
   remoteMigrateDeployScript,
   remoteMigrateStatusScript,
   remotePreflightScript,
@@ -356,6 +357,13 @@ export function runDeploy(runner: DeploymentRunner, options: DeployOptions = {})
     }
     ok("Healthcheck")
 
+    // Checkpoint media: apakah deploy ini yang mengaktifkan media storage?
+    // Ditanyakan SETELAH aktivasi, kepada container yang sekarang berjalan,
+    // karena hanya itu yang membuktikan keadaan baru.
+    const mediaState = remote(runner, remoteMediaActivationScript())
+    const mediaFacts = parseKeyValues(mediaState.stdout)
+    const mediaActive = mediaState.ok && mediaFacts.RUNTIME_MEDIA_MOUNT === "yes"
+
     runner.log(
       "\n" +
         banner("SISMEPDA DEPLOYMENT SUCCESS") +
@@ -366,10 +374,27 @@ export function runDeploy(runner: DeploymentRunner, options: DeployOptions = {})
           ["Backup", backupPath],
           ["Migration", describeMigration(outcome)],
           ["Application", "healthy"],
+          ["Media storage", mediaActive ? "AKTIF" : "belum aktif"],
         ]) +
         "\n" +
         "=".repeat(56),
     )
+
+    if (mediaActive) {
+      runner.log(
+        "\n" +
+          [
+            "MEDIA STORAGE AKTIF.",
+            "",
+            "Backup predeploy di atas dibuat SEBELUM aktivasi, sehingga ia tidak memuat",
+            "satu pun berkas media di luar database. Sejak titik ini dump PostgreSQL saja",
+            "bukan lagi backup lengkap.",
+            "",
+            "WAJIB berikutnya:   npm run backup:production",
+            "MIGRASI MEDIA LEGACY BELUM DIIZINKAN sampai set lengkap itu terverifikasi.",
+          ].join("\n"),
+      )
+    }
     return 0
   } finally {
     // Lock selalu dilepas, termasuk saat abort; tidak ada efek destruktif.

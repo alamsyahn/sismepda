@@ -24,6 +24,7 @@ import {
 } from "@/lib/rollout-preflight"
 import {
   BackupSetError,
+  authorizeLegacyMediaMigration,
   DATABASE_ARCHIVE,
   MEDIA_ARCHIVE,
   assertNoSecrets,
@@ -48,11 +49,17 @@ import {
   remoteActivateScript,
   remoteBuildScript,
   remoteLegacyMediaBytesScript,
+  remoteMediaActivationScript,
   remoteMigrateDeployScript,
   remotePreflightScript,
   remoteRolloutFactsScript,
 } from "@/lib/deployment"
-import { backupSetScript } from "@/lib/backup-production-script"
+import { MEDIA_KEY_COUNT_QUERY, backupSetScript } from "@/lib/backup-production-script"
+import {
+  classifyMediaActivation,
+  decideBackupMode,
+  readActivationFacts,
+} from "@/lib/media-activation"
 import { readFileSync } from "node:fs"
 import { tally } from "@/lib/media-verification"
 import { decideMediaRoot } from "@/lib/media-roots"
@@ -320,9 +327,15 @@ describe("kompatibilitas backup dan isolasi prodclone", () => {
     assert.doesNotMatch(script, /tar[^\n]*\s\/app\/media/)
   })
 
-  it("backup berhenti bila akar media tidak diset, bukan mengarang default", () => {
+  it("backup tidak pernah mengarang akar media", () => {
+    // Aturan aslinya tetap: akar media tidak boleh ditebak. Yang berubah hanya
+    // responsnya — ketiadaan akar kini dilaporkan sebagai fakta
+    // (MEDIA_ARCHIVE_SKIPPED) dan dinilai di TypeScript, bukan di-abort di
+    // shell, karena abort di sini membuat rollout pertama deadlock.
     const script = backupSetScript("backup-2026-09-14T213000Z")
-    assert.match(script, /ABORT: MEDIA_STORAGE_ROOT tidak diset/)
+    assert.ok(!script.includes("/app/media"), "akar media tidak boleh ditanam sebagai literal")
+    assert.match(script, /printenv MEDIA_STORAGE_ROOT/)
+    assert.match(script, /MEDIA_ARCHIVE_SKIPPED=yes/)
   })
 
   it("pengembangan tetap terpisah per peran tanpa menyentuh jalur produksi", () => {
@@ -691,9 +704,10 @@ describe("backup set — identitas bersama", () => {
     })
     assert.equal(manifest.setId, "backup-2026-09-14T213000Z")
     assert.equal(manifest.database.file, DATABASE_ARCHIVE)
-    assert.equal(manifest.media.file, MEDIA_ARCHIVE)
-    assert.equal(manifest.media.fileCount, 22)
+    assert.equal(manifest.media?.file, MEDIA_ARCHIVE)
+    assert.equal(manifest.media?.fileCount, 22)
     assert.equal(manifest.complete, true)
+    assert.equal(manifest.backupMode, "complete")
   })
 
   it("menandai set tidak lengkap bila salah satu komponen gagal verifikasi", () => {
@@ -795,8 +809,9 @@ describe("skrip backup produksi", () => {
     assert.match(script, /ARCHIVE_COUNT/)
   })
 
-  it("gagal bila MEDIA_STORAGE_ROOT tidak diset di container", () => {
-    assert.match(script, /MEDIA_STORAGE_ROOT tidak diset/)
+  it("melaporkan ketiadaan MEDIA_STORAGE_ROOT alih-alih menebaknya", () => {
+    assert.match(script, /RUNTIME_MEDIA_ROOT=/)
+    assert.match(script, /MEDIA_ARCHIVE_SKIPPED=yes/)
   })
 
   it("tidak menghapus backup lama", () => {
@@ -923,5 +938,357 @@ describe("verifikasi migrasi media", () => {
     ])
     assert.equal(result.legacyRetained, 1)
     assert.equal(result.valid, 2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Batas pre-media / media-active — bootstrap rollout pertama
+// ---------------------------------------------------------------------------
+
+describe("deteksi keadaan aktivasi media", () => {
+  /** Produksi lama: tidak ada root, tidak ada mount, belum ada kunci. */
+  const preMedia = {
+    runtimeMediaRoot: null,
+    runtimeMediaMountPresent: false,
+    mediaKeyMigrationApplied: false,
+    mediaKeyRowCount: 0,
+  }
+
+  it("mengenali produksi pre-media yang sesungguhnya", () => {
+    const verdict = classifyMediaActivation(preMedia)
+    assert.equal(verdict.state, "pre-media")
+    assert.equal(verdict.bootstrapAllowed, true)
+    assert.ok(verdict.reasons.join(" ").includes("bytea"))
+  })
+
+  it("TIDAK menyimpulkan bootstrap hanya karena MEDIA_STORAGE_ROOT hilang", () => {
+    // Env hilang tetapi volume masih ter-mount: itu salah konfigurasi, dan
+    // memperlakukannya sebagai legacy akan menghasilkan backup yang bohong.
+    const verdict = classifyMediaActivation({
+      ...preMedia,
+      runtimeMediaMountPresent: true,
+    })
+    assert.equal(verdict.state, "ambiguous")
+    assert.equal(verdict.bootstrapAllowed, false)
+  })
+
+  it("menolak bootstrap bila media sudah pernah dipakai walau env kini hilang", () => {
+    const verdict = classifyMediaActivation({
+      runtimeMediaRoot: null,
+      runtimeMediaMountPresent: false,
+      mediaKeyMigrationApplied: true,
+      mediaKeyRowCount: 12,
+    })
+    assert.equal(verdict.state, "ambiguous")
+    assert.equal(verdict.bootstrapAllowed, false)
+    assert.ok(verdict.reasons.join(" ").includes("BUKAN keadaan legacy"))
+  })
+
+  it("menolak bootstrap bila env ada tetapi mount hilang", () => {
+    const verdict = classifyMediaActivation({
+      runtimeMediaRoot: "/app/media",
+      runtimeMediaMountPresent: false,
+      mediaKeyMigrationApplied: true,
+      mediaKeyRowCount: 0,
+    })
+    assert.equal(verdict.state, "ambiguous")
+    assert.equal(verdict.bootstrapAllowed, false)
+  })
+
+  it("menolak bootstrap ketika jumlah kunci tidak terjawab", () => {
+    // Fail closed: pertanyaan yang tidak terjawab bukan jawaban nol.
+    const verdict = classifyMediaActivation({ ...preMedia, mediaKeyRowCount: null })
+    assert.equal(verdict.state, "ambiguous")
+    assert.equal(verdict.bootstrapAllowed, false)
+  })
+
+  it("mengenali media aktif meski belum ada satu kunci pun", () => {
+    // Volume sudah terpasang, jadi upload BERIKUTNYA langsung mendarat di sana:
+    // sejak titik ini dump database saja sudah tidak lengkap.
+    const verdict = classifyMediaActivation({
+      runtimeMediaRoot: "/app/media",
+      runtimeMediaMountPresent: true,
+      mediaKeyMigrationApplied: true,
+      mediaKeyRowCount: 0,
+    })
+    assert.equal(verdict.state, "media-active")
+    assert.equal(verdict.bootstrapAllowed, false)
+  })
+
+  it("setelah aktivasi pertama, deployment berikutnya tidak bisa kembali ke bootstrap", () => {
+    const afterActivation = {
+      runtimeMediaRoot: "/app/media",
+      runtimeMediaMountPresent: true,
+      mediaKeyMigrationApplied: true,
+      mediaKeyRowCount: 34,
+    }
+    assert.equal(classifyMediaActivation(afterActivation).bootstrapAllowed, false)
+    // Bahkan bila seseorang membuang env-nya, jawabannya tetap bukan bootstrap.
+    assert.equal(
+      classifyMediaActivation({ ...afterActivation, runtimeMediaRoot: null }).bootstrapAllowed,
+      false,
+    )
+  })
+})
+
+describe("semantik backup bootstrap", () => {
+  const bootstrapManifest = () =>
+    buildManifest({
+      setId: "backup-2026-09-14T213000Z",
+      createdAt: new Date("2026-09-14T21:30:00Z"),
+      backupMode: "pre-media-bootstrap",
+      database: component({ bytes: 9_000_000 }),
+      media: null,
+    })
+
+  it("set bootstrap TIDAK PERNAH ditandai lengkap", () => {
+    const manifest = bootstrapManifest()
+    assert.equal(manifest.backupMode, "pre-media-bootstrap")
+    assert.equal(manifest.complete, false)
+    assert.equal(manifest.media, null)
+    assert.ok(manifest.mediaNotApplicableReason)
+  })
+
+  it("set bootstrap lolos verifikasi tanpa arsip media", () => {
+    // Arsip media yang tidak ada bukan cacat di sini: seluruh media memang
+    // masih berada di dalam dump database itu sendiri.
+    assert.deepEqual(verifyBackupSet(bootstrapManifest()), [])
+  })
+
+  it("menolak set complete yang tidak memuat media", () => {
+    assert.throws(
+      () =>
+        buildManifest({
+          setId: "backup-2026-09-14T213000Z",
+          createdAt: new Date("2026-09-14T21:30:00Z"),
+          backupMode: "complete",
+          database: component({ bytes: 9_000_000 }),
+          media: null,
+        }),
+      /wajib memuat arsip media/,
+    )
+  })
+
+  it("menolak set bootstrap yang justru memuat media", () => {
+    assert.throws(
+      () =>
+        buildManifest({
+          setId: "backup-2026-09-14T213000Z",
+          createdAt: new Date("2026-09-14T21:30:00Z"),
+          backupMode: "pre-media-bootstrap",
+          database: component({ bytes: 9_000_000 }),
+          media: { ...component({ file: MEDIA_ARCHIVE, bytes: 7_000_000 }), fileCount: 22 },
+        }),
+      /sudah aktif/,
+    )
+  })
+
+  it("manifest bootstrap yang mengaku lengkap tetap dibaca sebagai tidak lengkap", () => {
+    const parsed = parseBackupSetManifest({
+      version: 1,
+      setId: "backup-2026-09-14T213000Z",
+      createdAt: "2026-09-14T21:30:00.000Z",
+      commit: null,
+      backupMode: "pre-media-bootstrap",
+      database: { file: DATABASE_ARCHIVE, bytes: 9_000_000, verified: true },
+      media: null,
+      mediaNotApplicableReason: "apa pun",
+      complete: true,
+    })
+    assert.equal(parsed.complete, false)
+  })
+
+  it("manifest lama tanpa backupMode dibaca sebagai complete", () => {
+    const parsed = parseBackupSetManifest({
+      version: 1,
+      setId: "backup-2026-09-14T213000Z",
+      createdAt: "2026-09-14T21:30:00.000Z",
+      commit: null,
+      database: { file: DATABASE_ARCHIVE, bytes: 9_000_000, verified: true },
+      media: { file: MEDIA_ARCHIVE, bytes: 7_000_000, verified: true, fileCount: 22 },
+      complete: true,
+    })
+    assert.equal(parsed.backupMode, "complete")
+    assert.equal(parsed.complete, true)
+  })
+})
+
+describe("gerbang migrasi media legacy", () => {
+  it("set bootstrap TIDAK cukup untuk mengizinkan migrasi legacy", () => {
+    const manifest = buildManifest({
+      setId: "backup-2026-09-14T213000Z",
+      createdAt: new Date("2026-09-14T21:30:00Z"),
+      backupMode: "pre-media-bootstrap",
+      database: component({ bytes: 9_000_000 }),
+      media: null,
+    })
+    const blockers = authorizeLegacyMediaMigration(manifest)
+    assert.equal(blockers.length, 1)
+    assert.equal(blockers[0].code, "bootstrap-not-sufficient")
+  })
+
+  it("set lengkap terverifikasi mengizinkan migrasi legacy", () => {
+    const manifest = buildManifest({
+      setId: "backup-2026-09-15T090000Z",
+      createdAt: new Date("2026-09-15T09:00:00Z"),
+      database: component({ bytes: 9_000_000 }),
+      media: { ...component({ file: MEDIA_ARCHIVE, bytes: 7_000_000 }), fileCount: 22 },
+    })
+    assert.deepEqual(authorizeLegacyMediaMigration(manifest), [])
+  })
+
+  it("ketiadaan backup memblokir migrasi legacy", () => {
+    assert.equal(authorizeLegacyMediaMigration(null)[0].code, "no-backup")
+  })
+})
+
+describe("skrip backup produksi pada dua keadaan", () => {
+  const script = backupSetScript("backup-2026-09-14T213000Z")
+
+  it("tidak lagi abort ketika MEDIA_STORAGE_ROOT belum ada", () => {
+    // Inilah deadlock rollout pertama: abort di sini membuat `git merge` yang
+    // membawa overlay tidak pernah terjadi.
+    assert.ok(!script.includes('ABORT: MEDIA_STORAGE_ROOT tidak diset'))
+    assert.ok(script.includes("MEDIA_ARCHIVE_SKIPPED=yes"))
+  })
+
+  it("selalu melaporkan fakta keadaan media", () => {
+    assert.ok(script.includes("RUNTIME_MEDIA_ROOT="))
+    assert.ok(script.includes("RUNTIME_MEDIA_MOUNT="))
+    assert.ok(script.includes("MEDIA_KEY_ROWS="))
+  })
+
+  it("melaporkan kunci tidak terjawab sebagai unknown, bukan nol", () => {
+    assert.ok(script.includes('MEDIA_KEY_ROWS=unknown'))
+  })
+
+  it("query kunci media hanya membaca", () => {
+    const upper = MEDIA_KEY_COUNT_QUERY.toUpperCase()
+    for (const forbidden of ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE"]) {
+      assert.ok(!upper.includes(forbidden), `query memuat ${forbidden}`)
+    }
+    assert.ok(upper.startsWith("SELECT"))
+  })
+
+  it("query kunci media tahan terhadap kolom yang belum ada", () => {
+    // Produksi pre-media belum menerima migrasi kunci; query harus menjawab 0,
+    // bukan gagal, agar klasifikasi tidak berubah menjadi ambigu palsu.
+    assert.ok(MEDIA_KEY_COUNT_QUERY.includes("information_schema.columns"))
+  })
+
+  it("arsip media tetap dibuat ketika akar media ada", () => {
+    assert.ok(script.includes("MEDIA_VERIFIED=yes"))
+    assert.ok(script.includes("tar -czf -"))
+  })
+})
+
+describe("simulasi dua keadaan produksi (fixture, tanpa produksi)", () => {
+  /** Keluaran apa adanya dari skrip remote pada produksi PRE-MEDIA. */
+  const STATE_A = [
+    "DATABASE_BYTES=9000000",
+    "DATABASE_VERIFIED=yes",
+    "RUNTIME_MEDIA_ROOT=",
+    "RUNTIME_MEDIA_MOUNT=no",
+    "MEDIA_KEY_ROWS=0",
+    "MEDIA_ARCHIVE_SKIPPED=yes",
+    "SET_DIR=/srv/backups/sismepda/sets/backup-2026-09-14T213000Z",
+  ].join("\n")
+
+  /** Keluaran pada produksi setelah media storage aktif. */
+  const STATE_B = [
+    "DATABASE_BYTES=9000000",
+    "DATABASE_VERIFIED=yes",
+    "RUNTIME_MEDIA_ROOT=/app/media",
+    "RUNTIME_MEDIA_MOUNT=yes",
+    "MEDIA_KEY_ROWS=22",
+    "MEDIA_BYTES=7000000",
+    "MEDIA_COUNT=22",
+    "MEDIA_VERIFIED=yes",
+    "SET_DIR=/srv/backups/sismepda/sets/backup-2026-09-15T090000Z",
+  ].join("\n")
+
+  function parseOutput(output: string): Record<string, string> {
+    const result: Record<string, string> = {}
+    for (const line of output.split(/\r?\n/)) {
+      const match = /^([A-Z_]+)=(.*)$/.exec(line.trim())
+      if (match) result[match[1]] = match[2]
+    }
+    return result
+  }
+
+  function decide(output: string) {
+    const info = parseOutput(output)
+    return decideBackupMode(readActivationFacts(info), info.MEDIA_ARCHIVE_SKIPPED !== "yes")
+  }
+
+  it("STATE A — backup bootstrap sah dan tidak deadlock", () => {
+    const decision = decide(STATE_A)
+    assert.equal(decision.ok, true)
+    assert.equal(decision.ok && decision.bootstrap, true)
+  })
+
+  it("STATE B — backup lengkap wajib dan bukan bootstrap", () => {
+    const decision = decide(STATE_B)
+    assert.equal(decision.ok, true)
+    assert.equal(decision.ok && decision.bootstrap, false)
+  })
+
+  it("STATE B tanpa env media — gagal keras, bukan turun ke bootstrap", () => {
+    const broken = STATE_B.replace("RUNTIME_MEDIA_ROOT=/app/media", "RUNTIME_MEDIA_ROOT=")
+    const decision = decide(broken)
+    assert.equal(decision.ok, false)
+    assert.ok(!decision.ok && decision.error.length > 0)
+  })
+
+  it("STATE B tanpa mount — gagal keras", () => {
+    const broken = STATE_B.replace("RUNTIME_MEDIA_MOUNT=yes", "RUNTIME_MEDIA_MOUNT=no")
+    assert.equal(decide(broken).ok, false)
+  })
+
+  it("media aktif tetapi arsip media tidak dibuat — deploy diblokir", () => {
+    const broken = `${STATE_B}\nMEDIA_ARCHIVE_SKIPPED=yes`
+    const decision = decide(broken)
+    assert.equal(decision.ok, false)
+    assert.ok(!decision.ok && decision.error.includes("BUKAN"))
+  })
+
+  it("pre-media tetapi arsip media justru dibuat — ditolak sebagai kontradiksi", () => {
+    const broken = STATE_A.replace("MEDIA_ARCHIVE_SKIPPED=yes", "MEDIA_VERIFIED=yes")
+    assert.equal(decide(broken).ok, false)
+  })
+
+  it("jumlah kunci tidak terjawab — ditolak, tidak dianggap nol", () => {
+    const broken = STATE_A.replace("MEDIA_KEY_ROWS=0", "MEDIA_KEY_ROWS=unknown")
+    assert.equal(decide(broken).ok, false)
+  })
+
+  it("set bootstrap STATE A tidak mengizinkan migrasi legacy, set STATE B mengizinkan", () => {
+    const bootstrapSet = buildManifest({
+      setId: "backup-2026-09-14T213000Z",
+      createdAt: new Date("2026-09-14T21:30:00Z"),
+      backupMode: "pre-media-bootstrap",
+      database: component({ bytes: 9_000_000 }),
+      media: null,
+    })
+    const completeSet = buildManifest({
+      setId: "backup-2026-09-15T090000Z",
+      createdAt: new Date("2026-09-15T09:00:00Z"),
+      database: component({ bytes: 9_000_000 }),
+      media: { ...component({ file: MEDIA_ARCHIVE, bytes: 7_000_000 }), fileCount: 22 },
+    })
+    assert.equal(authorizeLegacyMediaMigration(bootstrapSet).length, 1)
+    assert.deepEqual(authorizeLegacyMediaMigration(completeSet), [])
+  })
+})
+
+describe("checkpoint setelah aktivasi", () => {
+  it("skrip checkpoint hanya membaca", () => {
+    const script = remoteMediaActivationScript()
+    assertRemoteCommandSafe(script)
+    assert.match(script, /printenv MEDIA_STORAGE_ROOT/)
+    assert.match(script, /docker inspect/)
+    for (const forbidden of ["rm ", "mkdir", "tar -c", "pg_restore", "down -v"]) {
+      assert.ok(!script.includes(forbidden), `checkpoint memuat ${forbidden}`)
+    }
   })
 })

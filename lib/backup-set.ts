@@ -30,6 +30,19 @@ export type BackupComponent = {
   verified: boolean
 }
 
+/**
+ * Mode sebuah set backup.
+ *
+ * `complete` — database DAN media terverifikasi. Satu-satunya mode yang boleh
+ * dipakai sebagai bukti media terlindungi.
+ *
+ * `pre-media-bootstrap` — dibuat sebelum canonical media storage aktif, ketika
+ * seluruh media masih berada di kolom bytea PostgreSQL. Set semacam ini utuh
+ * SEBAGAI DATA, tetapi tidak pernah boleh disebut `complete`: begitu media
+ * storage aktif, set ini tidak lagi mewakili seluruh media.
+ */
+export type BackupMode = "complete" | "pre-media-bootstrap"
+
 export type BackupSetManifest = {
   version: number
   /** Pengenal set; sama untuk database dan media. */
@@ -38,11 +51,28 @@ export type BackupSetManifest = {
   createdAt: string
   /** Commit aplikasi bila diketahui. */
   commit: string | null
+  /** Mode set; menentukan arti ketiadaan arsip media. */
+  backupMode: BackupMode
   database: BackupComponent
-  media: BackupComponent & { fileCount: number }
-  /** Set dianggap utuh hanya bila kedua komponen terverifikasi. */
+  /**
+   * Komponen media. `null` hanya sah pada mode `pre-media-bootstrap`.
+   */
+  media: (BackupComponent & { fileCount: number }) | null
+  /**
+   * Alasan media tidak ada, pada mode bootstrap. Bukan hiasan: manifest yang
+   * kelak dibaca operator lain harus menjelaskan dirinya sendiri.
+   */
+  mediaNotApplicableReason: string | null
+  /**
+   * Set dianggap utuh hanya bila mode `complete` dan kedua komponen
+   * terverifikasi. Set bootstrap SELALU `false`.
+   */
   complete: boolean
 }
+
+/** Alasan baku untuk set bootstrap. */
+export const BOOTSTRAP_MEDIA_REASON =
+  "canonical media storage belum aktif; seluruh media yang ada masih tersimpan di kolom bytea PostgreSQL"
 
 // ---------------------------------------------------------------------------
 // Penamaan
@@ -119,19 +149,43 @@ export function buildManifest(input: {
   setId: string
   createdAt: Date
   commit?: string | null
+  /** Baku `complete`; pemanggil bootstrap harus menyatakannya eksplisit. */
+  backupMode?: BackupMode
   database: BackupComponent
-  media: BackupComponent & { fileCount: number }
+  media?: (BackupComponent & { fileCount: number }) | null
 }): BackupSetManifest {
   assertBackupSetId(input.setId)
+
+  const backupMode: BackupMode = input.backupMode ?? "complete"
+  const media = input.media ?? null
+
+  // Mode dan isi tidak boleh saling membantah. Sebuah set yang menyebut
+  // dirinya lengkap tanpa arsip media adalah persis kebohongan yang seluruh
+  // fase ini berusaha cegah, jadi ia ditolak di tempat pembuatannya.
+  if (backupMode === "complete" && media === null) {
+    throw new BackupSetError(
+      "Set bermode complete wajib memuat arsip media. Bila media storage belum aktif, " +
+        'gunakan mode "pre-media-bootstrap".',
+    )
+  }
+  if (backupMode === "pre-media-bootstrap" && media !== null) {
+    throw new BackupSetError(
+      "Set bootstrap tidak boleh memuat arsip media: keberadaannya membuktikan media storage " +
+        "sudah aktif, sehingga set harus bermode complete.",
+    )
+  }
 
   const manifest: BackupSetManifest = {
     version: BACKUP_SET_MANIFEST_VERSION,
     setId: input.setId,
     createdAt: input.createdAt.toISOString(),
     commit: input.commit?.trim() || null,
+    backupMode,
     database: input.database,
-    media: input.media,
-    complete: input.database.verified && input.media.verified,
+    media,
+    mediaNotApplicableReason: backupMode === "pre-media-bootstrap" ? BOOTSTRAP_MEDIA_REASON : null,
+    // Set bootstrap tidak pernah lengkap, betapapun mulus pembuatannya.
+    complete: backupMode === "complete" && input.database.verified && (media?.verified ?? false),
   }
 
   assertNoSecrets(manifest)
@@ -150,10 +204,32 @@ export function parseBackupSetManifest(raw: unknown): BackupSetManifest {
   assertBackupSetId(String(value.setId ?? ""))
 
   const database = parseComponent(value.database, "database")
-  const mediaBase = parseComponent(value.media, "media")
-  const fileCount = (value.media as Record<string, unknown> | undefined)?.fileCount
-  if (typeof fileCount !== "number" || !Number.isInteger(fileCount) || fileCount < 0) {
-    throw new BackupSetError("media.fileCount tidak sah.")
+
+  // Mode tidak boleh ditebak dari ada/tidaknya media: manifest lama (sebelum
+  // bootstrap dikenal) selalu punya media, sedangkan manifest tanpa mode yang
+  // juga tanpa media adalah berkas rusak, bukan bootstrap.
+  const rawMode = value.backupMode
+  const backupMode: BackupMode =
+    rawMode === undefined || rawMode === "complete"
+      ? "complete"
+      : rawMode === "pre-media-bootstrap"
+        ? "pre-media-bootstrap"
+        : (() => {
+            throw new BackupSetError(`Mode backup tidak dikenal: ${String(rawMode)}`)
+          })()
+
+  let media: (BackupComponent & { fileCount: number }) | null = null
+  if (backupMode === "pre-media-bootstrap") {
+    if (value.media !== null && value.media !== undefined) {
+      throw new BackupSetError("Set bootstrap tidak boleh memuat komponen media.")
+    }
+  } else {
+    const mediaBase = parseComponent(value.media, "media")
+    const fileCount = (value.media as Record<string, unknown> | undefined)?.fileCount
+    if (typeof fileCount !== "number" || !Number.isInteger(fileCount) || fileCount < 0) {
+      throw new BackupSetError("media.fileCount tidak sah.")
+    }
+    media = { ...mediaBase, fileCount }
   }
 
   return {
@@ -161,9 +237,13 @@ export function parseBackupSetManifest(raw: unknown): BackupSetManifest {
     setId: String(value.setId),
     createdAt: String(value.createdAt ?? ""),
     commit: typeof value.commit === "string" ? value.commit : null,
+    backupMode,
     database,
-    media: { ...mediaBase, fileCount },
-    complete: value.complete === true,
+    media,
+    mediaNotApplicableReason:
+      typeof value.mediaNotApplicableReason === "string" ? value.mediaNotApplicableReason : null,
+    // Set bootstrap tidak pernah lengkap, bahkan bila berkasnya mengaku begitu.
+    complete: backupMode === "complete" && value.complete === true,
   }
 }
 
@@ -197,14 +277,35 @@ export function verifyBackupSet(manifest: BackupSetManifest): BackupSetProblem[]
       message: "Arsip database belum lolos verifikasi pg_restore --list.",
     })
   }
+  if (manifest.database.bytes <= 0) {
+    problems.push({ code: "database-empty", message: "Arsip database kosong." })
+  }
+
+  // Pada mode bootstrap, ketiadaan arsip media BUKAN cacat: seluruh media
+  // memang masih ada di dalam dump database itu sendiri. Yang harus dijaga
+  // adalah agar set ini tidak pernah menyamar sebagai set lengkap.
+  if (manifest.backupMode === "pre-media-bootstrap") {
+    if (manifest.complete) {
+      problems.push({
+        code: "bootstrap-mislabeled",
+        message: "Set bootstrap ditandai lengkap. Itu tidak pernah benar.",
+      })
+    }
+    return problems
+  }
+
+  if (manifest.media === null) {
+    problems.push({
+      code: "media-missing",
+      message: "Set bermode complete tetapi tidak memuat arsip media sama sekali.",
+    })
+    return problems
+  }
   if (!manifest.media.verified) {
     problems.push({
       code: "media-unverified",
       message: "Arsip media belum lolos verifikasi checksum.",
     })
-  }
-  if (manifest.database.bytes <= 0) {
-    problems.push({ code: "database-empty", message: "Arsip database kosong." })
   }
   if (manifest.media.fileCount === 0) {
     problems.push({
@@ -217,6 +318,58 @@ export function verifyBackupSet(manifest: BackupSetManifest): BackupSetProblem[]
   }
 
   return problems
+}
+
+/**
+ * Bolehkah migrasi media legacy dijalankan dengan berbekal set ini?
+ *
+ * Migrasi legacy MENULIS berkas ke media storage. Bila terjadi kesalahan
+ * sesudahnya, pemulihan hanya mungkin bila ada satu set yang memuat database
+ * DAN media pada keadaan setelah media storage aktif.
+ *
+ * Set bootstrap tidak memenuhi syarat itu, dan justru berbahaya bila dikira
+ * memenuhi: ia dibuat ketika volume media belum ada, sehingga tidak memuat satu
+ * pun berkas yang lahir setelah aktivasi.
+ */
+export function authorizeLegacyMediaMigration(
+  manifest: BackupSetManifest | null,
+): BackupSetProblem[] {
+  if (manifest === null) {
+    return [
+      {
+        code: "no-backup",
+        message:
+          "Tidak ada set backup yang dapat diperiksa. Migrasi media legacy tidak diizinkan " +
+          "tanpa set lengkap yang terverifikasi.",
+      },
+    ]
+  }
+
+  if (manifest.backupMode === "pre-media-bootstrap") {
+    return [
+      {
+        code: "bootstrap-not-sufficient",
+        message:
+          `Set ${manifest.setId} bermode pre-media-bootstrap: ia dibuat SEBELUM media storage ` +
+          "aktif dan tidak memuat arsip media. Buat set lengkap baru setelah aktivasi, " +
+          "lalu ulangi.",
+      },
+    ]
+  }
+
+  const problems = verifyBackupSet(manifest)
+  if (problems.length > 0) return problems
+
+  if (!manifest.complete) {
+    return [
+      {
+        code: "not-complete",
+        message: `Set ${manifest.setId} tidak ditandai lengkap.`,
+      },
+    ]
+  }
+
+  return []
 }
 
 // ---------------------------------------------------------------------------

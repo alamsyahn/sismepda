@@ -375,6 +375,23 @@ export function remoteStatusScript(): string {
 }
 
 /**
+ * Keadaan media pada container app yang SEDANG berjalan — READ-ONLY.
+ *
+ * Dipakai sebagai checkpoint setelah aktivasi: pertanyaannya bukan "apa yang
+ * dikonfigurasi", melainkan "apakah aplikasi yang hidup sekarang benar-benar
+ * memakai media storage". Hanya `printenv` dan `docker inspect`.
+ */
+export function remoteMediaActivationScript(): string {
+  return script(
+    `APP_ID=$(${compose} ps -q ${production.appService} </dev/null)`,
+    `test -n "$APP_ID" || { echo "ABORT: container app tidak berjalan" >&2; exit 2; }`,
+    `ROOT=$(docker exec "$APP_ID" printenv MEDIA_STORAGE_ROOT || true)`,
+    `echo "RUNTIME_MEDIA_ROOT=${"$"}{ROOT:-}"`,
+    `if [ -n "$ROOT" ] && docker inspect --format '{{range .Mounts}}{{.Destination}}{{println}}{{end}}' "$APP_ID" | grep -qx "$ROOT"; then echo "RUNTIME_MEDIA_MOUNT=yes"; else echo "RUNTIME_MEDIA_MOUNT=no"; fi`,
+  )
+}
+
+/**
  * Pengumpulan fakta rollout media — READ-ONLY sepenuhnya.
  *
  * Tidak ada `mkdir`, `touch`, `cp`, atau `docker exec` yang menulis. Kemampuan
