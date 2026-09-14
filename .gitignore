@@ -28,6 +28,10 @@ app/generated/prisma/
 .media/
 .media-backups/
 
+# Salinan lokal manifest set backup produksi. Berisi metadata backup nyata
+# (nama host, path, ukuran) dan tidak pernah boleh masuk Git.
+.backup-sets/
+
 # Common ignores
 node_modules
 .next/
