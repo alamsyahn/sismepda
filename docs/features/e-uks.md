@@ -660,8 +660,10 @@ In the hero the logo row sits in the flex flow with `mb-auto` rather than being
 absolutely positioned, so it cannot overlap the title when many logos wrap on a
 narrow screen. `EuksHeroLogos` is wrapped in `memo`: the hero re-renders on
 every slide change and the logos do not depend on the slide, so memoising keeps
-the same DOM nodes alive and the logos genuinely never blink. Max width is set
-to four times the height at each breakpoint (36/40/48 px → 144/160/192 px) so
+the same DOM nodes alive and the logos genuinely never blink. Logos are drawn
+directly on the carousel photo with no plate, border, padding, or blur behind
+them; legibility relies on the hero's own dark overlay. Max width is set
+to four times the height at each breakpoint (48/56/64 px → 192/224/256 px) so
 that any logo up to a 4:1 ratio displays at full height, keeping the row
 visually even.
 

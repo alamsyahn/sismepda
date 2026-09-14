@@ -27,11 +27,10 @@ function EuksHeroLogosImpl({ logos }: { logos: EuksHeroLogoItem[] }) {
       {logos.map((logo) => (
         <li
           key={logo.id}
-          // Wadah tipis dengan blur: latar hero berupa foto yang warnanya
-          // berganti-ganti, jadi logo gelap di atas foto gelap perlu alas.
-          // Sengaja dibuat samar — tugasnya menjaga keterbacaan, bukan menjadi
-          // kotak yang mencuri perhatian dari judul.
-          className="flex items-center rounded-lg border border-white/20 bg-white/80 px-2.5 py-1.5 shadow-sm backdrop-blur-sm sm:px-3 sm:py-2 dark:bg-white/85"
+          // Logo duduk langsung di atas foto carousel: tanpa alas, border,
+          // padding, bayangan, maupun blur. Keterbacaan sepenuhnya bergantung
+          // pada overlay gelap milik hero dan pada logo itu sendiri.
+          className="flex items-center"
         >
           {/*
             Tinggi dikunci, lebar dibiarkan otomatis (`w-auto`), dan
@@ -40,7 +39,7 @@ function EuksHeroLogosImpl({ logos }: { logos: EuksHeroLogoItem[] }) {
             atau terpotong.
 
             Batas lebarnya sengaja disetel empat kali tinggi pada setiap
-            breakpoint (36/40/48px → 144/160/192px). Angka itu bukan hiasan:
+            breakpoint (48/56/64px → 192/224/256px). Angka itu bukan hiasan:
             selama rasio logo tidak melebihi 4:1 — praktis semua logo institusi,
             termasuk yang berbentuk lencana memanjang — logo tampil pada tinggi
             penuh sehingga deretannya benar-benar seragam. Batas ini baru
@@ -56,7 +55,7 @@ function EuksHeroLogosImpl({ logos }: { logos: EuksHeroLogoItem[] }) {
           <img
             src={logo.url}
             alt={`Logo ${logo.name}`}
-            className="h-9 w-auto max-w-36 object-contain sm:h-10 sm:max-w-40 lg:h-12 lg:max-w-48"
+            className="h-12 w-auto max-w-48 object-contain sm:h-14 sm:max-w-56 lg:h-16 lg:max-w-64"
             loading="eager"
             decoding="async"
             draggable={false}
