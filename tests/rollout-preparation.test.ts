@@ -16,6 +16,7 @@ import {
   evaluateRollout,
   isPersistentMount,
   mountCovering,
+  parseConfiguredMount,
   rolloutReady,
   type ContainerMount,
   type RolloutCheck,
@@ -35,6 +36,7 @@ import {
 } from "@/lib/backup-set"
 import {
   parseAppliedMigrations,
+  parseConfiguredVolumes,
   parseMounts,
   pendingMigrations,
   runRolloutPreflight,
@@ -42,11 +44,18 @@ import {
 import {
   assertRemoteCommandSafe,
   production,
+  productionComposeFiles,
+  remoteActivateScript,
+  remoteBuildScript,
   remoteLegacyMediaBytesScript,
+  remoteMigrateDeployScript,
+  remotePreflightScript,
   remoteRolloutFactsScript,
 } from "@/lib/deployment"
 import { backupSetScript } from "@/lib/backup-production-script"
+import { readFileSync } from "node:fs"
 import { tally } from "@/lib/media-verification"
+import { decideMediaRoot } from "@/lib/media-roots"
 import type { CommandResult, DeploymentRunner } from "@/lib/deployment-flow"
 
 // ---------------------------------------------------------------------------
@@ -72,6 +81,9 @@ function facts(overrides: Partial<RolloutFacts> = {}): RolloutFacts {
     databaseBytes: 90 * 1024 * 1024,
     backupDirWritable: true,
     pendingMigrations: ["20260914160000_add_media_storage_keys"],
+    configuredMediaMount: "media:/app/media",
+    configuredVolumes: ["media", "database"],
+    resolvedMediaVolumeName: "sismepda_media_data",
     ...overrides,
   }
 }
@@ -106,14 +118,31 @@ describe("preflight rollout — konfigurasi media", () => {
     assert.equal(checkFor(checks, "media-root").status, "blocker")
   })
 
-  it("memblokir bila tidak ada mount yang menampung akar media", () => {
-    const checks = evaluateRollout(
-      facts({
-        appMounts: [{ ...persistentVolume, destination: "/var/lib/other" }],
-      }),
-    )
+  it("memblokir bila konfigurasi tidak mendeklarasikan mount media", () => {
+    const checks = evaluateRollout(facts({ configuredMediaMount: null }))
     assert.equal(checkFor(checks, "media-mount").status, "blocker")
     assert.match(checkFor(checks, "media-mount").detail, /ephemeral/)
+    assert.equal(rolloutReady(checks), false)
+  })
+
+  it("memblokir bila mount konfigurasi tidak cocok dengan MEDIA_STORAGE_ROOT", () => {
+    const checks = evaluateRollout(
+      facts({ configuredMediaMount: "media:/app/uploads" }),
+    )
+    assert.equal(checkFor(checks, "media-mount").status, "blocker")
+    assert.match(checkFor(checks, "media-mount").detail, /tidak cocok/)
+  })
+
+  it("memblokir volume yang dipasang tetapi tidak dideklarasikan", () => {
+    const checks = evaluateRollout(facts({ configuredVolumes: ["database"] }))
+    assert.equal(checkFor(checks, "media-mount").status, "blocker")
+  })
+
+  it("memblokir bind mount rapuh sebagai sumber media produksi", () => {
+    const checks = evaluateRollout(
+      facts({ configuredMediaMount: "/var/lib/sismepda/media:/app/media" }),
+    )
+    assert.equal(checkFor(checks, "media-mount").status, "blocker")
   })
 
   it("memblokir mount tmpfs walaupun jalurnya cocok", () => {
@@ -130,7 +159,27 @@ describe("preflight rollout — konfigurasi media", () => {
     assert.equal(checkFor(checks, "media-mount").status, "blocker")
   })
 
-  it("menerima bind mount host sebagai penyimpanan persisten", () => {
+  it("menerima konfigurasi benar walau container berjalan belum punya volume", () => {
+    // Keadaan normal SEBELUM deploy pertama yang membawa volume media.
+    const checks = evaluateRollout(facts({ appMounts: [] }))
+    assert.equal(checkFor(checks, "media-mount").status, "ok")
+    assert.match(checkFor(checks, "media-mount").detail, /setelah deploy/)
+  })
+
+  it("memblokir volume media tanpa nama eksplisit", () => {
+    const checks = evaluateRollout(facts({ resolvedMediaVolumeName: null }))
+    assert.equal(checkFor(checks, "media-volume-identity").status, "blocker")
+    assert.match(checkFor(checks, "media-volume-identity").detail, /nama project/)
+    assert.equal(rolloutReady(checks), false)
+  })
+
+  it("menerima volume media dengan nama Docker eksplisit", () => {
+    const checks = evaluateRollout(facts())
+    assert.equal(checkFor(checks, "media-volume-identity").status, "ok")
+    assert.match(checkFor(checks, "media-volume-identity").detail, /sismepda_media_data/)
+  })
+
+  it("menerima bind mount host yang aktif selama konfigurasi memakai named volume", () => {
     const checks = evaluateRollout(
       facts({
         mediaStorageRoot: "/app/media",
@@ -168,6 +217,168 @@ describe("preflight rollout — konfigurasi media", () => {
     assert.equal(isPersistentMount(persistentVolume), true)
     assert.equal(isPersistentMount({ ...persistentVolume, type: "bind" }), true)
     assert.equal(isPersistentMount({ ...persistentVolume, type: "tmpfs" }), false)
+  })
+})
+
+describe("overlay compose media produksi", () => {
+  const overlay = readFileSync(production.mediaComposeFile, "utf8")
+
+  it("menetapkan MEDIA_STORAGE_ROOT kanonik", () => {
+    assert.match(overlay, /MEDIA_STORAGE_ROOT:\s*\/app\/media/)
+  })
+
+  it("memasang volume media ke akar yang sama", () => {
+    assert.match(overlay, /-\s*media:\/app\/media/)
+  })
+
+  it("memberi volume nama Docker eksplisit agar identitasnya stabil", () => {
+    assert.match(overlay, /name:\s*sismepda_media_data/)
+  })
+
+  it("tidak menyentuh topologi database", () => {
+    // Overlay hanya boleh aditif untuk media. Yang dinilai adalah konfigurasi
+    // efektifnya, bukan prosa komentar — komentar memang menyebut PostgreSQL
+    // untuk menjelaskan apa yang sengaja dibiarkan utuh.
+    const effective = overlay
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("#"))
+      .join("\n")
+    assert.doesNotMatch(effective, /postgres|POSTGRES_|db:/i)
+  })
+
+  it("tidak memakai bind mount host untuk media", () => {
+    assert.doesNotMatch(overlay, /-\s*\/[^\s:]*:\/app\/media/)
+  })
+
+  it("dipakai oleh setiap perintah compose produksi", () => {
+    // Satu jalur yang lupa overlay = container tanpa volume media.
+    assert.equal(productionComposeFiles.includes(production.mediaComposeFile), true)
+    assert.equal(productionComposeFiles[0], production.composeFile)
+  })
+})
+
+describe("urutan kedatangan overlay media", () => {
+  it("preflight tidak mewajibkan overlay yang belum di-merge", () => {
+    // Preflight berjalan SEBELUM `git merge --ff-only`. Mewajibkan overlay di
+    // sini membuat deploy pertama yang justru membawanya mustahil dijalankan.
+    const preflight = remotePreflightScript()
+    assert.doesNotMatch(preflight, /ABORT: compose\.media\.yaml tidak ada/)
+    assert.match(preflight, /MEDIA_OVERLAY=/)
+  })
+
+  it("setiap skrip menyusun daftar compose file secara kondisional", () => {
+    assert.match(remotePreflightScript(), /COMPOSE_FILES="-f deploy\.yaml"/)
+    assert.match(remotePreflightScript(), /if test -f compose\.media\.yaml/)
+  })
+
+  it("aktivasi menolak berjalan tanpa overlay media", () => {
+    // `up -d` membuat ulang container app; tanpa volume, unggahan sejak deploy
+    // terakhir lenyap.
+    assert.match(remoteActivateScript(), /ABORT: compose\.media\.yaml tidak ada/)
+  })
+
+  it("build dan migrasi juga menolak berjalan tanpa overlay", () => {
+    assert.match(remoteBuildScript(), /ABORT: compose\.media\.yaml tidak ada/)
+    assert.match(remoteMigrateDeployScript(), /ABORT: compose\.media\.yaml tidak ada/)
+  })
+
+})
+
+describe("keamanan volume saat deployment", () => {
+  const sources = [
+    readFileSync("lib/deployment.ts", "utf8"),
+    readFileSync("lib/deployment-flow.ts", "utf8"),
+    readFileSync("lib/rollout-preflight-flow.ts", "utf8"),
+    readFileSync("scripts/deploy.ts", "utf8"),
+  ].join("\n")
+
+  it("tidak pernah menjalankan compose down dengan penghapusan volume", () => {
+    assert.doesNotMatch(sources, /down\s+(-v|--volumes)/)
+  })
+
+  it("tidak menghapus atau memangkas volume Docker", () => {
+    assert.doesNotMatch(sources, /volume\s+(rm|prune)/)
+  })
+
+  it("tidak memperbarui anonymous volume saat container dibuat ulang", () => {
+    assert.doesNotMatch(sources, /--renew-anon-volumes/)
+  })
+
+  it("membuat ulang container app tanpa menyentuh volume", () => {
+    const deploy = readFileSync("lib/deployment.ts", "utf8")
+    assert.match(deploy, /up\s+-d/)
+  })
+})
+
+describe("kompatibilitas backup dan isolasi prodclone", () => {
+  it("backup produksi membaca akar media dari container, bukan jalur hardcode", () => {
+    // Satu sumber kebenaran: overlay menetapkan MEDIA_STORAGE_ROOT, backup
+    // membacanya kembali dari container. Jalur yang ditulis ulang di skrip
+    // backup akan menjadi sumber kebenaran kedua yang diam-diam menyimpang.
+    const script = backupSetScript("backup-2026-09-14T213000Z")
+    assert.match(script, /printenv MEDIA_STORAGE_ROOT/)
+    assert.doesNotMatch(script, /tar[^\n]*\s\/app\/media/)
+  })
+
+  it("backup berhenti bila akar media tidak diset, bukan mengarang default", () => {
+    const script = backupSetScript("backup-2026-09-14T213000Z")
+    assert.match(script, /ABORT: MEDIA_STORAGE_ROOT tidak diset/)
+  })
+
+  it("pengembangan tetap terpisah per peran tanpa menyentuh jalur produksi", () => {
+    // Overlay hanya berlaku di produksi. Lingkungan lokal tidak boleh tiba-tiba
+    // menulis ke /app/media milik container.
+    assert.deepEqual(decideMediaRoot({ SISMEPDA_DB_ROLE: "local" }), {
+      path: ".media/local",
+      source: "role-default",
+      role: "local",
+    })
+    assert.deepEqual(decideMediaRoot({ SISMEPDA_DB_ROLE: "prodclone" }), {
+      path: ".media/prodclone",
+      source: "role-default",
+      role: "prodclone",
+    })
+  })
+
+  it("akar media produksi berasal dari konfigurasi eksplisit", () => {
+    assert.deepEqual(decideMediaRoot({ MEDIA_STORAGE_ROOT: production.mediaRoot }), {
+      path: "/app/media",
+      source: "configured",
+      role: null,
+    })
+  })
+})
+
+describe("parser mount konfigurasi", () => {
+  it("membaca named volume beserta tujuannya", () => {
+    assert.deepEqual(parseConfiguredMount("media:/app/media"), {
+      volume: "media",
+      destination: "/app/media",
+      readOnly: false,
+    })
+  })
+
+  it("menandai mount read-only", () => {
+    assert.equal(parseConfiguredMount("media:/app/media:ro")?.readOnly, true)
+  })
+
+  it("menolak bind mount host", () => {
+    assert.equal(parseConfiguredMount("/var/lib/media:/app/media"), null)
+    assert.equal(parseConfiguredMount("./media:/app/media"), null)
+  })
+
+  it("menolak bentuk yang tidak dapat dibaca daripada menebaknya", () => {
+    assert.equal(parseConfiguredMount(null), null)
+    assert.equal(parseConfiguredMount(""), null)
+    assert.equal(parseConfiguredMount("media"), null)
+    assert.equal(parseConfiguredMount("media:relatif"), null)
+  })
+
+  it("membaca nama volume dari keluaran bertanda", () => {
+    assert.deepEqual(
+      parseConfiguredVolumes("CONFIG_VOLUME=media\nlain\nCONFIG_VOLUME=database\n"),
+      ["media", "database"],
+    )
   })
 })
 
@@ -346,7 +557,11 @@ const healthyFacts: CommandResult = {
   ok: true,
   stdout: [
     "MEDIA_ROOT=/app/media",
-    "MOUNT=volume|sismepda_media|/app/media|/var/lib/docker/volumes/x/_data|true",
+    "MOUNT=volume|sismepda_media_data|/app/media|/var/lib/docker/volumes/x/_data|true",
+    "CONFIG_MEDIA_MOUNT=media:/app/media",
+    "CONFIG_VOLUME=media",
+    "CONFIG_VOLUME=database",
+    "CONFIG_VOLUME_NAME=sismepda_media_data",
     `FREE_BYTES=${60 * GIGABYTE}`,
     `DB_BYTES=${90 * 1024 * 1024}`,
     "BACKUP_WRITABLE=yes",
@@ -366,6 +581,22 @@ const legacyBytes: CommandResult = {
 }
 
 describe("deploy:preflight", () => {
+  it("preflight melaporkan ketiadaan overlay dengan langkah yang jelas", () => {
+    const { runner, logs } = fakeRunner({
+      facts: {
+        ok: false,
+        stdout: "",
+        stderr: 'compose file "/srv/apps/sismepda/compose.media.yaml" is invalid: no such file',
+        code: 1,
+      },
+      legacy: legacyBytes,
+    })
+    const code = runRolloutPreflight(runner, { repoMigrations: [] })
+    assert.equal(code, 1)
+    assert.match(logs.join("\n"), /belum ada di produksi/)
+    assert.match(logs.join("\n"), /git merge --ff-only/)
+    })
+
   it("melaporkan READY dan keluar 0 ketika produksi siap", () => {
     const { runner, logs } = fakeRunner({ facts: healthyFacts, legacy: legacyBytes })
     const code = runRolloutPreflight(runner, { repoMigrations: ["20260101_a"] })

@@ -22,39 +22,70 @@ Diverifikasi lewat inspeksi read-only:
 | SSH | `smpn2`, app di `/srv/apps/sismepda` |
 | Compose | `deploy.yaml` di host, **tidak ada di Git** |
 | Volume database | bind mount `/var/lib/sismepda/postgresql` |
-| Volume media | **belum ada** |
-| `MEDIA_STORAGE_ROOT` | **belum diset** |
+| Volume media | dikonfigurasi lewat overlay `compose.media.yaml`; aktif setelah deploy berikutnya |
+| `MEDIA_STORAGE_ROOT` | `/app/media`, ditetapkan overlay |
 | Byte media legacy | ±7,1 MB di `bytea` |
 | Migrasi belum diterapkan | 2 (`add_media_storage_keys`, `relax_media_consistency_checks`) |
 
-## Blocker wajib sebelum PHASE 2
+## Persistensi media produksi
 
-`deploy.yaml` produksi belum punya mount media dan env belum punya
-`MEDIA_STORAGE_ROOT`. Selama dua hal ini belum diperbaiki, aplikasi versi baru
-akan menulis media ke `.media` relatif terhadap direktori kerja container —
-yaitu writable layer container, yang **hilang saat container di-recreate**.
-
-Karena `deploy.yaml` tidak berada di Git, perubahannya dilakukan operator di
-host. Bentuk yang diharapkan:
+`deploy.yaml` berada di host dan sengaja tidak di-track Git, jadi konfigurasi
+media **tidak** disuntikkan ke sana dengan tangan — suntingan manual tidak
+terlacak, tidak ter-review, dan tidak teruji. Konfigurasinya hidup di repo
+sebagai overlay Compose:
 
 ```yaml
+# compose.media.yaml
 services:
   app:
     environment:
       MEDIA_STORAGE_ROOT: /app/media
     volumes:
-      - sismepda_media:/app/media
+      - media:/app/media
 
 volumes:
-  sismepda_media:
-    name: sismepda_media      # nama eksplisit agar tidak berubah
+  media:
+    name: sismepda_media_data
 ```
 
-Nama volume ditulis eksplisit supaya tidak ikut berubah bila nama project
-Compose atau path direktori berubah. **Jangan menyentuh penamaan volume
-database.**
+Setiap perintah compose produksi dijalankan sebagai:
 
-Setelah diubah, jalankan ulang preflight sampai `READY`.
+```bash
+docker compose -f deploy.yaml -f compose.media.yaml --env-file /etc/sismepda/sismepda.env ...
+```
+
+Beberapa hal yang menentukan keselamatan data:
+
+- **Nama volume eksplisit.** Tanpa `name:`, Docker menamai volume
+  `<project>_media`. Rename direktori deploy atau perubahan nama project akan
+  diam-diam membuat volume BARU yang kosong, sementara media lama tetap ada di
+  disk tetapi tidak lagi ter-mount.
+- **Topologi database tidak disentuh.** Overlay tidak menyebut service maupun
+  volume database; PostgreSQL tetap memakai bind mount
+  `/var/lib/sismepda/postgresql` milik `deploy.yaml`.
+- **Overlay tiba lewat Git.** Ia sampai ke produksi melalui `git merge --ff-only`
+  di tengah alur deploy. Karena itu preflight (yang berjalan sebelum merge) hanya
+  melaporkan statusnya, sedangkan tahap **build**, **migrate**, dan **activate**
+  menolak berjalan bila overlay tidak ada — container app tidak pernah dibuat
+  ulang tanpa volume media.
+- **Kepemilikan direktori.** `Dockerfile` membuat `/app/media` dan men-`chown`
+  ke `nextjs:nodejs` sebelum `USER nextjs`, sehingga volume kosong yang di-mount
+  mewarisi kepemilikan itu. Tidak diperlukan `chmod 777` maupun root saat runtime.
+
+### Jangan pernah menghapus volume media
+
+`docker compose down -v`, `docker volume rm`, `docker volume prune`, dan
+`--renew-anon-volumes` menghapus media produksi. Alur deploy tidak memakai satu
+pun dari perintah tersebut, dan hal itu dikunci oleh test statis di
+`tests/rollout-preparation.test.ts`. Aktivasi memakai `up -d`, yang membuat ulang
+container tanpa menyentuh named volume.
+
+### Backup
+
+Backup set membaca akar media dari container (`printenv MEDIA_STORAGE_ROOT`),
+bukan dari jalur yang ditulis ulang di skrip, sehingga backup selalu mengikuti
+konfigurasi yang sama dengan aplikasi. Bila variabel itu tidak diset, backup
+berhenti dengan `ABORT` alih-alih mengarsipkan direktori yang salah.
 
 ## PHASE 0 — Prasyarat
 

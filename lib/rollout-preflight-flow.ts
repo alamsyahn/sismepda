@@ -54,6 +54,16 @@ export function parseMounts(output: string): ContainerMount[] {
   return mounts
 }
 
+/** Nama volume yang dideklarasikan konfigurasi compose, dari baris bertanda. */
+export function parseConfiguredVolumes(output: string): string[] {
+  const names: string[] = []
+  for (const line of output.split(/\r?\n/)) {
+    const match = /^CONFIG_VOLUME=(.+)$/.exec(line.trim())
+    if (match && match[1].trim()) names.push(match[1].trim())
+  }
+  return names
+}
+
 /** Migrasi yang tercatat di produksi, dibaca dari blok bertanda. */
 export function parseAppliedMigrations(output: string): string[] {
   const lines = output.split(/\r?\n/).map((line) => line.trim())
@@ -97,12 +107,22 @@ export function runRolloutPreflight(
   assertRemoteCommandSafe(factsScript)
   const factsResult = runner.remote(factsScript)
   if (!factsResult.ok) {
+    const output = redactSecrets(factsResult.stderr || factsResult.stdout).trim()
     runner.log("Result .............. NOT READY")
-    runner.log(
-      `\nTidak dapat membaca fakta produksi:\n${redactSecrets(
-        factsResult.stderr || factsResult.stdout,
-      ).trim()}`,
-    )
+    // Overlay media baru sampai ke produksi lewat `git merge --ff-only` pada
+    // deploy berikutnya. Sebelum itu, ketiadaannya adalah keadaan yang
+    // diharapkan — bukan kesalahan konfigurasi — dan pesannya harus mengatakan
+    // apa yang harus dilakukan, bukan sekadar melaporkan berkas tidak ada.
+    if (output.includes(production.mediaComposeFile)) {
+      runner.log(
+        `\nOverlay ${production.mediaComposeFile} belum ada di produksi.\n` +
+          `Produksi masih menjalankan commit yang mendahului overlay tersebut.\n` +
+          "Overlay ikut terkirim pada deploy berikutnya (git merge --ff-only);\n" +
+          "jalankan preflight ini lagi setelah kode tersinkron.",
+      )
+      return 1
+    }
+    runner.log(`\nTidak dapat membaca fakta produksi:\n${output}`)
     return 1
   }
 
@@ -124,6 +144,9 @@ export function runRolloutPreflight(
       options.repoMigrations,
       parseAppliedMigrations(factsResult.stdout),
     ),
+    configuredMediaMount: info.CONFIG_MEDIA_MOUNT ? info.CONFIG_MEDIA_MOUNT : null,
+    configuredVolumes: parseConfiguredVolumes(factsResult.stdout),
+    resolvedMediaVolumeName: info.CONFIG_VOLUME_NAME ? info.CONFIG_VOLUME_NAME : null,
   }
 
   const checks = evaluateRollout(facts)

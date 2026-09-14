@@ -48,6 +48,28 @@ export type RolloutFacts = {
   backupDirWritable: boolean
   /** Migrasi yang ada di repo tetapi belum tercatat di produksi. */
   pendingMigrations: readonly string[]
+  /**
+   * Volume media menurut KONFIGURASI compose yang berlaku (bukan menurut
+   * container yang sedang hidup), dalam bentuk `nama:tujuan`. `null` bila
+   * konfigurasi tidak mendeklarasikan mount media sama sekali.
+   *
+   * Dipisahkan dari `appMounts` karena keduanya menjawab pertanyaan berbeda:
+   * `appMounts` = apa yang berlaku SEKARANG, `configuredMediaMount` = apa yang
+   * akan berlaku setelah `compose up` berikutnya. Sebelum deploy pertama yang
+   * membawa volume media, yang kedua inilah yang menentukan.
+   */
+  configuredMediaMount: string | null
+  /** Nama volume yang dideklarasikan konfigurasi compose. */
+  configuredVolumes: readonly string[]
+  /**
+   * Nama volume Docker sebenarnya hasil `name:` eksplisit, bila ada.
+   *
+   * Tanpa `name:` Docker menurunkan nama dari nama project (`<project>_media`),
+   * sehingga rename direktori deploy atau perubahan nama project diam-diam
+   * menghasilkan volume BARU yang kosong sementara media lama tetap tertinggal
+   * di disk. Identitas yang dapat diprediksi adalah syarat rollout.
+   */
+  resolvedMediaVolumeName: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +169,32 @@ export function mountCovering(
   return best
 }
 
+/**
+ * Baca `nama_volume:/tujuan` (opsional `:ro`) dari konfigurasi compose.
+ *
+ * Bentuk yang tidak dikenali menghasilkan `null`, bukan tebakan. Mount media
+ * yang tidak dapat dibaca lebih baik dianggap tidak ada — itu memicu blocker —
+ * daripada dianggap persisten secara keliru. Jalur absolut di posisi sumber
+ * berarti bind mount, yang di produksi ini bukan bentuk yang diharapkan untuk
+ * media dan karenanya juga ditolak.
+ */
+export function parseConfiguredMount(
+  value: string | null,
+): { volume: string; destination: string; readOnly: boolean } | null {
+  const trimmed = value?.trim() ?? ""
+  if (!trimmed) return null
+  const parts = trimmed.split(":")
+  if (parts.length < 2) return null
+  const [volume, destination, mode] = parts
+  if (!volume || !destination || !destination.startsWith("/")) return null
+  if (volume.startsWith("/") || volume.startsWith(".")) return null
+  return {
+    volume,
+    destination: destination.replace(/\/+$/, ""),
+    readOnly: mode === "ro",
+  }
+}
+
 export function formatBytes(value: number): string {
   if (!Number.isFinite(value) || value < 0) return "?"
   if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(2)} GB`
@@ -193,36 +241,86 @@ export function evaluateRollout(facts: RolloutFacts): RolloutCheck[] {
   }
 
   // --- Persistensi mount -------------------------------------------------
+  //
+  // Dua sumber dinilai, dan KONFIGURASI yang menentukan. Container yang sedang
+  // berjalan boleh saja belum punya volume media — itulah keadaan normal
+  // sebelum deploy pertama yang membawanya. Yang tidak boleh adalah konfigurasi
+  // yang tidak mendeklarasikan mount media, karena `compose up` berikutnya akan
+  // menghasilkan container tanpa penyimpanan persisten.
   if (root.startsWith("/")) {
-    const mount = mountCovering(facts.appMounts, root)
-    if (!mount) {
+    const configured = parseConfiguredMount(facts.configuredMediaMount)
+    const runtime = mountCovering(facts.appMounts, root)
+
+    if (!configured) {
       checks.push({
         id: "media-mount",
         label: "Persistent media mount",
         status: "blocker",
         detail:
-          `Tidak ada volume/bind mount yang menampung ${root}. Media akan ditulis ke filesystem\n` +
-          "ephemeral container dan hilang saat container dibuat ulang.",
+          `Konfigurasi compose tidak mendeklarasikan mount media untuk ${root}. Media akan\n` +
+          "ditulis ke filesystem ephemeral container dan hilang saat container dibuat ulang.",
       })
-    } else if (!isPersistentMount(mount)) {
+    } else if (configured.destination !== root) {
       checks.push({
         id: "media-mount",
         label: "Persistent media mount",
         status: "blocker",
-        detail: `Mount pada ${mount.destination} bertipe "${mount.type}"${
-          mount.readWrite ? "" : " (read-only)"
+        detail:
+          `Mount dan akar media tidak cocok: volume "${configured.volume}" dipasang di\n` +
+          `${configured.destination}, sedangkan MEDIA_STORAGE_ROOT adalah ${root}.`,
+      })
+    } else if (!facts.configuredVolumes.includes(configured.volume)) {
+      checks.push({
+        id: "media-mount",
+        label: "Persistent media mount",
+        status: "blocker",
+        detail:
+          `Volume "${configured.volume}" dipasang tetapi tidak dideklarasikan pada bagian\n` +
+          "`volumes:`. Identitas volume menjadi tidak dapat diprediksi antar deployment.",
+      })
+    } else if (runtime && !isPersistentMount(runtime)) {
+      checks.push({
+        id: "media-mount",
+        label: "Persistent media mount",
+        status: "blocker",
+        detail: `Container berjalan memount ${runtime.destination} bertipe "${runtime.type}"${
+          runtime.readWrite ? "" : " (read-only)"
         } — tidak bertahan container recreate.`,
       })
     } else {
+      const active = runtime && isPersistentMount(runtime)
       checks.push({
         id: "media-mount",
         label: "Persistent media mount",
         status: "ok",
-        detail:
-          mount.type === "volume"
-            ? `volume "${mount.name}" → ${mount.destination}`
-            : `bind ${mount.source} → ${mount.destination}`,
+        detail: active
+          ? `volume "${configured.volume}" → ${configured.destination} (aktif)`
+          : `volume "${configured.volume}" → ${configured.destination} (dikonfigurasi; aktif setelah deploy)`,
       })
+    }
+
+    // Identitas volume harus dapat diprediksi, terpisah dari keberadaannya.
+    // Mount yang benar tetapi bernama turunan project akan berpindah identitas
+    // begitu nama project berubah — media lama tertinggal di volume lama.
+    if (parseConfiguredMount(facts.configuredMediaMount)) {
+      if (!facts.resolvedMediaVolumeName) {
+        checks.push({
+          id: "media-volume-identity",
+          label: "Media volume identity",
+          status: "blocker",
+          detail:
+            "Volume media tidak memakai `name:` eksplisit, sehingga namanya diturunkan dari\n" +
+            "nama project Compose. Perubahan nama project atau direktori deploy akan membuat\n" +
+            "volume baru yang kosong, dan media lama tidak lagi ter-mount.",
+        })
+      } else {
+        checks.push({
+          id: "media-volume-identity",
+          label: "Media volume identity",
+          status: "ok",
+          detail: `nama eksplisit "${facts.resolvedMediaVolumeName}"`,
+        })
+      }
     }
   }
 

@@ -142,15 +142,15 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Exit criteria:** Backup produksi menghasilkan dump database **dan** arsip media pada run yang berpasangan; arsip produksi terbukti lolos `media:backup:verify`; restore drill produksi pernah dilakukan; seluruh record media produksi punya kunci; keputusan penghapusan kolom bytea diambil eksplisit dengan persetujuan pemilik.
 - **Sudah selesai (jangan diulang):** tooling backup/verify/restore, isolasi media root per peran, uji persistensi volume Docker (restart + recreate), smoke test browser jalur unggah baru, serta preparasi rollout: `deploy:preflight`, `backup:production` (set DB+media bermanifest), `media:migrate:verify`, dan [runbook rollout](../operations/media-rollout.md).
 
-## TD-017 — `deploy.yaml` produksi belum punya mount media dan `MEDIA_STORAGE_ROOT`
+## TD-017 — Persistensi media produksi belum aktif sampai deploy berikutnya
 
-- **Area / severity:** Operations / data durability — **High (blocker rollout)**
-- **Current condition:** Inspeksi read-only produksi (`smpn2`) menunjukkan `deploy.yaml` hanya memount bind `/var/lib/sismepda/postgresql` untuk database. Tidak ada volume/mount untuk media, dan `MEDIA_STORAGE_ROOT` tidak diset di konfigurasi. `npm run deploy:preflight` melaporkan `NOT READY` tepat karena ini.
-- **Evidence:** `deploy:preflight` terhadap produksi → `BLOCKER MEDIA_STORAGE_ROOT`; `docker inspect` container app tidak memuat mount dengan destination `/app/media`.
-- **Impact:** Bila aplikasi versi baru dideploy apa adanya, `decideMediaRoot()` jatuh ke `.media` relatif direktori kerja container — writable layer, yang hilang pada recreate berikutnya. Media lama tetap selamat lewat `bytea`, tetapi setiap unggahan baru akan lenyap diam-diam.
-- **Reason:** `deploy.yaml` berada di host dan tidak ada di Git; phase ini dilarang menulis ke produksi, jadi perbaikannya adalah tindakan operator.
-- **Direction:** Tambahkan `MEDIA_STORAGE_ROOT: /app/media` dan named volume eksplisit `sismepda_media:/app/media` pada service `app` di `deploy.yaml`, tanpa menyentuh penamaan volume database. Bentuk lengkapnya ada di [runbook rollout](../operations/media-rollout.md).
-- **Exit criteria:** `npm run deploy:preflight` melaporkan `READY`.
+- **Area / severity:** Operations / data durability — **Medium (turun dari High)**
+- **Current condition:** Konfigurasi persistensi media sudah ada di repositori sebagai overlay Compose `compose.media.yaml` (`MEDIA_STORAGE_ROOT: /app/media` + named volume `sismepda_media_data`), dan seluruh perintah compose produksi menyertakannya. Produksi sendiri masih menjalankan commit `41a1864`, yang mendahului overlay tersebut, sehingga container app yang berjalan **belum** memiliki volume media.
+- **Evidence:** `npm run deploy:preflight` terhadap produksi → `BLOCKER MEDIA_STORAGE_ROOT` (container berjalan belum memuat overlay). Simulasi Compose lokal dengan overlay yang sama membuktikan berkas bertahan melewati `up -d --force-recreate`, sementara kontrol negatif di writable layer hilang.
+- **Impact:** Selama produksi belum menerima overlay, unggahan baru masih akan ditulis ke writable layer dan hilang saat container dibuat ulang. Media lama tetap selamat lewat `bytea`.
+- **Reason:** `deploy.yaml` berada di host dan tidak ada di Git. Alih-alih menyunting produksi dengan tangan — yang tidak terlacak dan tidak teruji — konfigurasi dikirim lewat overlay yang ikut ter-review dan sampai ke produksi melalui `git merge --ff-only` milik alur deploy.
+- **Direction:** Tidak ada perubahan repositori yang tersisa. Overlay aktif pada deploy terkontrol berikutnya; tahap build, migrate, dan activate menolak berjalan bila overlay tidak ada, sehingga container app tidak mungkin dibuat ulang tanpa volume media.
+- **Exit criteria:** `npm run deploy:preflight` melaporkan `READY` setelah produksi tersinkron, dengan `Persistent media mount` dan `Media volume identity` berstatus OK.
 
 ## TD-018 — Backup hanya berada di VPS yang sama (belum ada offsite)
 

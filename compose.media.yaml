@@ -1,0 +1,44 @@
+# Overlay produksi: penyimpanan media persisten.
+#
+# MENGAPA FILE TERPISAH
+#
+# `deploy.yaml` hidup di host produksi dan sengaja tidak di-track Git
+# (`.git/info/exclude`), karena isinya disesuaikan per-mesin. Menyuntikkan
+# konfigurasi media ke sana berarti menyunting produksi dengan tangan, dan
+# hasilnya tidak terlacak, tidak tertinjau, dan tidak teruji.
+#
+# Overlay ini sebaliknya: ia berada di Git, ikut ter-review, dan sampai ke
+# produksi lewat `git merge --ff-only` yang sudah dilakukan alur deploy. Docker
+# Compose menggabungkannya di atas `deploy.yaml`:
+#
+#   docker compose -f deploy.yaml -f compose.media.yaml ...
+#
+# APA YANG DIJAMIN
+#
+# Media aplikasi TIDAK boleh tinggal di writable layer container. Layer itu
+# dibuang setiap kali container dibuat ulang — dan `compose up -d app` memang
+# membuat ulang container setiap deploy. Tanpa volume, setiap berkas yang
+# diunggah sejak deploy terakhir akan hilang tanpa pesan kesalahan apa pun.
+#
+# Byte `bytea` legacy masih menjadi jaring pengaman untuk media LAMA, tetapi
+# media yang diunggah setelah rollout hanya hidup di sini.
+
+services:
+  app:
+    environment:
+      # Akar penyimpanan media di dalam container. Nilai ini harus sama persis
+      # dengan titik mount di bawah; keduanya diverifikasi `deploy:preflight`.
+      MEDIA_STORAGE_ROOT: /app/media
+    volumes:
+      - media:/app/media
+
+volumes:
+  # Nama ditulis eksplisit, bukan dibiarkan diturunkan dari nama project.
+  # Tanpa `name:`, Docker menamai volume `<project>_media`, sehingga perubahan
+  # nama project atau direktori deploy akan diam-diam membuat volume BARU yang
+  # kosong — media lama tetap ada di disk tetapi tidak lagi ter-mount.
+  #
+  # Volume database sengaja TIDAK disentuh overlay ini: ia tetap bind mount
+  # /var/lib/sismepda/postgresql milik `deploy.yaml`.
+  media:
+    name: sismepda_media_data

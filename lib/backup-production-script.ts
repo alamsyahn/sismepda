@@ -22,11 +22,16 @@ export const BACKUP_SET_ROOT = "/srv/backups/sismepda/sets"
  */
 export function backupSetScript(setId: string): string {
   const dir = `${BACKUP_SET_ROOT}/${setId}`
-  const compose = `docker compose -f ${production.composeFile} --env-file ${production.envFile}`
+  // Overlay media ikut disertakan bila ada, supaya identitas service/volume
+  // yang dilihat backup sama persis dengan yang dipakai deploy. Bila belum
+  // di-merge, backup tetap berjalan dengan deploy.yaml saja.
+  const compose = `docker compose $COMPOSE_FILES --env-file ${production.envFile}`
 
   return [
     "set -euo pipefail",
     `cd ${production.appDir}`,
+    `COMPOSE_FILES="-f ${production.composeFile}"`,
+    `if test -f ${production.mediaComposeFile}; then COMPOSE_FILES="$COMPOSE_FILES -f ${production.mediaComposeFile}"; fi`,
     `DB_ID=$(${compose} ps -q ${production.databaseService} </dev/null)`,
     `test -n "$DB_ID" || { echo "ABORT: container database tidak berjalan" >&2; exit 2; }`,
     `APP_ID=$(${compose} ps -q ${production.appService} </dev/null)`,

@@ -112,9 +112,22 @@ Tidak ada path yang di-hardcode di business logic.
 
 ## Docker
 
-`compose.yaml` mendeklarasikan volume bernama `media` yang dipasang di
-`/app/media`. Ini **wajib**: tanpa volume, media hanya berada di writable layer
-container dan akan hilang pada setiap `--force-recreate`.
+`compose.yaml` (dipakai pengembangan/uji) mendeklarasikan volume bernama `media`
+yang dipasang di `/app/media`. Ini **wajib**: tanpa volume, media hanya berada di
+writable layer container dan akan hilang pada setiap `--force-recreate`.
+
+Produksi tidak memakai `compose.yaml`. Ia menjalankan `deploy.yaml` milik host
+(di luar Git) yang digabung dengan overlay `compose.media.yaml` dari repo:
+
+```bash
+docker compose -f deploy.yaml -f compose.media.yaml ...
+```
+
+Overlay itulah yang menetapkan `MEDIA_STORAGE_ROOT: /app/media` dan volume
+bernama eksplisit `sismepda_media_data`. Nama eksplisit dipakai agar identitas
+volume tidak ikut berubah saat nama project Compose atau path direktori berubah.
+Rincian operasionalnya ada di
+[runbook rollout media](../operations/media-rollout.md).
 
 Dockerfile membuat `/app/media` dan meng-chown-nya ke `nextjs` sebelum `USER
 nextjs`. Volume Docker yang masih kosong mewarisi kepemilikan dari direktori

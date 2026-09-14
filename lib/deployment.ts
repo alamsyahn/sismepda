@@ -23,6 +23,16 @@ export const production = {
   appDir: "/srv/apps/sismepda",
   /** Compose file milik host, di luar Git. Jangan diganti compose.yaml repo. */
   composeFile: "deploy.yaml",
+  /**
+   * Overlay media, ADA di Git dan sampai ke produksi lewat `git merge --ff-only`.
+   * Menyediakan MEDIA_STORAGE_ROOT dan volume media bernama tetap tanpa perlu
+   * menyunting `deploy.yaml` milik host dengan tangan.
+   */
+  mediaComposeFile: "compose.media.yaml",
+  /** Nama volume media yang eksplisit; harus sama dengan compose.media.yaml. */
+  mediaVolume: "sismepda_media_data",
+  /** Titik mount media di dalam container; harus sama dengan MEDIA_STORAGE_ROOT. */
+  mediaRoot: "/app/media",
   envFile: "/etc/sismepda/sismepda.env",
   appService: "app",
   databaseService: "db",
@@ -39,6 +49,19 @@ export const production = {
   healthAttempts: 24,
   healthIntervalSeconds: 5,
 } as const
+
+/**
+ * Seluruh file compose produksi, berurutan. `deploy.yaml` milik host lebih dulu,
+ * overlay media menimpanya.
+ *
+ * Diekspor agar test dapat menegaskan bahwa tidak ada jalur deploy yang
+ * menjalankan compose tanpa overlay — jalur seperti itu akan membuat ulang
+ * container app tanpa volume media.
+ */
+export const productionComposeFiles: readonly string[] = [
+  production.composeFile,
+  production.mediaComposeFile,
+]
 
 // ---------------------------------------------------------------------------
 // Validasi masukan
@@ -144,17 +167,50 @@ export const backupGlob = "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*_*.dump"
 // Pembangun skrip remote
 // ---------------------------------------------------------------------------
 
-const compose = `docker compose -f ${production.composeFile} --env-file ${production.envFile}`
+/**
+ * Perintah compose produksi.
+ *
+ * Daftar file dihitung di shell, bukan ditanam sebagai literal, karena overlay
+ * media baru tiba di produksi lewat `git merge --ff-only` DI TENGAH alur deploy.
+ * Tahap sebelum merge (preflight, backup) masih berjalan di pohon kerja lama
+ * yang belum memuat overlay; memaksakan `-f compose.media.yaml` di sana membuat
+ * deploy pertama yang membawa overlay mustahil dijalankan.
+ *
+ * Kelonggaran ini TIDAK berlaku untuk tahap yang membuat ulang container:
+ * `requireMediaOverlay` di bawah menuntut overlay ada sebelum build/migrate/
+ * activate, sehingga container app tidak pernah dibuat ulang tanpa volume media.
+ */
+const compose = `docker compose $COMPOSE_FILES --env-file ${production.envFile}`
+
+/**
+ * Menolak melanjutkan bila overlay media tidak ada.
+ *
+ * Dipasang pada setiap tahap yang membuat atau membuat ulang container app.
+ */
+const requireMediaOverlay = `test -f ${production.mediaComposeFile} || { echo "ABORT: ${production.mediaComposeFile} tidak ada; container app tidak boleh dibuat ulang tanpa volume media" >&2; exit 2; }`
 
 /** Prolog setiap skrip: gagal cepat, tidak menelan error pipa. */
 function script(...lines: string[]): string {
-  return ["set -euo pipefail", `cd ${production.appDir}`, ...lines].join("\n")
+  return [
+    "set -euo pipefail",
+    `cd ${production.appDir}`,
+    `COMPOSE_FILES="-f ${production.composeFile}"`,
+    // `|| true`: di bawah `set -e`, test yang gagal akan menghentikan skrip.
+    // Ketiadaan overlay di sini bukan kesalahan — hanya berarti belum di-merge.
+    `if test -f ${production.mediaComposeFile}; then COMPOSE_FILES="$COMPOSE_FILES -f ${production.mediaComposeFile}"; fi`,
+    ...lines,
+  ].join("\n")
 }
 
 export function remotePreflightScript(): string {
   return script(
     `test -d .git || { echo "ABORT: ${production.appDir} bukan repositori Git" >&2; exit 2; }`,
     `test -f ${production.composeFile} || { echo "ABORT: ${production.composeFile} tidak ada" >&2; exit 2; }`,
+    // Overlay media TIDAK diwajibkan di sini: preflight berjalan sebelum
+    // `git merge --ff-only`, jadi pada deploy yang justru membawa overlay, file
+    // ini memang belum ada. Kewajibannya ditegakkan setelah merge, pada tahap
+    // yang membuat ulang container. Statusnya tetap dilaporkan.
+    `echo "MEDIA_OVERLAY=$(test -f ${production.mediaComposeFile} && echo present || echo absent)"`,
     `test -f ${production.envFile} || { echo "ABORT: env file tidak ada" >&2; exit 2; }`,
     `command -v docker >/dev/null || { echo "ABORT: docker tidak tersedia" >&2; exit 2; }`,
     // `compose config` divalidasi tanpa mencetak isinya: keluarannya memuat env.
@@ -241,7 +297,10 @@ export function remoteUpdateSourceScript(sha: string): string {
 }
 
 export function remoteBuildScript(): string {
-  return script(`${compose} --profile migration build migrate ${production.appService} </dev/null`)
+  return script(
+    requireMediaOverlay,
+    `${compose} --profile migration build migrate ${production.appService} </dev/null`,
+  )
 }
 
 export function remoteMigrateStatusScript(): string {
@@ -256,13 +315,20 @@ export function remoteMigrateStatusScript(): string {
  */
 export function remoteMigrateDeployScript(): string {
   return script(
+    requireMediaOverlay,
     `${compose} --profile migration run --rm -T --entrypoint sh migrate -c 'npx prisma migrate deploy' </dev/null`,
   )
 }
 
-/** Aktivasi image baru tanpa menyentuh container database. */
+/**
+ * Aktivasi image baru tanpa menyentuh container database.
+ *
+ * `up -d` MEMBUAT ULANG container app. Tanpa overlay media, container pengganti
+ * berjalan tanpa volume dan setiap unggahan sejak deploy terakhir hilang — maka
+ * tahap ini menolak berjalan bila overlay tidak ada.
+ */
 export function remoteActivateScript(): string {
-  return script(`${compose} up -d ${production.appService} </dev/null`)
+  return script(requireMediaOverlay, `${compose} up -d ${production.appService} </dev/null`)
 }
 
 export function remoteHealthScript(): string {
@@ -329,6 +395,21 @@ export function remoteRolloutFactsScript(): string {
     `echo "MEDIA_ROOT=${"$"}{ROOT:-}"`,
     // Mount container app: tipe|nama|tujuan|sumber|rw, satu baris per mount.
     `docker inspect --format '{{range .Mounts}}MOUNT={{.Type}}|{{.Name}}|{{.Destination}}|{{.Source}}|{{.RW}}{{println}}{{end}}' "$APP_ID"`,
+    // Mount menurut KONFIGURASI, bukan menurut container yang sedang hidup.
+    // Ini yang menentukan keadaan setelah deploy berikutnya: container lama
+    // boleh saja belum punya volume media, yang penting compose sudah memilikinya.
+    //
+    // `compose config` menormalkan mount ke bentuk panjang (source/target
+    // terpisah), sehingga pola pendek "nama:/jalur" tidak pernah cocok di sini.
+    // awk memasangkan kembali source dengan target, dan hanya target akar media
+    // yang dilaporkan.
+    `${compose} config </dev/null | awk -v root="$ROOT" '/source:/{s=$2} /target:/{if ($2 == root) print "CONFIG_MEDIA_MOUNT=" s ":" $2}' || true`,
+    // Nama logis volume yang dideklarasikan konfigurasi.
+    `${compose} config --volumes </dev/null | sed 's/^/CONFIG_VOLUME=/' || true`,
+    // Nama volume Docker yang SEBENARNYA dipakai. Bila `name:` tidak ditulis
+    // eksplisit, Docker menurunkannya dari nama project, dan identitas volume
+    // ikut berubah saat nama project/direktori berubah.
+    `${compose} config </dev/null | awk '/^volumes:/{v=1;next} v&&/^[[:space:]]+name:/{print "CONFIG_VOLUME_NAME=" $2}' || true`,
     `echo "FREE_BYTES=$(df -P -B1 ${production.appDir} | awk 'NR==2 {print $4}')"`,
     `echo "DB_BYTES=$(docker exec "$DB_ID" du -sb /var/lib/postgresql/data 2>/dev/null | awk '{print $1}')"`,
     // `test -w` menilai izin tanpa menulis apa pun.
