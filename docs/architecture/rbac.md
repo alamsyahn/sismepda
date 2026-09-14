@@ -278,6 +278,8 @@ Legacy access is reproduced with a small set of **compatibility bundles** (non-s
 
 `lib/rbac-readiness.ts` derives one state from the `RbacMigration[legacy-access-backfill-v1]` row and the user count: `ready` (marker `COMPLETED`, or no marker on a database with zero users), `not-ready` (marker `RUNNING`/`FAILED`, or no marker on a populated database), `error` (unknown marker key or the readiness query itself failed). `getAuthorizationContext()` throws `RbacNotReadyError` for anything but `ready`; there is no fallback to legacy columns or JWT, and an empty `UserRole` set never becomes an implicit `GURU`. Legacy guards (`requireAdmin`, `lib/*-access.ts`) are unaffected until Phase 4 switches surfaces over.
 
+`getAuthorizationContext()` resolves identity **before** it queries readiness, and that order is load-bearing. `requireUser()` calls `auth()`, which reads cookies; touching a dynamic API before any Prisma query makes Next mark authorized pages dynamic instead of prerendering them. With the order reversed, `next build` runs the readiness query inside the Docker builder stage — which has no database access — and the build fails with `Can't reach database server` on pages such as `/bos` and `/laporan-whatsapp`. Both gates still run before any permission is granted and both still fail closed; only the error seen by an anonymous caller on a not-ready system changes (`UnauthorizedError` instead of `RbacNotReadyError`). `tests/deployment-contract.test.ts` pins the ordering.
+
 ## Compatibility and migration strategy
 
 Phases are executed serially; each is a separate commit with its own validation.

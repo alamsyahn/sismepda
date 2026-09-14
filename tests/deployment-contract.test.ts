@@ -128,3 +128,24 @@ test("kolom bisnis non-otorisasi tidak ikut didrop", () => {
     }
   }
 })
+
+test("identitas diresolusi sebelum query kesiapan RBAC", () => {
+  // `next build` memprerender halaman yang belum menyentuh API dinamis. Bila
+  // getAuthorizationContext menanyakan kesiapan RBAC (query Prisma) sebelum
+  // requireUser() memanggil auth() (membaca cookie), halaman berotorisasi
+  // seperti /bos ikut diprerender dan build menjalankan query di stage builder
+  // Docker yang tidak punya akses database — build gagal "Can't reach database
+  // server". Urutan ini yang menjaga halaman tetap dinamis.
+  const source = readFileSync("lib/rbac-access.ts", "utf8")
+
+  const fungsi = source.slice(source.indexOf("export const getAuthorizationContext"))
+  const posisiUser = fungsi.indexOf("requireUser()")
+  const posisiReadiness = fungsi.indexOf("getRbacReadiness()")
+
+  assert.ok(posisiUser > -1, "getAuthorizationContext harus memanggil requireUser()")
+  assert.ok(posisiReadiness > -1, "getAuthorizationContext harus memanggil getRbacReadiness()")
+  assert.ok(
+    posisiUser < posisiReadiness,
+    "requireUser() harus dipanggil sebelum getRbacReadiness() agar halaman tidak diprerender saat build",
+  )
+})

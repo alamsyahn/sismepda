@@ -123,12 +123,25 @@ export const requireUser = cache(async (): Promise<CurrentUser> => {
  * `User.role`, atau ke isi JWT: error dibiarkan naik sehingga permintaan gagal
  * tertutup. Memberi akses saat sumber kebenaran tidak terbaca adalah kegagalan
  * yang lebih buruk daripada menolak.
+ *
+ * Identitas diresolusi LEBIH DULU daripada kesiapan RBAC, dan urutan itu
+ * disengaja. `requireUser()` memanggil `auth()`, yang membaca cookie; menyentuh
+ * API dinamis sebelum query Prisma apa pun membuat Next menandai halaman
+ * berotorisasi sebagai dinamis alih-alih mencoba memprerender-nya saat build.
+ * Tanpa ini `next build` menjalankan query kesiapan di stage builder Docker —
+ * yang tidak punya (dan tidak boleh punya) akses ke database — sehingga build
+ * gagal dengan "Can't reach database server" pada halaman seperti `/bos`.
+ *
+ * Keamanan tidak berubah: kedua gerbang tetap dilewati sebelum satu permission
+ * pun diberikan, dan keduanya gagal tertutup. Yang berubah hanyalah error yang
+ * muncul bagi pemanggil anonim saat RBAC belum siap — `UnauthorizedError`, yang
+ * memang lebih tepat daripada membocorkan status kesiapan ke pihak tak dikenal.
  */
 export const getAuthorizationContext = cache(async (): Promise<AuthorizationContext> => {
+  const user = await requireUser()
+
   const readiness = await getRbacReadiness()
   if (readiness.state !== "ready") throw new RbacNotReadyError(readiness)
-
-  const user = await requireUser()
 
   const memberships = await prisma.userRole.findMany({
     where: { userId: user.id },
