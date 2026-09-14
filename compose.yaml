@@ -5,7 +5,9 @@ services:
       context: .
       target: migrator
     restart: "no"
-    command: ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed"]
+    # Normal deploy hanya migrasi. Seed dijalankan terpisah dan eksplisit saat
+    # bootstrap database baru; lihat docs/operations/deployment.md.
+    command: ["sh", "-c", "npx prisma migrate deploy"]
     environment:
       DATABASE_URL: ${DATABASE_URL}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}

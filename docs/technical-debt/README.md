@@ -45,12 +45,12 @@ Only verified, unresolved engineering liabilities are listed here.
 ## TD-005 — Production recovery and observability are manual/unproven
 
 - **Area / severity:** Operations — **High**
-- **Current condition:** No CI/CD, automated backup schedule/retention/off-site copy, restore drill, centralized logs, metrics, alerts, or repository-verifiable rollback procedure exists.
-- **Evidence:** `compose*.yaml`, `Dockerfile`, `README.md`; no `.github/workflows` or monitoring/backup scheduler configuration.
+- **Current condition:** Partially addressed. `npm run deploy:prod` now performs a verified predeploy `pg_dump` with 20-file retention, enforces build-before-migration, and fails with recovery metadata, so releases are repeatable and each one leaves a checked artifact. Still missing: a *scheduled* (not deploy-triggered) backup, off-site copy, a recorded restore drill, centralized logs, metrics, alerts, and a rehearsed rollback — the tooling deliberately performs no automatic rollback because reverting code against a migrated schema is unsafe.
+- **Evidence:** `scripts/deploy.ts`, `lib/deployment.ts`, `lib/deployment-flow.ts`, `tests/deployment-orchestration.test.ts`, `docs/operations/deployment.md`; no `.github/workflows`, scheduler, or monitoring configuration.
 - **Impact:** Failures, data loss and bad releases may be detected late and recovered inconsistently.
 - **Reason:** Deployment depends on external shared VPS infrastructure that is not managed in this repository.
 - **Direction:** Establish owner-approved backup/retention/off-site policy, recurring restore test, release/image versioning, health/alerting and a tested rollback runbook.
-- **Exit criteria:** Scheduled artifacts and retention are observable, a restore drill is recorded operationally, alerts are exercised, and an application/database rollback rehearsal succeeds.
+- **Exit criteria:** Scheduled (non-deploy) backup artifacts and retention are observable, a restore drill is recorded operationally, alerts are exercised, and an application/database rollback rehearsal succeeds.
 
 ## TD-006 — Student attendance history has no class snapshot
 

@@ -17,11 +17,28 @@ pg_dump 17 tidak dapat dibaca `pg_restore` 15, dan dump plain-nya memuat
 direktif yang server 15 tolak. Menyamakan versi menghapus seluruh kelas masalah
 itu sekaligus membuat clone benar-benar setara produksi.
 
+## Arah sinkronisasi: prodclone ≠ production
+
+`sismepda_prodclone` adalah salinan sekali jalan untuk rehearsal, bukan
+lingkungan yang dapat dipromosikan. Arahnya selalu satu:
+
+```text
+production → dump → prodclone
+```
+
+Tidak ada perkakas di repositori ini yang mengirim `sismepda_dev` atau
+`sismepda_prodclone` kembali ke produksi, dan tooling deployment
+(`npm run deploy:check|prod|status`, lihat [deployment](deployment.md)) tidak
+pernah membaca `.env.local` maupun konfigurasi clone. Produksi hanya berubah
+melalui `prisma migrate deploy` atas commit yang sudah ada di
+`origin/main`; `tests/deployment-orchestration.test.ts` mengunci pemisahan itu.
+
 ## Cara menjalankan
 
 ```bash
-npm run dev:local       # aplikasi di atas sismepda_dev
-npm run dev:prodclone   # aplikasi di atas sismepda_prodclone
+npm run dev:local            # aplikasi di atas sismepda_dev
+npm run dev:prodclone        # aplikasi di atas sismepda_prodclone
+npm run db:refresh-prodclone # buat ulang clone dari produksi (read-only di sisi produksi)
 ```
 
 Kedua perintah mencetak target yang dipakai sebelum Next.js start, misalnya:

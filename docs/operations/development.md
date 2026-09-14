@@ -66,4 +66,18 @@ npx prisma validate
 
 The current suite has unit/contract coverage for domain helpers and selected authorization behavior, not end-to-end browser/database coverage. Calendar tests must prove canonical date-only behavior under multiple host `TZ` values and explicitly test configured school zones such as `Asia/Jakarta`, `Asia/Makassar`, and `Asia/Jayapura`; host, browser, Docker, database-session, and VPS timezone must not change a business `YYYY-MM-DD`. Before a timestamp-to-`DATE` migration, audit every target column for non-midnight legacy values and key collisions; abort rather than infer ambiguous dates. After stopping Next development on Windows, verify no child process still owns port 3000.
 
+## Releasing to production
+
+Development commands never target production. The production interface is three
+scripts documented in [deployment](deployment.md):
+
+```powershell
+npm run deploy:check     # read-only: local gates + remote read-only checks
+npm run deploy:prod      # validation → push → backup → commit → build → migrate → activate → health
+npm run deploy:status    # read-only summary of local/origin/production state
+```
+
+`prodclone ≠ production`: a clone is never sent back, and deployment tooling
+never reads `.env.local` or clone configuration.
+
 Follow `.hermes.md`: documentation is read first and reviewed after every task; source inspection is targeted unless the user explicitly requests a full audit.

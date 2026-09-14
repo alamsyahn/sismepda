@@ -31,7 +31,11 @@ COPY lib ./lib
 # impor seperti "@/lib/rbac-legacy" pada lib/rbac-backfill.ts. Tanpa berkas ini
 # perintah backfill legacy gagal MODULE_NOT_FOUND di dalam image.
 COPY prisma.config.ts package.json tsconfig.json ./
-CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed"]
+# Deployment normal HANYA menjalankan migrate deploy. Seed adalah operasi
+# bootstrap eksplisit untuk database baru (`--entrypoint sh migrate -c "npx
+# prisma db seed"`), bukan bagian rilis rutin: menjalankannya pada tiap deploy
+# akan menulis ulang akun/data referensi pada database produksi yang sudah hidup.
+CMD ["sh", "-c", "npx prisma migrate deploy"]
 
 FROM node:24-bookworm-slim AS runner
 WORKDIR /app
