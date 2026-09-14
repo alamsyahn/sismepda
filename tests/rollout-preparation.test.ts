@@ -54,7 +54,12 @@ import {
   remotePreflightScript,
   remoteRolloutFactsScript,
 } from "@/lib/deployment"
-import { MEDIA_KEY_COUNT_QUERY, backupSetScript } from "@/lib/backup-production-script"
+import {
+  MEDIA_KEY_COLUMNS,
+  MEDIA_KEY_COUNT_QUERY,
+  MEDIA_KEY_COUNT_QUERY_BROKEN_STATIC_FORM,
+  backupSetScript,
+} from "@/lib/backup-production-script"
 import {
   classifyMediaActivation,
   decideBackupMode,
@@ -1174,6 +1179,26 @@ describe("skrip backup produksi pada dua keadaan", () => {
     // Produksi pre-media belum menerima migrasi kunci; query harus menjawab 0,
     // bukan gagal, agar klasifikasi tidak berubah menjadi ambigu palsu.
     assert.ok(MEDIA_KEY_COUNT_QUERY.includes("information_schema.columns"))
+  })
+
+  it("tidak menyebut kolom kunci secara statis (regresi: gagal parse di produksi)", () => {
+    // PostgreSQL me-resolve seluruh pernyataan sebelum mengeksekusi cabang mana
+    // pun, sehingga `CASE WHEN EXISTS(...) THEN (SELECT ... "photoKey" ...)`
+    // tetap gagal dengan `column "photoKey" does not exist` pada produksi yang
+    // belum menerima migrasi. Terbukti nyata pada rollout pertama: jumlah kunci
+    // menjadi `unknown`, dan backup bootstrap yang sah ikut ditolak.
+    for (const [, column] of MEDIA_KEY_COLUMNS) {
+      assert.ok(
+        !MEDIA_KEY_COUNT_QUERY.includes(`"${column}"`),
+        `kolom ${column} disebut sebagai identifier statis`,
+      )
+    }
+    assert.ok(MEDIA_KEY_COUNT_QUERY.includes("query_to_xml"))
+    // Bentuk lama harus tetap ditolak bila seseorang mengembalikannya.
+    for (const [, column] of MEDIA_KEY_COLUMNS) {
+      if (MEDIA_KEY_COUNT_QUERY_BROKEN_STATIC_FORM.includes(`"${column}"`)) return
+    }
+    assert.fail("jangkar regresi tidak lagi merepresentasikan bentuk yang rusak")
   })
 
   it("arsip media tetap dibuat ketika akar media ada", () => {

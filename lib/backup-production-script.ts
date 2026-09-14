@@ -10,28 +10,64 @@
 import { production, shellQuote } from "@/lib/deployment"
 import { DATABASE_ARCHIVE, MEDIA_ARCHIVE } from "@/lib/backup-set"
 
+/** Kolom kunci media kanonik: satu pasangan tabel/kolom per baris. */
+export const MEDIA_KEY_COLUMNS: ReadonlyArray<readonly [string, string]> = [
+  ["User", "photoKey"],
+  ["SchoolSetting", "faviconKey"],
+  ["SchoolSetting", "appLogoKey"],
+  ["SarprasPhoto", "mediaKey"],
+  ["EuksHeroImage", "photoKey"],
+  ["EuksHeroLogo", "logoKey"],
+  ["EuksOfficer", "photoKey"],
+  ["EuksFacility", "photoKey"],
+]
+
 /**
  * Jumlah baris yang sudah memiliki kunci media kanonik.
  *
- * Setiap tabel diperiksa lewat `information_schema` karena query ini juga
- * dijalankan terhadap produksi yang BELUM menerima migrasi kunci media; di sana
- * kolomnya memang belum ada. Kolom yang belum ada menghasilkan 0, bukan error —
- * dan itu benar: tanpa kolom, mustahil ada kunci.
+ * Query ini juga dijalankan terhadap produksi yang BELUM menerima migrasi kunci
+ * media, dan di sana kolom-kolom tersebut memang belum ada.
  *
- * Query ini murni `SELECT`. Ia tidak pernah menulis apa pun.
+ * MENGAPA DINAMIS, BUKAN `CASE WHEN EXISTS`
+ *
+ * Bentuk statis `CASE WHEN EXISTS (... information_schema ...) THEN (SELECT
+ * count(*) FROM "User" WHERE "photoKey" ...)` TIDAK bekerja: PostgreSQL
+ * mem-parse dan me-resolve SELURUH pernyataan sebelum mengeksekusi cabang mana
+ * pun, sehingga kolom yang belum ada langsung menghasilkan
+ * `ERROR: column "photoKey" does not exist`. Guard runtime tidak pernah sempat
+ * berjalan. Akibatnya jumlah kunci menjadi "tidak terjawab" dan — karena
+ * tooling ini fail closed — backup bootstrap yang sah ikut ditolak.
+ *
+ * Karena itu daftar kolom yang benar-benar ada dirakit lebih dulu di dalam
+ * database, lalu dieksekusi lewat satu `EXECUTE`. Kolom yang tidak ada tidak
+ * pernah ikut di-parse. Tanpa kolom, mustahil ada kunci, jadi hasilnya 0.
+ *
+ * Query ini murni membaca. Ia tidak pernah menulis apa pun.
  */
 export const MEDIA_KEY_COUNT_QUERY = [
+  `SELECT coalesce(sum(`,
+  `  (xpath('/row/c/text()', query_to_xml(`,
+  `    format('SELECT count(*) AS c FROM %I.%I WHERE %I IS NOT NULL', c.table_schema, c.table_name, c.column_name),`,
+  `    false, true, '')`,
+  `  ))[1]::text::bigint`,
+  `), 0)::bigint`,
+  `FROM (VALUES ${MEDIA_KEY_COLUMNS.map(([table, column]) => `('${table}','${column}')`).join(", ")})`,
+  `  AS want(t, col)`,
+  `JOIN information_schema.columns c`,
+  `  ON c.table_schema = current_schema()`,
+  `  AND c.table_name = want.t`,
+  `  AND c.column_name = want.col`,
+].join(" ")
+
+/**
+ * Bentuk statis yang TIDAK boleh dipakai lagi.
+ *
+ * Disimpan sebagai jangkar test regresi: bentuk inilah yang gagal di produksi
+ * pre-media, dan test memastikan `MEDIA_KEY_COUNT_QUERY` tidak kembali ke sana.
+ */
+export const MEDIA_KEY_COUNT_QUERY_BROKEN_STATIC_FORM = [
   `SELECT coalesce(sum(n), 0)::bigint FROM (`,
-  [
-    [`User`, `photoKey`],
-    [`SchoolSetting`, `faviconKey`],
-    [`SchoolSetting`, `appLogoKey`],
-    [`SarprasPhoto`, `mediaKey`],
-    [`EuksHeroImage`, `photoKey`],
-    [`EuksHeroLogo`, `logoKey`],
-    [`EuksOfficer`, `photoKey`],
-    [`EuksFacility`, `photoKey`],
-  ]
+  MEDIA_KEY_COLUMNS
     .map(
       ([table, column]) =>
         `SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns ` +
