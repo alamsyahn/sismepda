@@ -300,6 +300,27 @@ Setiap arsip memuat `manifest.json` di puncaknya:
 Manifest sengaja tidak memuat kredensial, variabel lingkungan, maupun jalur
 absolut server.
 
+### Dua format arsip media yang berbeda
+
+`media:backup:create` dan `backup:production` sama-sama menghasilkan `tar.gz`,
+tetapi **tata letak isinya berbeda dan tidak saling kompatibel**:
+
+| Alat | Puncak arsip | Manifest di dalam arsip |
+| --- | --- | --- |
+| `media:backup:create` | `manifest.json` + `media/<kunci>` | ya |
+| `backup:production` (`media.tar.gz`) | `./users/...` (isi `MEDIA_STORAGE_ROOT` apa adanya) | tidak — manifest set ada di luar, sebagai `manifest.json` milik set |
+
+Akibatnya `npm run media:backup:verify` **tidak boleh** dipakai untuk memeriksa
+`media.tar.gz` milik set backup produksi: ia menuntut kedua puncak di atas dan
+akan berhenti dengan `ABORT: Arsip memuat entri dengan jalur tidak aman`. Itu
+penolakan yang benar menurut aturannya sendiri, bukan tanda arsip rusak.
+
+Verifikasi `media.tar.gz` milik set produksi memakai jalurnya sendiri:
+`npm run backup:production:verify -- <direktori set lokal>`, yang mencocokkan
+ukuran dan `fileCount` terhadap manifest set. `backup:production` juga sudah
+membandingkan jumlah entri arsip dengan jumlah berkas sumber saat pembuatan dan
+abort bila berbeda.
+
 ### Verifikasi
 
 `media:backup:verify` tidak berhenti pada "berkas ada". Ia membaca daftar isi

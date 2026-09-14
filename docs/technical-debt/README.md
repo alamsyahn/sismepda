@@ -142,16 +142,6 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Exit criteria:** Backup produksi menghasilkan dump database **dan** arsip media pada run yang berpasangan; arsip produksi terbukti lolos `media:backup:verify`; restore drill produksi pernah dilakukan; seluruh record media produksi punya kunci; keputusan penghapusan kolom bytea diambil eksplisit dengan persetujuan pemilik.
 - **Sudah selesai (jangan diulang):** tooling backup/verify/restore, isolasi media root per peran, uji persistensi volume Docker (restart + recreate), smoke test browser jalur unggah baru, serta preparasi rollout: `deploy:preflight`, `backup:production` (set DB+media bermanifest), `media:migrate:verify`, dan [runbook rollout](../operations/media-rollout.md).
 
-## TD-017 — Jalur tulis media kanonik belum pernah dibuktikan di produksi
-
-- **Area / severity:** Operations / data durability — **Medium**
-- **Current condition:** Canonical media storage sudah **aktif** di produksi sejak commit `ab0c3de`: `MEDIA_STORAGE_ROOT=/app/media` terpasang di container yang berjalan, named volume `sismepda_media_data` ter-mount, dan direktori dimiliki runtime user `nextjs` (uid 1001). Yang belum terjadi adalah smoke test alur aplikasi PHASE 4B: belum ada satu pun unggahan nyata yang melewati `storeMedia` di produksi, sehingga jumlah kunci media masih 0.
-- **Evidence:** `npm run deploy:preflight` → `READY` dengan `MEDIA_STORAGE_ROOT`, `Persistent media mount`, dan `Media volume identity` OK. Uji tulis read-only sebagai runtime user berhasil (`/app/media/_preflight-probe/probe.bin` terbaca dari host, lalu dibersihkan) — ini membuktikan volume writable, **bukan** membuktikan route aplikasi. Set backup lengkap `backup-2026-09-14T182744Z` terverifikasi tetapi arsip medianya 0 berkas; `authorizeLegacyMediaMigration` menolaknya dengan `media-empty`.
-- **Impact:** Migrasi media legacy tetap terkunci, dan itu benar: belum ada bukti bahwa berkas yang ditulis aplikasi benar-benar mendarat di volume dan tersaji kembali. Data yang ada tidak berisiko — 22 baris media legacy tetap di `bytea` dan tersaji lewat fallback (terverifikasi: `/app-logo` 200 `image/jpeg`, `/favicon.ico` 200 `image/png`).
-- **Reason:** Seluruh route media produksi memerlukan sesi login, dan runbook menetapkan smoke test lewat unggah foto profil akun uji. Menebak kredensial tidak dilakukan, dan membuat akun di produksi berarti menulis data bisnis di luar cakupan tugas.
-- **Direction:** Jalankan smoke test PHASE 4B dengan akun uji nyata (unggah foto kecil di `/profil`, pastikan tampil), lalu buat set lengkap baru agar arsip media memuat berkas itu.
-- **Exit criteria:** Jumlah kunci media produksi > 0, berkasnya ada di volume, route menyajikannya, dan set backup lengkap terbaru lolos `authorizeLegacyMediaMigration` tanpa `media-empty`.
-
 ## TD-018 — Backup hanya berada di VPS yang sama (belum ada offsite)
 
 - **Area / severity:** Operations / disaster recovery — **Medium**

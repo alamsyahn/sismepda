@@ -205,6 +205,23 @@ menambah kolom nullable dan melonggarkan CHECK constraint. Tidak ada
    termuat. Ini membuktikan fallback `bytea` hidup.
 3. Tulis media baru berhasil — lihat rencana smoke test di bawah.
 
+**Smoke test menuntut sesi login sungguhan.** Seluruh route media produksi
+berada di balik autentikasi, dan tidak ada akun uji khusus di produksi. Yang
+membuktikan jalur ini bukan probe tulis ke volume — volume writable sudah
+terbukti terpisah — melainkan
+`unggah nyata → storeMedia → kunci di database → berkas di volume → route menyajikannya`.
+Bila tidak ada sesi sah, berhenti dan minta operator login; jangan menebak
+kredensial, membuat akun produksi, atau menaruh berkas manual ke volume.
+
+Flow berdampak terkecil: operator login → `/profil` → unggah foto profil kecil
+(slot `profile.user.photo`, maks 1 MB, jpeg/png/webp). Jangan memakai logo
+sekolah, favicon, atau foto UKS/Sarpras untuk uji.
+
+Unggahan baru **bukan** dual-write: `PUT /api/profile/photo` menulis
+`photoKey` + `photoSize` + `photoMimeType` dan menyetel `photoData` ke `NULL`.
+Jadi keadaan yang benar setelah smoke test adalah kunci terisi dengan bytea
+kosong pada baris itu saja; baris legacy lain tidak tersentuh.
+
 **CHECKPOINT.** `deploy:prod` mencetak status aktivasi media di akhir. Bila
 media baru saja aktif, keluarannya berbunyi:
 
@@ -232,6 +249,20 @@ npm run backup:production
 
 Set backup baru harus memuat berkas yang lahir dari smoke test PHASE 4. Ini
 membuktikan media baru benar-benar masuk cakupan backup.
+
+Verifikasi ulang set yang sudah jadi memakai **direktori lokal**, bukan jalur
+server:
+
+```bash
+scp smpn2:/srv/backups/sismepda/sets/<setId>/{database.dump,media.tar.gz,manifest.json} <dir-lokal>/
+npm run backup:production:verify -- <dir-lokal>
+```
+
+`--verify` membaca manifest dari filesystem lokal. Salinan manifest di
+`.backup-sets/<setId>/` tidak cukup: ia hanya memuat `manifest.json`, sehingga
+verifikasi melaporkan `database.dump`/`media.tar.gz` tidak ada. Jangan pakai
+`media:backup:verify` untuk `media.tar.gz` milik set ini — format arsipnya
+berbeda (lihat [media-storage](../architecture/media-storage.md)).
 
 Bila smoke test belum dijalankan, set lengkap tetap terbentuk dan terverifikasi,
 tetapi arsip medianya kosong (0 berkas). Tooling menandainya `media-empty` dan
