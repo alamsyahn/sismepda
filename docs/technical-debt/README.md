@@ -140,4 +140,34 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Reason:** Fase ini sengaja berhenti pada tooling + verifikasi lokal. Mengubah cron produksi dan menjalankan migrasi media produksi adalah operasi berisiko yang menunggu deployment runbook disetujui.
 - **Direction:** Panggil `media:backup:create` berdampingan dengan dump PostgreSQL di `remoteBackupScript()`, verifikasi arsip hasil produksi dengan `media:backup:verify`, lakukan restore drill produksi, baru jalankan migrasi media produksi dan rencanakan fase CONTRACT.
 - **Exit criteria:** Backup produksi menghasilkan dump database **dan** arsip media pada run yang berpasangan; arsip produksi terbukti lolos `media:backup:verify`; restore drill produksi pernah dilakukan; seluruh record media produksi punya kunci; keputusan penghapusan kolom bytea diambil eksplisit dengan persetujuan pemilik.
-- **Sudah selesai (jangan diulang):** tooling backup/verify/restore, isolasi media root per peran, uji persistensi volume Docker (restart + recreate), dan smoke test browser jalur unggah baru.
+- **Sudah selesai (jangan diulang):** tooling backup/verify/restore, isolasi media root per peran, uji persistensi volume Docker (restart + recreate), smoke test browser jalur unggah baru, serta preparasi rollout: `deploy:preflight`, `backup:production` (set DB+media bermanifest), `media:migrate:verify`, dan [runbook rollout](../operations/media-rollout.md).
+
+## TD-017 — `deploy.yaml` produksi belum punya mount media dan `MEDIA_STORAGE_ROOT`
+
+- **Area / severity:** Operations / data durability — **High (blocker rollout)**
+- **Current condition:** Inspeksi read-only produksi (`smpn2`) menunjukkan `deploy.yaml` hanya memount bind `/var/lib/sismepda/postgresql` untuk database. Tidak ada volume/mount untuk media, dan `MEDIA_STORAGE_ROOT` tidak diset di konfigurasi. `npm run deploy:preflight` melaporkan `NOT READY` tepat karena ini.
+- **Evidence:** `deploy:preflight` terhadap produksi → `BLOCKER MEDIA_STORAGE_ROOT`; `docker inspect` container app tidak memuat mount dengan destination `/app/media`.
+- **Impact:** Bila aplikasi versi baru dideploy apa adanya, `decideMediaRoot()` jatuh ke `.media` relatif direktori kerja container — writable layer, yang hilang pada recreate berikutnya. Media lama tetap selamat lewat `bytea`, tetapi setiap unggahan baru akan lenyap diam-diam.
+- **Reason:** `deploy.yaml` berada di host dan tidak ada di Git; phase ini dilarang menulis ke produksi, jadi perbaikannya adalah tindakan operator.
+- **Direction:** Tambahkan `MEDIA_STORAGE_ROOT: /app/media` dan named volume eksplisit `sismepda_media:/app/media` pada service `app` di `deploy.yaml`, tanpa menyentuh penamaan volume database. Bentuk lengkapnya ada di [runbook rollout](../operations/media-rollout.md).
+- **Exit criteria:** `npm run deploy:preflight` melaporkan `READY`.
+
+## TD-018 — Backup hanya berada di VPS yang sama (belum ada offsite)
+
+- **Area / severity:** Operations / disaster recovery — **Medium**
+- **Current condition:** Set backup ditulis ke `/srv/backups/sismepda/` pada VPS yang sama dengan aplikasi dan database. Tidak ada salinan di luar mesin.
+- **Evidence:** `lib/backup-production-script.ts` menulis ke path lokal produksi; tidak ada integrasi penyimpanan eksternal di repo.
+- **Impact:** Backup lokal melindungi dari migrasi yang buruk dan kesalahan level aplikasi, tetapi **tidak** dari kehilangan VPS, kegagalan disk, atau kehilangan akses provider.
+- **Reason:** Integrasi penyedia cloud sengaja dikeluarkan dari phase preparasi rollout.
+- **Direction:** Salin set backup terverifikasi ke penyimpanan di luar VPS setelah rollout media stabil. Pilihan penyedia belum diputuskan.
+- **Exit criteria:** Set backup terverifikasi tersalin otomatis ke luar VPS, dan pernah dipulihkan dari salinan offsite minimal sekali.
+
+## TD-019 — Penghapusan retensi backup belum otomatis
+
+- **Area / severity:** Operations / capacity — **Low**
+- **Current condition:** Kebijakan retensi 7 harian + 4 mingguan sudah terdefinisi dan teruji sebagai fungsi murni (`selectExpiredSets` di `lib/backup-set.ts`, dengan jaminan set terbaru tidak pernah terpilih dan nama tak dikenal tidak pernah disentuh). Namun tidak ada proses yang benar-benar menghapus.
+- **Evidence:** `tests/rollout-preparation.test.ts` menguji pemilihan; tidak ada pemanggil `selectExpiredSets` yang melakukan penghapusan.
+- **Impact:** Direktori backup produksi tumbuh tanpa batas. Saat ini tidak mendesak (disk bebas ±69 GB, set ±88 MB).
+- **Reason:** Penghapusan otomatis tanpa uji coba nyata lebih berisiko daripada disk terisi perlahan.
+- **Direction:** Sambungkan `selectExpiredSets` ke perintah penghapusan yang mensyaratkan konfirmasi eksplisit dan mencetak daftar sebelum menghapus.
+- **Exit criteria:** Penghapusan retensi berjalan terjadwal di produksi, dengan dry-run sebagai default.

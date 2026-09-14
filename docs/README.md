@@ -33,6 +33,7 @@ Cross-feature rules are linked rather than repeated. Attendance class scope affe
 
 - [Development and verification](operations/development.md)
 - [Deployment, migration, rollback boundaries](operations/deployment.md) — `npm run deploy:check` / `deploy:prod` / `deploy:status`
+- [Media rollout runbook: preflight, backup set, sekuensing, rollback](operations/media-rollout.md) — `npm run deploy:preflight` / `backup:production`
 - [RBAC cutover runbook](operations/rbac-cutover.md)
 - [Backup and restore](operations/backup-restore.md)
 - [Local database workflow: dev vs production clone](operations/local-database-workflow.md)

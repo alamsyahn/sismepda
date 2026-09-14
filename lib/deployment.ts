@@ -308,6 +308,69 @@ export function remoteStatusScript(): string {
   )
 }
 
+/**
+ * Pengumpulan fakta rollout media — READ-ONLY sepenuhnya.
+ *
+ * Tidak ada `mkdir`, `touch`, `cp`, atau `docker exec` yang menulis. Kemampuan
+ * tulis direktori backup diperiksa dengan `test -w`, bukan dengan membuat
+ * berkas uji, karena preflight tidak boleh meninggalkan jejak di produksi.
+ *
+ * `compose config` dipipa ke grep sehingga hanya satu baris MEDIA_STORAGE_ROOT
+ * yang keluar; sisa konfigurasi (yang memuat env) tidak pernah dicetak.
+ */
+export function remoteRolloutFactsScript(): string {
+  return script(
+    `APP_ID=$(${compose} ps -q ${production.appService} </dev/null)`,
+    `test -n "$APP_ID" || { echo "ABORT: container app tidak berjalan" >&2; exit 2; }`,
+    `DB_ID=$(${compose} ps -q ${production.databaseService} </dev/null)`,
+    `test -n "$DB_ID" || { echo "ABORT: container database tidak berjalan" >&2; exit 2; }`,
+    // Akar media menurut konfigurasi compose yang sedang berlaku.
+    `ROOT=$(${compose} config </dev/null | grep -E '^[[:space:]]*MEDIA_STORAGE_ROOT:' | head -1 | sed 's/.*MEDIA_STORAGE_ROOT:[[:space:]]*//' | tr -d '"' || true)`,
+    `echo "MEDIA_ROOT=${"$"}{ROOT:-}"`,
+    // Mount container app: tipe|nama|tujuan|sumber|rw, satu baris per mount.
+    `docker inspect --format '{{range .Mounts}}MOUNT={{.Type}}|{{.Name}}|{{.Destination}}|{{.Source}}|{{.RW}}{{println}}{{end}}' "$APP_ID"`,
+    `echo "FREE_BYTES=$(df -P -B1 ${production.appDir} | awk 'NR==2 {print $4}')"`,
+    `echo "DB_BYTES=$(docker exec "$DB_ID" du -sb /var/lib/postgresql/data 2>/dev/null | awk '{print $1}')"`,
+    // `test -w` menilai izin tanpa menulis apa pun.
+    `if [ -d ${production.backupDir} ]; then test -w ${production.backupDir} && echo "BACKUP_WRITABLE=yes" || echo "BACKUP_WRITABLE=no"; else test -w "$(dirname ${production.backupDir})" && echo "BACKUP_WRITABLE=yes" || echo "BACKUP_WRITABLE=no"; fi`,
+    `echo "APPLIED_MIGRATIONS_BEGIN"`,
+    `PGDB=$(docker exec "$DB_ID" printenv POSTGRES_DB)`,
+    `PGU=$(docker exec "$DB_ID" printenv POSTGRES_USER)`,
+    `docker exec -i "$DB_ID" psql -U "$PGU" -d "$PGDB" -At -c 'SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL' </dev/null`,
+    `echo "APPLIED_MIGRATIONS_END"`,
+  )
+}
+
+/**
+ * Total byte kolom bytea legacy di produksi — READ-ONLY (`SELECT` saja).
+ *
+ * Dipakai preflight untuk mengestimasi duplikasi disk sementara selama masa
+ * transisi, ketika media ada di database DAN di filesystem.
+ */
+export function remoteLegacyMediaBytesScript(): string {
+  const query = [
+    `SELECT coalesce(sum(octet_length("photoData")),0) FROM "User"`,
+    `UNION ALL SELECT coalesce(sum(octet_length("appLogoData")),0) FROM "SchoolSetting"`,
+    `UNION ALL SELECT coalesce(sum(octet_length("faviconData")),0) FROM "SchoolSetting"`,
+    `UNION ALL SELECT coalesce(sum(octet_length(data)),0) FROM "SarprasPhoto"`,
+    `UNION ALL SELECT coalesce(sum(octet_length("photoData")),0) FROM "EuksHeroImage"`,
+    `UNION ALL SELECT coalesce(sum(octet_length("logoData")),0) FROM "EuksHeroLogo"`,
+    `UNION ALL SELECT coalesce(sum(octet_length("photoData")),0) FROM "EuksOfficer"`,
+    `UNION ALL SELECT coalesce(sum(octet_length("photoData")),0) FROM "EuksFacility"`,
+  ].join(" ")
+
+  return script(
+    `DB_ID=$(${compose} ps -q ${production.databaseService} </dev/null)`,
+    `test -n "$DB_ID" || { echo "ABORT: container database tidak berjalan" >&2; exit 2; }`,
+    `PGDB=$(docker exec "$DB_ID" printenv POSTGRES_DB)`,
+    `PGU=$(docker exec "$DB_ID" printenv POSTGRES_USER)`,
+    `TOTAL=$(docker exec -i "$DB_ID" psql -U "$PGU" -d "$PGDB" -At -c ${shellQuote(
+      `SELECT sum(t) FROM (${query}) AS s(t)`,
+    )} </dev/null)`,
+    `echo "LEGACY_MEDIA_BYTES=${"$"}{TOTAL:-0}"`,
+  )
+}
+
 function assertSha(sha: string): void {
   if (!isCommitSha(sha)) {
     throw new Error(`Commit SHA tidak sah; perintah remote dibatalkan: ${sha}`)

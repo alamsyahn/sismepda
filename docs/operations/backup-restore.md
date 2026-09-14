@@ -1,5 +1,10 @@
 # Backup and restore
 
+> **Setelah pemisahan media, dump PostgreSQL saja BUKAN backup SISMEPDA yang lengkap.**
+> Backup lengkap = dump database + arsip media, dibuat sebagai satu set pemulihan
+> ber-ID sama. Lihat [runbook rollout media](media-rollout.md) dan
+> `npm run backup:production`. Halaman ini menjelaskan bagian database.
+
 ADMIN can download/restore database data from `/pengaturan` through `/api/admin/database`. The runtime image includes PostgreSQL client 17.
 
 ## Backup contract

@@ -16,6 +16,8 @@
  */
 
 import { spawnSync } from "node:child_process"
+import { readdirSync } from "node:fs"
+import path from "node:path"
 
 import { production, redactSecrets } from "@/lib/deployment"
 import {
@@ -26,6 +28,7 @@ import {
   type CommandResult,
   type DeploymentRunner,
 } from "@/lib/deployment-flow"
+import { runRolloutPreflight } from "@/lib/rollout-preflight-flow"
 
 const args = process.argv.slice(2)
 const mode = args[0]
@@ -78,17 +81,35 @@ const runner: DeploymentRunner = {
   now: () => new Date(),
 }
 
+/** Nama direktori migrasi di repo, terurut — dibandingkan dengan produksi. */
+function repoMigrations(): string[] {
+  const dir = path.join(process.cwd(), "prisma", "migrations")
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort()
+  } catch {
+    return []
+  }
+}
+
 function main(): number {
   switch (mode) {
     case "deploy":
       return runDeploy(runner, { dryRun, skipValidation })
     case "check":
       return runCheck(runner, { skipValidation })
+    case "preflight":
+      return runRolloutPreflight(runner, {
+        repoMigrations: repoMigrations(),
+        commit: runner.local("git", ["rev-parse", "HEAD"]).stdout.trim(),
+      })
     case "status":
       return runStatus(runner)
     default:
       console.error(
-        "Pemakaian: tsx scripts/deploy.ts <deploy|check|status> [--dry-run] [--skip-validation]",
+        "Pemakaian: tsx scripts/deploy.ts <deploy|check|preflight|status> [--dry-run] [--skip-validation]",
       )
       return 64
   }
