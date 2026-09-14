@@ -142,15 +142,15 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Exit criteria:** Backup produksi menghasilkan dump database **dan** arsip media pada run yang berpasangan; arsip produksi terbukti lolos `media:backup:verify`; restore drill produksi pernah dilakukan; seluruh record media produksi punya kunci; keputusan penghapusan kolom bytea diambil eksplisit dengan persetujuan pemilik.
 - **Sudah selesai (jangan diulang):** tooling backup/verify/restore, isolasi media root per peran, uji persistensi volume Docker (restart + recreate), smoke test browser jalur unggah baru, serta preparasi rollout: `deploy:preflight`, `backup:production` (set DB+media bermanifest), `media:migrate:verify`, dan [runbook rollout](../operations/media-rollout.md).
 
-## TD-017 — Persistensi media produksi belum aktif sampai deploy berikutnya
+## TD-017 — Jalur tulis media kanonik belum pernah dibuktikan di produksi
 
-- **Area / severity:** Operations / data durability — **Medium (turun dari High)**
-- **Current condition:** Konfigurasi persistensi media sudah ada di repositori sebagai overlay Compose `compose.media.yaml` (`MEDIA_STORAGE_ROOT: /app/media` + named volume `sismepda_media_data`), dan seluruh perintah compose produksi menyertakannya. Produksi sendiri masih menjalankan commit `41a1864`, yang mendahului overlay tersebut, sehingga container app yang berjalan **belum** memiliki volume media.
-- **Evidence:** `npm run deploy:preflight` terhadap produksi → `BLOCKER MEDIA_STORAGE_ROOT` (container berjalan belum memuat overlay). Simulasi Compose lokal dengan overlay yang sama membuktikan berkas bertahan melewati `up -d --force-recreate`, sementara kontrol negatif di writable layer hilang.
-- **Impact:** Selama produksi belum menerima overlay, unggahan baru masih akan ditulis ke writable layer dan hilang saat container dibuat ulang. Media lama tetap selamat lewat `bytea`.
-- **Reason:** `deploy.yaml` berada di host dan tidak ada di Git. Alih-alih menyunting produksi dengan tangan — yang tidak terlacak dan tidak teruji — konfigurasi dikirim lewat overlay yang ikut ter-review dan sampai ke produksi melalui `git merge --ff-only` milik alur deploy.
-- **Direction:** Tidak ada perubahan repositori yang tersisa. Overlay aktif pada deploy terkontrol berikutnya; tahap build, migrate, dan activate menolak berjalan bila overlay tidak ada, sehingga container app tidak mungkin dibuat ulang tanpa volume media.
-- **Exit criteria:** `npm run deploy:preflight` melaporkan `READY` setelah produksi tersinkron, dengan `Persistent media mount` dan `Media volume identity` berstatus OK.
+- **Area / severity:** Operations / data durability — **Medium**
+- **Current condition:** Canonical media storage sudah **aktif** di produksi sejak commit `ab0c3de`: `MEDIA_STORAGE_ROOT=/app/media` terpasang di container yang berjalan, named volume `sismepda_media_data` ter-mount, dan direktori dimiliki runtime user `nextjs` (uid 1001). Yang belum terjadi adalah smoke test alur aplikasi PHASE 4B: belum ada satu pun unggahan nyata yang melewati `storeMedia` di produksi, sehingga jumlah kunci media masih 0.
+- **Evidence:** `npm run deploy:preflight` → `READY` dengan `MEDIA_STORAGE_ROOT`, `Persistent media mount`, dan `Media volume identity` OK. Uji tulis read-only sebagai runtime user berhasil (`/app/media/_preflight-probe/probe.bin` terbaca dari host, lalu dibersihkan) — ini membuktikan volume writable, **bukan** membuktikan route aplikasi. Set backup lengkap `backup-2026-09-14T182744Z` terverifikasi tetapi arsip medianya 0 berkas; `authorizeLegacyMediaMigration` menolaknya dengan `media-empty`.
+- **Impact:** Migrasi media legacy tetap terkunci, dan itu benar: belum ada bukti bahwa berkas yang ditulis aplikasi benar-benar mendarat di volume dan tersaji kembali. Data yang ada tidak berisiko — 22 baris media legacy tetap di `bytea` dan tersaji lewat fallback (terverifikasi: `/app-logo` 200 `image/jpeg`, `/favicon.ico` 200 `image/png`).
+- **Reason:** Seluruh route media produksi memerlukan sesi login, dan runbook menetapkan smoke test lewat unggah foto profil akun uji. Menebak kredensial tidak dilakukan, dan membuat akun di produksi berarti menulis data bisnis di luar cakupan tugas.
+- **Direction:** Jalankan smoke test PHASE 4B dengan akun uji nyata (unggah foto kecil di `/profil`, pastikan tampil), lalu buat set lengkap baru agar arsip media memuat berkas itu.
+- **Exit criteria:** Jumlah kunci media produksi > 0, berkasnya ada di volume, route menyajikannya, dan set backup lengkap terbaru lolos `authorizeLegacyMediaMigration` tanpa `media-empty`.
 
 ## TD-018 — Backup hanya berada di VPS yang sama (belum ada offsite)
 

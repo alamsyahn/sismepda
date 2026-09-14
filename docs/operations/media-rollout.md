@@ -15,17 +15,20 @@ tidak ada satu langkah pun yang wajib dilanjutkan hari itu juga.
 
 ## Kondisi produksi saat ini
 
-Diverifikasi lewat inspeksi read-only:
+Diverifikasi lewat inspeksi read-only setelah rollout media pertama
+(commit `ab0c3de`):
 
 | Aspek | Kondisi |
 | --- | --- |
 | SSH | `smpn2`, app di `/srv/apps/sismepda` |
-| Compose | `deploy.yaml` di host, **tidak ada di Git** |
-| Volume database | bind mount `/var/lib/sismepda/postgresql` |
-| Volume media | dikonfigurasi lewat overlay `compose.media.yaml`; aktif setelah deploy berikutnya |
-| `MEDIA_STORAGE_ROOT` | `/app/media`, ditetapkan overlay |
-| Byte media legacy | ±7,1 MB di `bytea` |
-| Migrasi belum diterapkan | 2 (`add_media_storage_keys`, `relax_media_consistency_checks`) |
+| Compose | `deploy.yaml` di host, **tidak ada di Git**; digabung `compose.media.yaml` dari repo |
+| Volume database | bind mount `/var/lib/sismepda/postgresql` (tidak berubah oleh rollout) |
+| Volume media | **AKTIF** — named volume `sismepda_media_data` → `/app/media` |
+| `MEDIA_STORAGE_ROOT` | **AKTIF** — `/app/media` di container yang berjalan |
+| Runtime user app | `nextjs` (uid 1001), pemilik `/app/media` |
+| Byte media legacy | ±7,1 MB di `bytea`, **dipertahankan** sebagai fallback (22 baris) |
+| Kunci media kanonik | 0 — belum ada unggahan baru, migrasi legacy belum dijalankan |
+| Migrasi belum diterapkan | tidak ada |
 
 ## Persistensi media produksi
 
@@ -123,7 +126,18 @@ npm run deploy:preflight
 ```
 
 Read-only terhadap produksi. Keluar non-nol dan mencetak `NOT READY` bila ada
-blocker. Jangan lanjut sebelum `READY`.
+blocker.
+
+Pada rollout media **pertama**, `NOT READY` dengan blocker tunggal
+`MEDIA_STORAGE_ROOT` adalah keadaan yang diharapkan, bukan penghalang: preflight
+menilai produksi yang sedang berjalan, dan overlay media baru tiba di tengah
+`deploy:prod`. `deploy:prod` menjalankan gerbangnya sendiri dan tidak membaca
+hasil preflight ini. Untuk rollout berikutnya, `READY` tetap syarat.
+
+**Working tree harus bersih, termasuk berkas untracked.** `deploy:prod` menolak
+berjalan bila ada satu saja berkas untracked — termasuk `.backup-sets/` yang
+baru saja dibuat PHASE 1. Direktori itu kini ter-ignore; bila muncul artefak
+untracked lain, selesaikan dulu, jangan hapus dengan asumsi.
 
 ## PHASE 1 — Backup sebelum rollout (mode bootstrap)
 
@@ -218,6 +232,13 @@ npm run backup:production
 
 Set backup baru harus memuat berkas yang lahir dari smoke test PHASE 4. Ini
 membuktikan media baru benar-benar masuk cakupan backup.
+
+Bila smoke test belum dijalankan, set lengkap tetap terbentuk dan terverifikasi,
+tetapi arsip medianya kosong (0 berkas). Tooling menandainya `media-empty` dan
+`authorizeLegacyMediaMigration` menolak set itu sebagai dasar migrasi legacy.
+Itu bukan kegagalan backup — dump database tetap sah dan lengkap untuk seluruh
+media yang ada — melainkan pernyataan jujur bahwa jalur tulis storage baru belum
+pernah dibuktikan di produksi. Jalankan smoke test, lalu buat set lengkap baru.
 
 ## PHASE 6 — Migrasi media legacy
 
