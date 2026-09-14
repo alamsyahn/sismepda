@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { History, ImagePlus, Loader2, Pencil, Trash2 } from "lucide-react"
 import { toast } from "sonner"
+import { describeOversizeFile, useUploadPolicy } from "@/lib/use-upload-policy"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -22,7 +23,7 @@ import {
   sarprasStatusColors,
   sarprasStatusLabels,
 } from "@/lib/sarpras"
-import { MAX_SARPRAS_PHOTO_BYTES, sarprasPhotoUrl } from "@/lib/sarpras-constants"
+import { sarprasPhotoUrl } from "@/lib/sarpras-constants"
 import { formatSchoolDate, fromPrismaDate } from "@/lib/school-date"
 import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
@@ -61,6 +62,7 @@ export function SarprasDetailSheet({
   onChanged,
 }: Props) {
   const { dateFromInstant, formatTime } = useSchoolTimeZone()
+  const uploadPolicy = useUploadPolicy("sarpras.item.photo")
   const [history, setHistory] = useState<HistoryEntry[] | null>(null)
   const [uploading, setUploading] = useState(false)
 
@@ -88,8 +90,10 @@ export function SarprasDetailSheet({
 
   async function uploadPhoto(file: File) {
     if (!item) return
-    if (file.size > MAX_SARPRAS_PHOTO_BYTES) {
-      toast.error("Ukuran foto maksimal 2 MB")
+    // Cek awal untuk UX; /api/sarpras/photos tetap memvalidasi ulang.
+    const oversize = describeOversizeFile(file, uploadPolicy)
+    if (oversize) {
+      toast.error(oversize)
       return
     }
     setUploading(true)

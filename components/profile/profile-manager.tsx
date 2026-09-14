@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { Eye, EyeOff, KeyRound, Loader2, Save, ShieldCheck, Trash2, Upload, UserRound } from "lucide-react"
 import { useSession } from "next-auth/react"
 import { toast } from "sonner"
+import { describeOversizeFile, describeUploadPolicy, useUploadPolicy } from "@/lib/use-upload-policy"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,7 +22,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PrefixCombobox } from "@/components/guru/prefix-combobox"
 import { defaultPrefixOptions, previewName, splitPrefixedName } from "@/lib/guru-input"
-import { MAX_PROFILE_PHOTO_BYTES, PROFILE_PHOTO_TYPES } from "@/lib/profile"
+import { PROFILE_PHOTO_TYPES } from "@/lib/profile"
 
 export type ProfileData = {
   id: string
@@ -43,6 +44,7 @@ async function readResponse<T>(response: Response): Promise<T> {
 }
 
 export function ProfileManager({ initialProfile }: { initialProfile: ProfileData }) {
+  const uploadPolicy = useUploadPolicy("profile.user.photo")
   const initialName = splitPrefixedName(initialProfile.name)
   const { update: updateSession } = useSession()
   const [profile, setProfile] = useState(initialProfile)
@@ -83,8 +85,10 @@ export function ProfileManager({ initialProfile }: { initialProfile: ProfileData
       toast.error("Foto harus berformat JPEG, PNG, atau WebP")
       return
     }
-    if (file.size > MAX_PROFILE_PHOTO_BYTES) {
-      toast.error("Ukuran foto maksimal 1 MB")
+    // Pemeriksaan awal demi UX; server memeriksa ulang setiap unggahan.
+    const oversize = describeOversizeFile(file, uploadPolicy)
+    if (oversize) {
+      toast.error(oversize)
       return
     }
     setPhoto(file)
@@ -303,7 +307,7 @@ export function ProfileManager({ initialProfile }: { initialProfile: ProfileData
       <Card className="h-fit">
         <CardHeader>
           <CardTitle className="text-base">Foto Profil</CardTitle>
-          <CardDescription>JPEG, PNG, atau WebP dengan ukuran maksimal 1 MB.</CardDescription>
+          <CardDescription>{describeUploadPolicy(uploadPolicy)}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="flex flex-col items-center gap-3 text-center">

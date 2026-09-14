@@ -4,7 +4,6 @@
  */
 
 /** Same ceiling the upload route enforces; the form checks it first for a fast error. */
-export const MAX_SARPRAS_PHOTO_BYTES = 2 * 1024 * 1024
 
 /** Upper bound on photos per item, so one record can't bloat the database. */
 export const MAX_SARPRAS_PHOTOS_PER_ITEM = 6

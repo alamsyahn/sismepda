@@ -241,6 +241,7 @@ export function EuksFacilitySettings({ facilities }: { facilities: FacilityRow[]
       <CardContent className="space-y-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <EuksPhotoField
+  slotKey="euks.facility.photo"
             shape="landscape"
             currentUrl={null}
             file={photo}
@@ -363,6 +364,7 @@ export function EuksFacilitySettings({ facilities }: { facilities: FacilityRow[]
 
           <div className="space-y-4">
             <EuksPhotoField
+  slotKey="euks.facility.photo"
               shape="landscape"
               currentUrl={editCurrentUrl}
               file={editPhoto}

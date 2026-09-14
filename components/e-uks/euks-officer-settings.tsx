@@ -279,6 +279,7 @@ export function EuksOfficerSettings({
       <CardContent className="space-y-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <EuksPhotoField
+  slotKey="euks.officer.photo"
             shape="portrait"
             currentUrl={null}
             file={photo}
@@ -442,6 +443,7 @@ export function EuksOfficerSettings({
 
           <div className="space-y-4">
             <EuksPhotoField
+  slotKey="euks.officer.photo"
               shape="portrait"
               currentUrl={editCurrentUrl}
               file={editPhoto}

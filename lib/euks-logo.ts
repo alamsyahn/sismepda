@@ -25,7 +25,6 @@ export type EuksLogoType = (typeof EUKS_LOGO_TYPES)[number]
  * institusi yang wajar hanya puluhan sampai ratusan KB; batas ketat sekaligus
  * membatasi biaya pemindaian SVG di bawah.
  */
-export const MAX_EUKS_LOGO_BYTES = 512 * 1024
 
 /** Ekstensi untuk atribut `accept` pada input berkas. */
 export const EUKS_LOGO_ACCEPT = ".jpg,.jpeg,.png,.webp,.svg,image/jpeg,image/png,image/webp,image/svg+xml"

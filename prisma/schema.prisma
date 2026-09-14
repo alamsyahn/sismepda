@@ -432,6 +432,30 @@ model SchoolSetting {
   autoLock Boolean @default(true)
   allowTeachersAccessAllClasses Boolean @default(false)
   attendanceStatusColors String?
+  /// Batas unggah global per kategori, dalam byte. Null berarti "pakai bawaan
+  /// kode" (lihat DEFAULT_GLOBAL_LIMITS di lib/upload-policy.ts), bukan tanpa
+  /// batas — resolver tidak pernah memperlakukan ketiadaan nilai sebagai izin.
+  uploadImageMaxBytes Int?
+  uploadDocumentMaxBytes Int?
+}
+
+/// Override batas unggah untuk satu Upload Slot.
+///
+/// Registry slot tetap hidup di kode (lib/upload-slots.ts); tabel ini hanya
+/// menyimpan penyimpangan yang dipilih admin. Menyalin seluruh registry ke
+/// database akan menciptakan sumber kebenaran kedua yang bisa berbeda pendapat
+/// dengan kode saat slot ditambah atau dihapus.
+///
+/// Baris untuk key yang tidak lagi terdaftar diabaikan resolver, sehingga
+/// menghapus slot dari kode tidak pernah melonggarkan apa pun.
+model UploadPolicyOverride {
+  slotKey String @id
+  maxBytes Int
+  /// Aktor terakhir yang menyetel nilai ini. Sengaja tanpa relasi ke User agar
+  /// menghapus akun tidak menghapus kebijakan sekolah; jejak lengkapnya ada di
+  /// AuditLog.
+  updatedById String?
+  updatedAt DateTime @updatedAt
 }
 
 /// Satu entri kalender libur. Tiga tipe dibedakan oleh `kind`:

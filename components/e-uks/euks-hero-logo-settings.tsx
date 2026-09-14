@@ -14,6 +14,8 @@ import {
   Upload,
 } from "lucide-react"
 import { toast } from "sonner"
+import { formatBytes } from "@/lib/upload-slots"
+import { describeOversizeFile, useUploadPolicy } from "@/lib/use-upload-policy"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -33,7 +35,6 @@ import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu"
 import {
   EUKS_LOGO_ACCEPT,
   EUKS_LOGO_FORMAT_LABEL,
-  MAX_EUKS_LOGO_BYTES,
   euksHeroLogoUrl,
 } from "@/lib/euks-logo"
 
@@ -106,6 +107,7 @@ function LogoFileInput({
   onFileChange: (file: File | null) => void
   disabled?: boolean
 }) {
+  const uploadPolicy = useUploadPolicy("euks.hero.logo")
   return (
     <Input
       id={id}
@@ -114,8 +116,9 @@ function LogoFileInput({
       disabled={disabled}
       onChange={(event) => {
         const picked = event.target.files?.[0] ?? null
-        if (picked && picked.size > MAX_EUKS_LOGO_BYTES) {
-          toast.error("Ukuran logo maksimal 512 KB")
+        const oversize = picked ? describeOversizeFile(picked, uploadPolicy) : null
+        if (oversize) {
+          toast.error(oversize)
           event.target.value = ""
           onFileChange(null)
           return
@@ -133,6 +136,7 @@ function LogoFileInput({
  * hapus. Urutan di sini menentukan urutan logo dari kiri ke kanan pada hero.
  */
 export function EuksHeroLogoSettings({ logos }: { logos: HeroLogoRow[] }) {
+  const uploadPolicy = useUploadPolicy("euks.hero.logo")
   const router = useRouter()
   const [name, setName] = useState("")
   const [file, setFile] = useState<File | null>(null)
@@ -293,7 +297,7 @@ export function EuksHeroLogoSettings({ logos }: { logos: HeroLogoRow[] }) {
         <CardDescription>
           Logo institusi yang tampil di pojok kiri atas hero Halaman Utama E-UKS. Urutan di sini
           menentukan urutan logo dari kiri ke kanan. Format yang didukung: {EUKS_LOGO_FORMAT_LABEL}
-          , maksimal 512 KB per berkas.
+          , maksimal {formatBytes(uploadPolicy.maxBytes)} per berkas.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -442,7 +446,7 @@ export function EuksHeroLogoSettings({ logos }: { logos: HeroLogoRow[] }) {
                   disabled={busy}
                 />
                 <p className="text-muted-foreground text-xs">
-                  {EUKS_LOGO_FORMAT_LABEL}, maksimal 512 KB. Kosongkan bila tidak ingin mengganti.
+                  {EUKS_LOGO_FORMAT_LABEL}, maksimal {formatBytes(uploadPolicy.maxBytes)}. Kosongkan bila tidak ingin mengganti.
                 </p>
               </div>
             </div>

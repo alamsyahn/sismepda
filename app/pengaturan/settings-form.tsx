@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Download, ImageIcon, Loader2, Save, Upload } from "lucide-react"
 import Image from "next/image"
 import { toast } from "sonner"
+import { describeOversizeFile, describeUploadPolicy, useUploadPolicy } from "@/lib/use-upload-policy"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -16,17 +17,18 @@ import { HolidayManager } from "@/components/settings/holiday-manager"
 import { DatabaseBackupCard } from "@/components/settings/database-backup"
 import { StatusColorSettings } from "@/components/settings/status-color-settings"
 import { AppBrandingSettings } from "@/components/settings/app-branding-settings"
+import { UploadPolicySettings } from "@/components/settings/upload-policy-settings"
 import {
   DEFAULT_APP_FULL_NAME,
   DEFAULT_APP_LOGO_URL,
   DEFAULT_APP_NAME,
   FAVICON_ACCEPT,
-  MAX_FAVICON_BYTES,
 } from "@/lib/site-branding"
 import { DEFAULT_STATUS_COLORS, parseStatusColors, type AttendanceStatusColors } from "@/lib/attendance-status-colors"
 import { DEFAULT_SCHOOL_TIME_ZONE } from "@/lib/school-date"
 
-export default function SettingsForm() {
+export default function SettingsForm({ canReadUploadPolicy = false }: { canReadUploadPolicy?: boolean }) {
+  const faviconPolicy = useUploadPolicy("branding.favicon")
   const [websiteTitle, setWebsiteTitle] = useState("SISMEPDA — Dashboard Absensi Sekolah")
   const [notifReminder, setNotifReminder] = useState(true)
   const [notifDaily, setNotifDaily] = useState(true)
@@ -78,7 +80,8 @@ export default function SettingsForm() {
     if (!file) return
     const validType = file.type === "image/png" || file.type === "image/x-icon" || file.type === "image/vnd.microsoft.icon" || file.name.toLowerCase().endsWith(".ico")
     if (!validType) { toast.error("Favicon harus berformat PNG atau ICO"); return }
-    if (file.size > MAX_FAVICON_BYTES) { toast.error("Ukuran favicon maksimal 512 KB"); return }
+    const oversize = describeOversizeFile(file, faviconPolicy)
+    if (oversize) { toast.error(oversize); return }
     setFaviconFile(file)
     setFaviconPreview(URL.createObjectURL(file))
   }
@@ -135,7 +138,7 @@ export default function SettingsForm() {
             <div className="space-y-3">
               <div>
                 <p className="font-medium">Favicon</p>
-                <p className="text-xs text-muted-foreground">Format PNG atau ICO, maksimal 512 KB. Disarankan berukuran persegi.</p>
+                <p className="text-xs text-muted-foreground">{describeUploadPolicy(faviconPolicy)} Disarankan berukuran persegi.</p>
               </div>
               <input ref={faviconInputRef} type="file" accept={FAVICON_ACCEPT} className="sr-only" onChange={(event) => chooseFavicon(event.target.files?.[0] ?? null)} />
               <div className="flex flex-wrap gap-2">
@@ -202,6 +205,8 @@ export default function SettingsForm() {
       </Card>
 
       <HolidayManager />
+
+      {canReadUploadPolicy ? <UploadPolicySettings /> : null}
 
       <DatabaseBackupCard />
 

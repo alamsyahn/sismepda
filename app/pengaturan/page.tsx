@@ -1,4 +1,4 @@
-import { requirePagePermission } from "@/lib/page-guards"
+import { pageCan, requirePagePermission } from "@/lib/page-guards"
 
 import SettingsForm from "./settings-form"
 
@@ -12,5 +12,9 @@ import SettingsForm from "./settings-form"
  */
 export default async function PengaturanPage() {
   await requirePagePermission("school.settings.read")
-  return <SettingsForm />
+  // Kartu batas unggah punya permission sendiri: bisa melihat pengaturan
+  // sekolah tidak otomatis berarti boleh menyetel batas unggah. Ini hanya
+  // menyembunyikan UI; endpoint tetap memeriksa permission yang sama.
+  const canReadUploadPolicy = await pageCan("school.upload_policy.read")
+  return <SettingsForm canReadUploadPolicy={canReadUploadPolicy} />
 }

@@ -2,7 +2,13 @@ import { NextResponse } from "next/server"
 import { requireUser, UnauthorizedError } from "@/lib/rbac-access"
 import { verifySameOrigin } from "@/lib/same-origin"
 import { prisma } from "@/lib/prisma"
-import { detectProfilePhotoType, MAX_PROFILE_PHOTO_BYTES, profilePhotoUrl } from "@/lib/profile"
+import { detectProfilePhotoType, profilePhotoUrl } from "@/lib/profile"
+import { describeAuthFailure } from "@/lib/api-errors"
+import { assertDetectedType } from "@/lib/upload-policy"
+import {
+  assertRequestSizeWithinSlot,
+  assertUploadAllowedForSlot,
+} from "@/lib/server-upload-policy"
 
 export async function GET() {
   try {
@@ -39,24 +45,21 @@ export async function PUT(request: Request) {
     }
 
     const sessionUser = await requireUser()
-    const contentLength = Number(request.headers.get("content-length") ?? 0)
-    if (contentLength > MAX_PROFILE_PHOTO_BYTES + 64 * 1024) {
-      return NextResponse.json({ error: "Ukuran foto maksimal 1 MB" }, { status: 413 })
-    }
+    await assertRequestSizeWithinSlot("profile.user.photo", request)
     const formData = await request.formData()
     const photo = formData.get("photo")
     if (!(photo instanceof File) || photo.size === 0) {
       return NextResponse.json({ error: "Pilih file foto terlebih dahulu" }, { status: 400 })
     }
-    if (photo.size > MAX_PROFILE_PHOTO_BYTES) {
-      return NextResponse.json({ error: "Ukuran foto maksimal 1 MB" }, { status: 413 })
-    }
 
     const bytes = new Uint8Array(await photo.arrayBuffer())
-    const mimeType = detectProfilePhotoType(bytes)
-    if (!mimeType) {
-      return NextResponse.json({ error: "Foto harus berformat JPEG, PNG, atau WebP" }, { status: 415 })
-    }
+    // Tipe ditentukan dari isi berkas, bukan `file.type` kiriman klien; ukuran
+    // diperiksa lebih dulu, lalu hasil deteksi divalidasi kebijakan pusat.
+    const policy = await assertUploadAllowedForSlot("profile.user.photo", {
+      size: photo.size,
+      fileName: photo.name,
+    })
+    const mimeType = assertDetectedType(policy, detectProfilePhotoType(bytes))
 
     const updated = await prisma.user.update({
       where: { id: sessionUser.id },
@@ -65,11 +68,11 @@ export async function PUT(request: Request) {
     })
     return NextResponse.json({ photoUrl: profilePhotoUrl(updated.photoUpdatedAt) })
   } catch (error) {
-    const unauthorized = error instanceof UnauthorizedError
-    return NextResponse.json(
-      { error: unauthorized ? "Sesi tidak valid" : "Foto profil gagal disimpan" },
-      { status: unauthorized ? 401 : 500 },
-    )
+    // `describeAuthFailure` sudah mengenal UploadPolicyError, sehingga 413/415
+    // sampai ke klien apa adanya alih-alih tersamar menjadi 500.
+    const failure = describeAuthFailure(error)
+    const message = failure.status === 500 ? "Foto profil gagal disimpan" : failure.error
+    return NextResponse.json({ error: message }, { status: failure.status })
   }
 }
 

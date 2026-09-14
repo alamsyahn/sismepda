@@ -6,8 +6,12 @@ import {
   appLogoUrl,
   DEFAULT_APP_LOGO_URL,
   detectAppLogoType,
-  MAX_APP_LOGO_BYTES,
 } from "@/lib/site-branding"
+import { assertDetectedType } from "@/lib/upload-policy"
+import {
+  assertRequestSizeWithinSlot,
+  assertUploadAllowedForSlot,
+} from "@/lib/server-upload-policy"
 
 /**
  * Logo aplikasi disajikan dari database (pola yang sama dengan /favicon.ico)
@@ -43,25 +47,20 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   try {
     await requirePermission("school.branding.update")
-    const contentLength = Number(request.headers.get("content-length") ?? 0)
-    if (contentLength > MAX_APP_LOGO_BYTES + 64 * 1024) {
-      return NextResponse.json({ error: "Ukuran logo maksimal 1 MB" }, { status: 413 })
-    }
+    await assertRequestSizeWithinSlot("branding.app.logo", request)
 
     const formData = await request.formData()
     const logo = formData.get("logo")
     if (!(logo instanceof File) || logo.size === 0) {
       return NextResponse.json({ error: "Pilih file logo terlebih dahulu" }, { status: 400 })
     }
-    if (logo.size > MAX_APP_LOGO_BYTES) {
-      return NextResponse.json({ error: "Ukuran logo maksimal 1 MB" }, { status: 413 })
-    }
+    const policy = await assertUploadAllowedForSlot("branding.app.logo", {
+      size: logo.size,
+      fileName: logo.name,
+    })
 
     const bytes = new Uint8Array(await logo.arrayBuffer())
-    const mimeType = detectAppLogoType(bytes)
-    if (!mimeType) {
-      return NextResponse.json({ error: "Logo harus berformat PNG, JPG, atau WebP" }, { status: 415 })
-    }
+    const mimeType = assertDetectedType(policy, detectAppLogoType(bytes))
 
     const updated = await prisma.schoolSetting.upsert({
       where: { id: "default" },

@@ -206,6 +206,8 @@ Every key below corresponds to at least one surface in the inventory. Keys are g
 | `school.settings.update` | — | ordinary school/attendance fields of `PUT /api/admin/settings` |
 | `school.class_access.manage` | — | `allowTeachersAccessAllClasses` field only. A settings editor cannot flip it |
 | `school.branding.update` | — | branding fields of settings, `PUT/DELETE /app-logo`, `PUT /favicon.ico` |
+| `school.upload_policy.read` | — | upload limits section of `/pengaturan`, `GET /api/admin/upload-policy` |
+| `school.upload_policy.update` | — | `PUT /api/admin/upload-policy` |
 | `school.holidays.read` | — | `GET /api/admin/holidays` |
 | `school.holidays.create/update/delete` | — | `POST` / `PATCH` / `DELETE /api/admin/holidays` |
 | `school.holidays.export` | — | `GET /api/export?type=holidays` |

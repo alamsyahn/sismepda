@@ -2,7 +2,12 @@ import { NextResponse } from "next/server"
 import { authFailureResponse } from "@/lib/api-errors"
 import { prisma } from "@/lib/prisma"
 import { requirePermission } from "@/lib/rbac-access"
-import { detectFaviconType, MAX_FAVICON_BYTES, faviconUrl } from "@/lib/site-branding"
+import { detectFaviconType, faviconUrl } from "@/lib/site-branding"
+import { assertDetectedType } from "@/lib/upload-policy"
+import {
+  assertRequestSizeWithinSlot,
+  assertUploadAllowedForSlot,
+} from "@/lib/server-upload-policy"
 
 export async function GET(request: Request) {
   try {
@@ -34,25 +39,20 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   try {
     await requirePermission("school.branding.update")
-    const contentLength = Number(request.headers.get("content-length") ?? 0)
-    if (contentLength > MAX_FAVICON_BYTES + 64 * 1024) {
-      return NextResponse.json({ error: "Ukuran favicon maksimal 512 KB" }, { status: 413 })
-    }
+    await assertRequestSizeWithinSlot("branding.favicon", request)
 
     const formData = await request.formData()
     const favicon = formData.get("favicon")
     if (!(favicon instanceof File) || favicon.size === 0) {
       return NextResponse.json({ error: "Pilih file favicon terlebih dahulu" }, { status: 400 })
     }
-    if (favicon.size > MAX_FAVICON_BYTES) {
-      return NextResponse.json({ error: "Ukuran favicon maksimal 512 KB" }, { status: 413 })
-    }
+    const policy = await assertUploadAllowedForSlot("branding.favicon", {
+      size: favicon.size,
+      fileName: favicon.name,
+    })
 
     const bytes = new Uint8Array(await favicon.arrayBuffer())
-    const mimeType = detectFaviconType(bytes)
-    if (!mimeType) {
-      return NextResponse.json({ error: "Favicon harus berformat PNG atau ICO" }, { status: 415 })
-    }
+    const mimeType = assertDetectedType(policy, detectFaviconType(bytes))
 
     const updated = await prisma.schoolSetting.upsert({
       where: { id: "default" },

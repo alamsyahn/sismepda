@@ -42,7 +42,6 @@ export const FACILITY_QUANTITY_MAX = 9999
  * Batas ukuran foto pengaturan E-UKS, sama dengan Sarpras. Form memeriksanya
  * lebih dulu untuk pesan cepat; route handler tetap memeriksa ulang.
  */
-export const MAX_EUKS_PHOTO_BYTES = 2 * 1024 * 1024
 
 /** Rasio potret kartu pengurus, dipakai pratinjau, kompresi, dan tampilan. */
 export const OFFICER_PHOTO_ASPECT = 9 / 16

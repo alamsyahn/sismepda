@@ -1,4 +1,5 @@
 "use client"
+import { describeOversizeFile, useUploadPolicy } from "@/lib/use-upload-policy"
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
@@ -48,7 +49,6 @@ import {
   type RegisteredGuruIdentifiers,
 } from "@/lib/guru-input"
 
-const MAX_SIZE = 5 * 1024 * 1024 // 5 MB
 
 type FileInfo = {
   name: string
@@ -80,6 +80,8 @@ function toneBadge(tone: "valid" | "skip" | "error") {
 }
 
 export function GuruCsvUpload() {
+  // Sama seperti impor siswa: berkas tidak pernah dikirim mentah ke server.
+  const uploadPolicy = useUploadPolicy("teachers.import.csv")
   const { formatTime } = useSchoolTimeZone()
   const [delimiter, setDelimiter] = useState(",")
   const [fileText, setFileText] = useState<string | null>(null)
@@ -145,8 +147,9 @@ export function GuruCsvUpload() {
       setFileError("File harus berformat CSV")
       return
     }
-    if (file.size > MAX_SIZE) {
-      setFileError("Ukuran file maksimal 5 MB")
+    const oversize = describeOversizeFile(file, uploadPolicy)
+    if (oversize) {
+      setFileError(oversize)
       return
     }
 
@@ -169,7 +172,7 @@ export function GuruCsvUpload() {
       setReading(false)
     }
     reader.readAsText(file)
-  }, [delimiter, formatTime, registered])
+  }, [delimiter, formatTime, registered, uploadPolicy])
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {

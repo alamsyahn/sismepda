@@ -4,6 +4,10 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { NextResponse } from "next/server"
+import {
+  assertRequestSizeWithinSlot,
+  getUploadPolicy,
+} from "@/lib/server-upload-policy"
 import { authFailureResponse } from "@/lib/api-errors"
 import {
   evaluateRestorePreflight,
@@ -15,7 +19,6 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const execute = promisify(execFile)
-const MAX_BACKUP_SIZE = 200 * 1024 * 1024
 
 function databaseUrl() {
   if (!process.env.DATABASE_URL?.startsWith("postgresql://")) throw new Error("Database PostgreSQL belum dikonfigurasi")
@@ -52,13 +55,16 @@ export async function POST(request: Request) {
   let directory: string | undefined
   try {
     await requirePermission("database.restore")
-    const contentLength = Number(request.headers.get("content-length") ?? 0)
-    if (contentLength > MAX_BACKUP_SIZE) return NextResponse.json({ error: "Ukuran backup maksimal 200 MB" }, { status: 413 })
+    // Slot ini sengaja non-configurable: batasnya kontrak operasional restore,
+    // bukan preferensi sekolah. Tetap lewat resolver supaya tidak ada angka
+    // ukuran yang hidup di luar registry.
+    const policy = await getUploadPolicy("database.restore.archive")
+    await assertRequestSizeWithinSlot("database.restore.archive", request)
     const form = await request.formData()
     const confirmation = form.get("confirmation")
     const file = form.get("backup")
     if (confirmation !== "RESTORE DATABASE") return NextResponse.json({ error: "Konfirmasi restore tidak sesuai" }, { status: 400 })
-    if (!(file instanceof File) || file.size === 0 || file.size > MAX_BACKUP_SIZE) return NextResponse.json({ error: "File backup tidak valid" }, { status: 400 })
+    if (!(file instanceof File) || file.size === 0 || file.size > policy.maxBytes) return NextResponse.json({ error: "File backup tidak valid" }, { status: 400 })
 
     directory = await mkdtemp(join(tmpdir(), "sismepda-restore-"))
     const archivePath = join(directory, "restore.dump")

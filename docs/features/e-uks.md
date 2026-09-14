@@ -557,9 +557,11 @@ account.
 return a row to the placeholder without recreating it.
 
 The accepted type is decided by `detectProfilePhotoType()` on the file's magic
-bytes, not the client's `Content-Type`, and the limit is
-`MAX_EUKS_PHOTO_BYTES` (2 MB, matching Sarpras) checked on the request body —
-a client-declared header cannot talk past either.
+bytes, not the client's `Content-Type`, and the size limit comes from the
+`euks.officer.photo` / `euks.facility.photo` / `euks.hero.image` upload slots
+(2 MB by default, admin-configurable) checked on the request body before the
+form is parsed — a client-declared header cannot talk past either. See
+[Upload architecture](../architecture/uploads.md).
 
 `lib/image-resize.ts` crops cover to the target ratio and shrinks the longest
 edge to 1280 px in the browser before upload, so a 4000 px phone photo does not
@@ -635,7 +637,7 @@ from `EuksHeroImage` despite the similar shape: a logo is a static layer drawn
 16:9 background cropped `cover` and never an SVG. Merging them would force a
 "kind" column plus branching in every query and every component.
 
-Logos accept JPG, PNG, SVG, and WebP up to 512 KB. `name` is required and
+Logos accept JPG, PNG, SVG, and WebP; the size limit is the `euks.hero.logo` upload slot, 512 KB by default and admin-configurable. `name` is required and
 becomes the `alt` text, because a logo represents an institution and must not
 degrade into an unlabelled image for screen-reader users.
 
@@ -821,4 +823,4 @@ age outside the reference range.
 
 `/api/e-uks/hero-images` exposes `POST` (create), `PATCH` (edit caption, toggle `active`, or `move` one position) and `DELETE`, all ADMIN-only, each writing an `EUKS_HERO_IMAGE_*` `AuditLog` entry in the same transaction. `PUT /api/e-uks/hero-images/[imageId]/photo` uploads or replaces the image; `GET` serves it to any `euks.view` reader. See Home page composition.
 
-`/api/e-uks/hero-logos` mirrors that shape for the hero logo overlay: `POST`, `PATCH` (rename, toggle `active`, or `move` one position) and `DELETE`, ADMIN-only, each writing an `EUKS_HERO_LOGO_*` `AuditLog` entry in the same transaction. `PUT /api/e-uks/hero-logos/[logoId]/logo` uploads or replaces the file (JPG/PNG/SVG/WebP, 512 KB), `DELETE` clears it while keeping the row, and `GET` serves it to any `euks.view` reader. See Hero logos for the SVG validation rules.
+`/api/e-uks/hero-logos` mirrors that shape for the hero logo overlay: `POST`, `PATCH` (rename, toggle `active`, or `move` one position) and `DELETE`, ADMIN-only, each writing an `EUKS_HERO_LOGO_*` `AuditLog` entry in the same transaction. `PUT /api/e-uks/hero-logos/[logoId]/logo` uploads or replaces the file (JPG/PNG/SVG/WebP, size per the `euks.hero.logo` slot), `DELETE` clears it while keeping the row, and `GET` serves it to any `euks.view` reader. See Hero logos for the SVG validation rules.

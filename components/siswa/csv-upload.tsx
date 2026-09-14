@@ -1,4 +1,5 @@
 "use client"
+import { describeOversizeFile, useUploadPolicy } from "@/lib/use-upload-policy"
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
@@ -50,7 +51,6 @@ import {
   type RegisteredStudentIdentifiers,
 } from "@/lib/student-input"
 
-const MAX_SIZE = 5 * 1024 * 1024 // 5 MB
 
 type FileInfo = {
   name: string
@@ -85,6 +85,10 @@ function toneBadge(tone: "valid" | "update" | "skip" | "error") {
 }
 
 export function CsvUpload() {
+  // CSV diurai di peramban lalu dikirim sebagai JSON, jadi batas ini murni
+  // pelindung memori peramban. Batas payload JSON-nya ditegakkan terpisah di
+  // /api/admin/students.
+  const uploadPolicy = useUploadPolicy("students.import.csv")
   const { formatTime } = useSchoolTimeZone()
   const [delimiter, setDelimiter] = useState(",")
   const [behavior, setBehavior] = useState<CsvImportBehavior>("skip")
@@ -161,8 +165,9 @@ export function CsvUpload() {
       setFileError("File harus berformat CSV")
       return
     }
-    if (file.size > MAX_SIZE) {
-      setFileError("Ukuran file maksimal 5 MB")
+    const oversize = describeOversizeFile(file, uploadPolicy)
+    if (oversize) {
+      setFileError(oversize)
       return
     }
 
@@ -187,7 +192,7 @@ export function CsvUpload() {
       void rowCount
     }
     reader.readAsText(file)
-  }, [behavior, classOptions, delimiter, formatTime, registered])
+  }, [behavior, classOptions, delimiter, formatTime, registered, uploadPolicy])
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { ImageIcon, Loader2, Trash2, UserRound } from "lucide-react"
 import { toast } from "sonner"
+import { describeOversizeFile, describeUploadPolicy, useUploadPolicy } from "@/lib/use-upload-policy"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -11,7 +12,6 @@ import {
   EUKS_HERO_MAX_EDGE,
   EUKS_PHOTO_MAX_EDGE,
   HERO_PHOTO_ASPECT,
-  MAX_EUKS_PHOTO_BYTES,
 } from "@/lib/euks-settings"
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp"]
@@ -69,6 +69,7 @@ export function EuksPhotoFrame({
  * gagal tidak meninggalkan record setengah tersimpan.
  */
 export function EuksPhotoField({
+  slotKey,
   shape,
   currentUrl,
   file,
@@ -79,6 +80,8 @@ export function EuksPhotoField({
   label = "Foto",
   frameClassName,
 }: {
+  /** Slot unggah yang mengatur batas ukuran field ini. */
+  slotKey: string
   shape: EuksPhotoShape
   /** Foto yang sudah tersimpan, bila ada. */
   currentUrl: string | null
@@ -92,6 +95,7 @@ export function EuksPhotoField({
   label?: string
   frameClassName?: string
 }) {
+  const uploadPolicy = useUploadPolicy(slotKey)
   const inputRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [working, setWorking] = useState(false)
@@ -125,8 +129,10 @@ export function EuksPhotoField({
         // daripada thumbnail kartu.
         maxEdge: shape === "wide" ? EUKS_HERO_MAX_EDGE : EUKS_PHOTO_MAX_EDGE,
       })
-      if (prepared.size > MAX_EUKS_PHOTO_BYTES) {
-        toast.error("Ukuran foto maksimal 2 MB")
+      // Berlaku pada hasil resize, karena itulah byte yang dikirim.
+      const oversize = describeOversizeFile(prepared, uploadPolicy)
+      if (oversize) {
+        toast.error(oversize)
         return
       }
       onFileChange(prepared)
@@ -185,7 +191,7 @@ export function EuksPhotoField({
             ) : null}
           </div>
           <p className="text-muted-foreground text-xs">
-            {FRAME[shape].hint} · JPG, PNG, WebP · maks 2 MB
+            {FRAME[shape].hint} · {describeUploadPolicy(uploadPolicy)}
           </p>
         </div>
       </div>

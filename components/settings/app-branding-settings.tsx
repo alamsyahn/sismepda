@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import { GraduationCap, ImageIcon, Loader2, RotateCcw, Upload } from "lucide-react"
 import { toast } from "sonner"
+import { describeOversizeFile, describeUploadPolicy, useUploadPolicy } from "@/lib/use-upload-policy"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,7 +13,6 @@ import { Separator } from "@/components/ui/separator"
 import {
   APP_LOGO_ACCEPT,
   DEFAULT_APP_LOGO_URL,
-  MAX_APP_LOGO_BYTES,
   MAX_APP_FULL_NAME_LENGTH,
   MAX_APP_NAME_LENGTH,
   DEFAULT_APP_NAME,
@@ -41,6 +41,7 @@ export function AppBrandingSettings({
   onAppFullNameChange: (value: string) => void
   onLogoChange: (next: { logoUrl: string; hasLogo: boolean }) => void
 }) {
+  const uploadPolicy = useUploadPolicy("branding.app.logo")
   const [busy, setBusy] = useState<"upload" | "reset" | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -51,7 +52,8 @@ export function AppBrandingSettings({
     if (!file) return
     const validType = ["image/png", "image/jpeg", "image/webp"].includes(file.type)
     if (!validType) { toast.error("Logo harus berformat PNG, JPG, atau WebP"); return }
-    if (file.size > MAX_APP_LOGO_BYTES) { toast.error("Ukuran logo maksimal 1 MB"); return }
+    const oversize = describeOversizeFile(file, uploadPolicy)
+    if (oversize) { toast.error(oversize); return }
 
     const objectUrl = URL.createObjectURL(file)
     setPreview(objectUrl)
@@ -126,7 +128,7 @@ export function AppBrandingSettings({
           <div className="space-y-3">
             <div>
               <p className="font-medium">Logo aplikasi</p>
-              <p className="text-xs text-muted-foreground">Format PNG, JPG, atau WebP, maksimal 1 MB. Disarankan berukuran persegi.</p>
+              <p className="text-xs text-muted-foreground">{describeUploadPolicy(uploadPolicy)} Disarankan berukuran persegi.</p>
             </div>
             <input ref={inputRef} type="file" accept={APP_LOGO_ACCEPT} className="sr-only" onChange={(event) => uploadLogo(event.target.files?.[0] ?? null)} />
             <div className="flex flex-wrap gap-2">

@@ -1,4 +1,3 @@
-export const MAX_PROFILE_PHOTO_BYTES = 1024 * 1024
 export const PROFILE_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"] as const
 
 export function profilePhotoUrl(updatedAt: Date | string | null | undefined) {

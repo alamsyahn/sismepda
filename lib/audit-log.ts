@@ -22,6 +22,9 @@ export type AuditEntity =
   | "EuksHeroImage"
   | "EuksHeroLogo"
   | "EuksComplaintOption"
+  /// Konfigurasi kebijakan unggah (batas global + override per slot). Satu
+  /// baris logis, jadi entityId selalu "default".
+  | "UploadPolicy"
   /// Entitas RBAC. Didefinisikan di lib/rbac-audit.ts agar UI dapat mengenali
   /// baris RBAC tanpa ikut menarik lib/prisma.ts ke bundel klien.
   | RbacAuditEntity
@@ -71,6 +74,7 @@ export type AuditAction =
   | "EUKS_COMPLAINT_OPTION_CREATED"
   | "EUKS_COMPLAINT_OPTION_UPDATED"
   | "EUKS_SICK_ABSENCE_UPDATED"
+  | "UPLOAD_POLICY_UPDATED"
   /// Aksi RBAC, disatukan ke trail yang sama agar tidak ada dua sistem audit.
   | RbacAuditAction
 

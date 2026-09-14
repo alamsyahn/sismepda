@@ -4,7 +4,12 @@ import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
 import { detectProfilePhotoType } from "@/lib/profile"
 import { euksErrorResponse, requireEuksPermission } from "@/lib/euks-access"
-import { MAX_EUKS_PHOTO_BYTES, euksFacilityPhotoUrl } from "@/lib/euks-settings"
+import { euksFacilityPhotoUrl } from "@/lib/euks-settings"
+import { assertDetectedType } from "@/lib/upload-policy"
+import {
+  assertRequestSizeWithinSlot,
+  assertUploadAllowedForSlot,
+} from "@/lib/server-upload-policy"
 
 /**
  * Foto fasilitas UKS — pola identik dengan foto pengurus: bytes menumpang
@@ -46,10 +51,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ faci
     const viewer = await requireEuksPermission("euks.facilities.update")
     const { facilityId } = await params
 
-    const contentLength = Number(request.headers.get("content-length") ?? 0)
-    if (contentLength > MAX_EUKS_PHOTO_BYTES + 64 * 1024) {
-      return NextResponse.json({ error: "Ukuran foto maksimal 2 MB" }, { status: 413 })
-    }
+    await assertRequestSizeWithinSlot("euks.facility.photo", request)
 
     const facility = await prisma.euksFacility.findUnique({
       where: { id: facilityId },
@@ -62,15 +64,13 @@ export async function PUT(request: Request, { params }: { params: Promise<{ faci
     if (!(photo instanceof File) || photo.size === 0) {
       return NextResponse.json({ error: "Pilih file foto terlebih dahulu" }, { status: 400 })
     }
-    if (photo.size > MAX_EUKS_PHOTO_BYTES) {
-      return NextResponse.json({ error: "Ukuran foto maksimal 2 MB" }, { status: 413 })
-    }
+    const policy = await assertUploadAllowedForSlot("euks.facility.photo", {
+      size: photo.size,
+      fileName: photo.name,
+    })
 
     const bytes = new Uint8Array(await photo.arrayBuffer())
-    const mimeType = detectProfilePhotoType(bytes)
-    if (!mimeType) {
-      return NextResponse.json({ error: "Foto harus berformat JPEG, PNG, atau WebP" }, { status: 415 })
-    }
+    const mimeType = assertDetectedType(policy, detectProfilePhotoType(bytes))
 
     const updated = await prisma.$transaction(async (tx) => {
       const saved = await tx.euksFacility.update({

@@ -4,12 +4,15 @@ import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
 import { euksErrorResponse, requireEuksPermission } from "@/lib/euks-access"
 import {
-  EUKS_LOGO_FORMAT_LABEL,
-  MAX_EUKS_LOGO_BYTES,
   checkSvgPayload,
   detectEuksLogoType,
   euksHeroLogoUrl,
 } from "@/lib/euks-logo"
+import { assertDetectedType } from "@/lib/upload-policy"
+import {
+  assertRequestSizeWithinSlot,
+  assertUploadAllowedForSlot,
+} from "@/lib/server-upload-policy"
 
 /**
  * Byte berkas logo hero UKS.
@@ -64,10 +67,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ logo
     const viewer = await requireEuksPermission("euks.hero_logos.update")
     const { logoId } = await params
 
-    const contentLength = Number(request.headers.get("content-length") ?? 0)
-    if (contentLength > MAX_EUKS_LOGO_BYTES + 64 * 1024) {
-      return NextResponse.json({ error: "Ukuran logo maksimal 512 KB" }, { status: 413 })
-    }
+    await assertRequestSizeWithinSlot("euks.hero.logo", request)
 
     const logo = await prisma.euksHeroLogo.findUnique({
       where: { id: logoId },
@@ -80,19 +80,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ logo
     if (!(file instanceof File) || file.size === 0) {
       return NextResponse.json({ error: "Pilih berkas logo terlebih dahulu" }, { status: 400 })
     }
-    if (file.size > MAX_EUKS_LOGO_BYTES) {
-      return NextResponse.json({ error: "Ukuran logo maksimal 512 KB" }, { status: 413 })
-    }
+    const policy = await assertUploadAllowedForSlot("euks.hero.logo", {
+      size: file.size,
+      fileName: file.name,
+    })
 
     const bytes = new Uint8Array(await file.arrayBuffer())
     // Percayai isi berkasnya, bukan content-type dari klien.
-    const mimeType = detectEuksLogoType(bytes)
-    if (!mimeType) {
-      return NextResponse.json(
-        { error: `Logo harus berformat ${EUKS_LOGO_FORMAT_LABEL}` },
-        { status: 415 },
-      )
-    }
+    const mimeType = assertDetectedType(policy, detectEuksLogoType(bytes))
 
     // SVG adalah dokumen yang bisa membawa skrip, bukan sekadar piksel. Logo
     // hanya pernah dirender lewat <img src>, yang sudah menonaktifkan skrip,

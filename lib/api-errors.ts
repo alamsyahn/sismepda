@@ -18,6 +18,7 @@
 import { NextResponse } from "next/server"
 
 import { ForbiddenError, RbacNotReadyError, UnauthorizedError } from "@/lib/rbac-access"
+import { UploadPolicyError } from "@/lib/upload-policy"
 
 export type ApiFailure = {
   readonly status: number
@@ -44,6 +45,11 @@ export function describeAuthFailure(error: unknown): ApiFailure {
   }
   if (error instanceof RbacNotReadyError) {
     return { status: 503, error: "Otorisasi belum siap" }
+  }
+  // Pelanggaran kebijakan unggah sudah membawa status (413/415/400) dan pesan
+  // yang aman ditampilkan; tidak ada path internal maupun stack di dalamnya.
+  if (error instanceof UploadPolicyError) {
+    return { status: error.status, error: error.message }
   }
   if (error instanceof ApiError) {
     return { status: error.status, error: error.message }

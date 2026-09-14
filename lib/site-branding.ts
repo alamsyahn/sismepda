@@ -1,5 +1,4 @@
 export const DEFAULT_WEBSITE_TITLE = "SISMEPDA — Dashboard Absensi Sekolah"
-export const MAX_FAVICON_BYTES = 512 * 1024
 export const FAVICON_ACCEPT = ".png,.ico,image/png,image/x-icon,image/vnd.microsoft.icon"
 
 /** Identitas aplikasi yang tampil pada area branding sidebar. */
@@ -8,7 +7,6 @@ export const DEFAULT_APP_FULL_NAME = "Sistem Informasi Sekolah"
 export const MAX_APP_NAME_LENGTH = 40
 export const MAX_APP_FULL_NAME_LENGTH = 80
 
-export const MAX_APP_LOGO_BYTES = 1024 * 1024
 export const APP_LOGO_ACCEPT = ".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
 /** Logo default ketika admin belum pernah mengunggah logo sendiri. */
 export const DEFAULT_APP_LOGO_URL = "/icon.svg"

@@ -228,6 +228,7 @@ export function EuksHeroImageSettings({ images }: { images: HeroImageRow[] }) {
       <CardContent className="space-y-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <EuksPhotoField
+  slotKey="euks.hero.image"
             shape="wide"
             currentUrl={null}
             file={photo}
@@ -372,6 +373,7 @@ export function EuksHeroImageSettings({ images }: { images: HeroImageRow[] }) {
 
           <div className="space-y-4">
             <EuksPhotoField
+  slotKey="euks.hero.image"
               shape="wide"
               currentUrl={editCurrentUrl}
               file={editPhoto}

@@ -530,6 +530,8 @@ export const PERMISSIONS: readonly PermissionDefinition[] = [
   def({ key: "school.settings.update", resource: "school.settings", action: "update", module: "school", label: "Ubah pengaturan sekolah", dependsOn: ["school.settings.read"], sensitive: true }),
   def({ key: "school.class_access.manage", resource: "school.class_access", action: "manage", module: "school", label: "Atur akses guru ke semua kelas", description: "Mengendalikan allowTeachersAccessAllClasses.", dependsOn: ["school.settings.read"], sensitive: true }),
   def({ key: "school.branding.update", resource: "school.branding", action: "update", module: "school", label: "Ubah identitas visual aplikasi" }),
+  def({ key: "school.upload_policy.read", resource: "school.upload_policy", action: "read", module: "school", label: "Lihat pengaturan unggah" }),
+  def({ key: "school.upload_policy.update", resource: "school.upload_policy", action: "update", module: "school", label: "Ubah batas ukuran unggah", description: "Mengendalikan batas global per kategori dan override per slot unggah.", dependsOn: ["school.upload_policy.read"], sensitive: true }),
   def({ key: "school.holidays.read", resource: "school.holidays", action: "read", module: "school", label: "Lihat kalender libur" }),
   def({ key: "school.holidays.create", resource: "school.holidays", action: "create", module: "school", label: "Tambah kalender libur", dependsOn: ["school.holidays.read"] }),
   def({ key: "school.holidays.update", resource: "school.holidays", action: "update", module: "school", label: "Ubah kalender libur", dependsOn: ["school.holidays.read"] }),
