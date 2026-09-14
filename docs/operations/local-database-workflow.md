@@ -38,8 +38,22 @@ melalui `prisma migrate deploy` atas commit yang sudah ada di
 ```bash
 npm run dev:local            # aplikasi di atas sismepda_dev
 npm run dev:prodclone        # aplikasi di atas sismepda_prodclone
-npm run db:refresh-prodclone # buat ulang clone dari produksi (read-only di sisi produksi)
+
+npm run db:prodclone:refresh # buat ulang DATABASE clone dari produksi
+npm run media:prodclone:sync # sinkronkan MEDIA dari produksi (incremental)
+npm run prodclone:refresh    # wrapper: database lalu media
 ```
+
+Perintah memakai konvensi `<resource>:<scope>:<action>`. Nama lama
+`db:refresh-prodclone` masih bekerja sebagai alias ke `db:prodclone:refresh`
+agar automation yang sudah ada tidak patah; dokumentasi dan skrip baru memakai
+nama kanonik.
+
+Database dan media adalah **dua lifecycle terpisah**. `db:prodclone:refresh`
+tidak menyentuh media sama sekali, dan `dev:prodclone` tidak pernah melakukan
+refresh diam-diam — ia hanya menjalankan aplikasi terhadap clone yang ada.
+Semantik lengkap sinkronisasi media ada di
+[`../architecture/media-storage.md`](../architecture/media-storage.md).
 
 Kedua perintah mencetak target yang dipakai sebelum Next.js start, misalnya:
 
@@ -86,11 +100,11 @@ perlu menyunting `.env`.
 ## Cara refresh clone produksi
 
 ```bash
-npm run db:refresh-prodclone
+npm run db:prodclone:refresh
 
 # opsi
-npm run db:refresh-prodclone -- --keep-dump    # pertahankan dump setelah selesai
-npm run db:refresh-prodclone -- --reuse-dump   # pakai dump yang sudah ada, produksi tidak disentuh
+npm run db:prodclone:refresh -- --keep-dump    # pertahankan dump setelah selesai
+npm run db:prodclone:refresh -- --reuse-dump   # pakai dump yang sudah ada, produksi tidak disentuh
 ```
 
 ## Apa yang terjadi saat refresh
@@ -222,7 +236,7 @@ Aturan lain:
 
 ## Status saat ini: migrasi prodclone terblokir
 
-`npm run db:refresh-prodclone` berhasil sampai restore (27 tabel, 16 migrasi),
+`npm run db:prodclone:refresh` berhasil sampai restore (27 tabel, 16 migrasi),
 lalu **berhenti di langkah migrasi** — sesuai desain:
 
 ```text
@@ -293,7 +307,7 @@ arsip dengan versi lebih baru — jangan lakukan itu, gunakan container clone.
 `docker start sismepda-prodclone-db`.
 
 **`.env.prodclone` tidak ditemukan**
-Clone belum pernah dibuat. Jalankan `npm run db:refresh-prodclone`.
+Clone belum pernah dibuat. Jalankan `npm run db:prodclone:refresh`.
 
 **Migrasi gagal**
 Jangan reset. Baca pesan aslinya, audit datanya di clone, lalu laporkan. Lihat

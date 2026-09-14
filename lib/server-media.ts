@@ -57,6 +57,19 @@ export async function resolveMedia(reference: MediaReference): Promise<ResolvedM
     if (bytes && mimeType) {
       return { bytes, mimeType, source: "storage" }
     }
+
+    // Berkas hilang padahal database mengklaim punya kunci. Ini kondisi yang
+    // harus terlihat operator, karena bila byte legacy juga sudah tidak ada,
+    // gambarnya benar-benar hilang.
+    //
+    // Yang dicatat hanya KUNCI LOGIS — bukan jalur absolut penyimpanan, yang
+    // akan membocorkan struktur filesystem server ke dalam log bersama. Log ini
+    // sisi server; tidak ada bagiannya yang dikirim ke klien.
+    const hasLegacy = Boolean(legacyBytes && legacyBytes.byteLength > 0)
+    console.warn(
+      `[media] berkas tidak terbaca untuk kunci "${key}"; ` +
+        (hasLegacy ? "menggunakan byte legacy" : "TIDAK ada byte legacy — media hilang"),
+    )
   }
 
   if (legacyBytes && legacyBytes.byteLength > 0) {

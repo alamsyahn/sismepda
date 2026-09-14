@@ -26,6 +26,7 @@ app/generated/prisma/
 # Penyimpanan media runtime (MEDIA_STORAGE_ROOT). Berisi foto nyata warga
 # sekolah dan tidak pernah boleh masuk Git; produksi memakai volume terpisah.
 .media/
+.media-backups/
 
 # Common ignores
 node_modules

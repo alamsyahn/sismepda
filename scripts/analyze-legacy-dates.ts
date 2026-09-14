@@ -31,7 +31,7 @@ let envText: string
 try {
   envText = readFileSync(CLONE_ENV_FILE, "utf8")
 } catch {
-  fail(`${CLONE_ENV_FILE} belum ada. Jalankan \`npm run db:refresh-prodclone\` lebih dulu.`)
+  fail(`${CLONE_ENV_FILE} belum ada. Jalankan \`npm run db:prodclone:refresh\` lebih dulu.`)
 }
 
 const url = parseEnvFile(envText).DATABASE_URL

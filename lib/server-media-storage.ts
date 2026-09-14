@@ -21,6 +21,7 @@ import { access } from "node:fs/promises"
 import path from "node:path"
 
 import { assertValidMediaKey, type MediaScope, generateMediaKey } from "@/lib/media-keys"
+import { decideMediaRoot } from "@/lib/media-roots"
 
 /** Metadata satu objek media sebagaimana disimpan di database. */
 export type StoredMedia = {
@@ -52,15 +53,21 @@ export class MediaStorageError extends Error {
 /**
  * Akar penyimpanan media. Konfigurasi lewat MEDIA_STORAGE_ROOT.
  *
- * Default pengembangan adalah `.media/` di dalam project supaya `npm run dev`
- * bekerja tanpa setup, dan direktori itu masuk .gitignore. Produksi WAJIB
- * mengarahkannya ke bind mount/volume persisten: menulis ke writable layer
- * container berarti seluruh media hilang saat container dibuat ulang.
+ * Bila variabel itu kosong, akar dipilih dari peran database yang sedang aktif
+ * (`SISMEPDA_DB_ROLE`, disuntikkan `scripts/with-db.ts`), sehingga `dev:local`
+ * dan `dev:prodclone` tidak pernah menulis ke direktori yang sama. Keputusannya
+ * murni dan diuji di `lib/media-roots.ts`.
+ *
+ * Produksi WAJIB mengisi MEDIA_STORAGE_ROOT dan mengarahkannya ke bind
+ * mount/volume persisten: menulis ke writable layer container berarti seluruh
+ * media hilang saat container dibuat ulang.
  */
 export function mediaStorageRoot(): string {
-  const configured = process.env.MEDIA_STORAGE_ROOT?.trim()
-  if (configured && configured.length > 0) return path.resolve(configured)
-  return path.resolve(process.cwd(), ".media")
+  const decision = decideMediaRoot({
+    MEDIA_STORAGE_ROOT: process.env.MEDIA_STORAGE_ROOT,
+    SISMEPDA_DB_ROLE: process.env.SISMEPDA_DB_ROLE,
+  })
+  return path.resolve(process.cwd(), decision.path)
 }
 
 /** Backend filesystem lokal/persisten. */

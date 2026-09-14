@@ -26,7 +26,7 @@ Safety guards are pure functions in `lib/local-test-user.ts`, evaluated before a
 
 Sync direction is always production → local. Never modify production to match local, and never restore a data-only archive blindly across schema versions — the archive carries rows, not the schema they were written against.
 
-`npm run db:refresh-prodclone` automates this forward path into the disposable clone: dump → restore → `prisma migrate deploy` → RBAC seed → legacy backfill → local test account, with guards that refuse any target that is not the local clone. See [local database workflow](local-database-workflow.md); do not reconstruct the steps by hand.
+`npm run db:prodclone:refresh` automates this forward path into the disposable clone: dump → restore → `prisma migrate deploy` → RBAC seed → legacy backfill → local test account, with guards that refuse any target that is not the local clone. See [local database workflow](local-database-workflow.md); do not reconstruct the steps by hand.
 
 `prisma migrate deploy` on this path is preceded by a legacy business-date repair (`prisma/legacy-date-repair.sql`), because older production data stored WIB midnight as `17:00:00` UTC. Inspect it read-only with `npm run db:analyze-legacy-dates`, which reports how many rows shift, which `(class, business date)` pairs collide, and which collisions are exact duplicates versus real conflicts. It never writes. See [local database workflow](local-database-workflow.md) for the details.
 
@@ -38,7 +38,7 @@ If the dump is already **post-RBAC**, the in-app restore path applies and its pr
 
 > **WARNING: synthetic E-UKS scripts MUST NEVER target production.** Sync direction is always production → local; nothing here ever writes to, uploads to, or reads from production.
 
-Synthetic data belongs to the development database. `npm run db:refresh-prodclone` deliberately does **not** generate it: the clone represents production data on the latest schema, nothing else. Run the generator explicitly if a clone needs fixtures.
+Synthetic data belongs to the development database. `npm run db:prodclone:refresh` deliberately does **not** generate it: the clone represents production data on the latest schema, nothing else. Run the generator explicitly if a clone needs fixtures.
 
 `npm run dev:bootstrap` verifies the target, ensures the local test account, then generates data.
 

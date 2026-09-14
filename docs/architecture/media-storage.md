@@ -89,8 +89,21 @@ penambahan backend lain kelak tidak menyentuh route mana pun.
 
 Akar penyimpanan ditentukan variabel lingkungan `MEDIA_STORAGE_ROOT`.
 
-- **Development**: boleh dikosongkan. Default `.media/` di dalam project, sudah
-  masuk `.gitignore`. Media runtime tidak pernah di-commit.
+- **Development**: boleh dikosongkan. Bila kosong, akar dipilih dari peran
+  database yang aktif (`SISMEPDA_DB_ROLE`, disuntikkan `scripts/with-db.ts`):
+
+  | Perintah | Akar media |
+  | --- | --- |
+  | `npm run dev:local` | `.media/local/` |
+  | `npm run dev:prodclone` | `.media/prodclone/` |
+  | `npm run dev` (tanpa peran) | `.media/` |
+
+  Pemisahan ini disengaja: media hasil sinkronisasi produksi tidak boleh
+  bercampur dengan media uji lokal, karena setelah tercampur tidak ada cara
+  memisahkannya lagi. Keputusannya ada di `lib/media-roots.ts` sebagai fungsi
+  murni, bukan bergantung pada operator mengingat mengekspor variabel.
+
+  Seluruh `.media/` masuk `.gitignore`; media runtime tidak pernah di-commit.
 - **Test**: setiap test mengarahkan variabel ini ke direktori sementara. Test
   tidak boleh menulis ke `.media/` maupun direktori pengguna.
 - **Produksi**: `/app/media`, dipasangkan ke volume Docker `media`.
@@ -151,6 +164,16 @@ membatalkan perubahan database. Byte legacy tidak ikut dihapus.
 Poin 2 penting: berkas hilang **tidak** menghasilkan error. Selama byte legacy
 masih ada, gambar tetap tersaji. Inilah yang membuat migrasi dapat dibatalkan.
 
+Poin 3 adalah keadaan terburuk — kunci ada, berkas hilang, byte legacy tidak
+ada. Perilakunya tetap terkendali: route mengembalikan 404 seperti record yang
+memang belum bergambar, dan halaman tidak ikut gagal. Satu gambar hilang tidak
+boleh menjatuhkan seluruh aplikasi.
+
+Ketika berkas berkunci tidak terbaca, `resolveMedia()` menulis peringatan ke log
+server yang menyebut apakah byte legacy menyelamatkannya. Yang dicatat hanya
+**kunci logis**; jalur absolut penyimpanan tidak pernah masuk log dan tidak
+pernah dikirim ke klien.
+
 Kunci yang tidak valid tidak pernah menyentuh filesystem, sehingga media
 endpoint tidak dapat dipakai membaca berkas sembarang di server.
 
@@ -197,35 +220,146 @@ Arsitektur ini mengubah asumsi backup secara mendasar:
 
 > Backup PostgreSQL saja **bukan lagi** backup aplikasi yang lengkap.
 
-Setelah media dipindahkan, pemulihan penuh membutuhkan **dua** hal:
+Backup SISMEPDA yang lengkap setelah pemisahan media adalah:
 
-1. dump PostgreSQL, dan
-2. isi volume media.
+```text
+backup PostgreSQL  +  backup media storage
+```
 
 Selama byte legacy masih ada, dump database masih memuat semua media lama,
-sehingga belum ada risiko akut. Risiko itu muncul pada media yang diunggah
-**setelah** deploy — media tersebut hanya ada di volume.
+sehingga belum ada risiko akut untuk media lama. Risiko itu nyata untuk media
+yang diunggah **setelah** deploy — media tersebut hanya ada di volume.
 
-TODO konkret (belum dikerjakan, di luar cakupan fase ini): tambahkan arsip
-volume media ke rutinitas backup produksi berdampingan dengan dump PostgreSQL,
-dan verifikasi keterbacaan arsipnya seperti dump database diverifikasi hari ini.
-Cron backup produksi tidak diubah oleh pekerjaan ini.
+### Perintah
+
+```bash
+npm run media:backup:create                  # arsip seluruh MEDIA_STORAGE_ROOT
+npm run media:backup:verify -- <arsip>       # baca ulang + cocokkan checksum
+npm run media:backup:restore-test -- <arsip> # restore ke direktori sementara
+```
+
+Arsip berformat `tar.gz` dan diberi nama `media_<YYYY-MM-DD_HH-MM-SS>.tar.gz`
+(UTC). Default lokasinya `.media-backups/` — **di luar** pohon media, karena
+arsip yang disimpan di dalam sumbernya akan membackup dirinya sendiri dan
+tumbuh setiap kali dijalankan. Lokasi dapat diubah dengan `MEDIA_BACKUP_DIR`.
+
+Backup bersifat baca-saja terhadap media: ia tidak pernah mengubah, memindahkan,
+atau menghapus berkas sumber. Symlink dilewati, bukan diikuti, agar arsip tidak
+dapat menyedot berkas arbitrer dari luar pohon media. **Tidak ada retensi
+otomatis**: arsip lama tidak pernah dihapus sendiri: menghapus backup memerlukan
+kebijakan retensi eksplisit, bukan efek samping.
+
+### Manifest
+
+Setiap arsip memuat `manifest.json` di puncaknya:
+
+| Field | Isi |
+| --- | --- |
+| `version` | versi format manifest |
+| `createdAt` | ISO-8601 UTC |
+| `runId` | pengenal run, sama dengan stempel waktu pada nama arsip |
+| `sourceId` | nama basis akar + hash pendek — **bukan** jalur absolut |
+| `fileCount` / `totalBytes` | jumlah dan ukuran berkas |
+| `files[]` | kunci media, ukuran, dan SHA-256 per berkas |
+
+Manifest sengaja tidak memuat kredensial, variabel lingkungan, maupun jalur
+absolut server.
+
+### Verifikasi
+
+`media:backup:verify` tidak berhenti pada "berkas ada". Ia membaca daftar isi
+arsip, menolak entri berjalur tidak aman (absolut, `..`, backslash, di luar dua
+puncak yang sah), mengekstrak seluruh isi ke direktori sementara, mengurai
+manifest, lalu mencocokkan **jumlah berkas, ukuran, dan SHA-256 setiap berkas**.
+Arsip yang rusak atau tanpa manifest gagal, bukan lolos diam-diam.
+
+`media:backup:restore-test` menjalankan verifikasi yang sama ke direktori
+sementara dan membuangnya setelah selesai. Ia tidak pernah menulis ke akar media
+aktif — restore ke atas media hidup adalah operasi pemulihan bencana, bukan
+bagian dari pengujian.
+
+### Memasangkan backup database dan media
+
+Keduanya adalah dua operasi terpisah, jadi keduanya **tidak** menghasilkan
+snapshot atomik. Yang tersedia adalah stempel waktu: nama arsip media dan
+`runId` di manifest memakai format waktu yang sama dengan penamaan backup
+database, sehingga operator dapat memilih pasangan yang paling berdekatan
+waktunya saat pemulihan.
+
+Konsekuensi praktis yang perlu diketahui operator: bila media di-backup setelah
+database, arsip media dapat memuat berkas yang belum punya baris di dump
+database (media yatim — tidak berbahaya). Bila urutannya terbalik, dump dapat
+memuat kunci media yang berkasnya belum masuk arsip — record itu akan jatuh ke
+fallback legacy, atau tampil kosong bila byte legacy-nya sudah tidak ada.
+Mendahulukan backup database lalu media adalah urutan yang lebih aman.
+
+### Produksi
+
+Cron backup produksi **belum diubah** oleh pekerjaan ini dan masih hanya
+mengarsipkan dump PostgreSQL. Penjadwalan backup media di produksi adalah
+langkah yang harus dilakukan **sebelum** migrasi media produksi dijalankan —
+lihat TD-016.
 
 ## Prodclone
 
-`npm run db:refresh-prodclone` menyalin **database saja** dan tidak menyentuh
-media. Perilakunya tidak berubah.
+Database dan media prodclone adalah **dua lifecycle terpisah**:
 
-Akibatnya, pada clone: record yang masih punya byte legacy tetap bergambar,
-sedangkan record yang medianya hanya ada sebagai berkas akan tampil tanpa gambar
-karena berkasnya tidak ada di mesin lokal. Ini tidak merusak apa pun — hanya
-gambar yang kosong.
+```text
+db:prodclone:refresh    refresh penuh snapshot database produksi
+media:prodclone:sync    sinkronisasi media incremental, non-destruktif
+prodclone:refresh       wrapper: jalankan keduanya, database lebih dulu
+dev:prodclone           HANYA menjalankan aplikasi terhadap clone
+```
 
-Sinkronisasi media adalah perintah terpisah (`media:sync-prodclone`) yang
-**belum diimplementasikan**. Memisahkan keduanya disengaja: database perlu
-disalin utuh setiap refresh, sedangkan media hanya perlu ditambal secara
-incremental. Bila kelak diimplementasikan, ia harus incremental, non-destruktif,
-dan tidak boleh menghapus media lokal.
+`dev:prodclone` tidak pernah melakukan refresh apa pun secara diam-diam.
+`db:prodclone:refresh` tidak menyentuh media sama sekali.
+
+### Semantik sinkronisasi media
+
+```text
+MEDIA PRODUKSI  (read-only)
+      ↓  salin yang hilang / berubah
+MEDIA PRODCLONE LOKAL
+```
+
+Arahnya satu dan tidak dapat dibalik. Sumber selalu dibangun dari topologi
+produksi di `lib/deployment.ts`, tujuan selalu dari akar media peran prodclone;
+keduanya tidak diterima dari argumen baris perintah, sehingga tidak ada jalur
+di mana operator dapat menukar sumber dan tujuan.
+
+Jaminan yang ditegakkan `lib/media-sync.ts` dan diuji di
+`tests/media-operations.test.ts`:
+
+- **tanpa `--delete`** dan seluruh variannya — media lokal yang basi dibiarkan.
+  Menyimpan berkas yang tidak terpakai jauh lebih aman daripada menghapus berkas
+  lokal secara otomatis;
+- tanpa `--remove-source-files` — produksi tidak pernah kehilangan berkas;
+- tanpa mkdir, chmod, chown, atau sudo di sisi remote — produksi murni dibaca;
+- tujuan yang ambigu ditolak (akar filesystem, akar drive, akar project, atau
+  apa pun di luar `.media/`);
+- peran selain `prodclone` ditolak, sehingga media produksi tidak dapat menimpa
+  media pengembangan lokal.
+
+Dry-run tersedia dan tidak mengunduh apa pun:
+
+```bash
+npm run media:prodclone:sync -- --dry-run
+```
+
+Setiap kali dijalankan, perintah mencetak remote, sumber, tujuan, mode, dan
+status delete sebelum operasi dimulai.
+
+### Wrapper
+
+`prodclone:refresh` bersifat fail-fast: bila refresh database gagal,
+sinkronisasi media **tidak** dijalankan. Bila database berhasil tetapi media
+gagal, database **tidak** di-rollback dan perintah melaporkan kegagalan sebagian
+secara eksplisit — mengklaim "prodclone refresh berhasil" dalam keadaan itu akan
+membuat operator menguji aplikasi terhadap data yang tidak lengkap tanpa
+menyadarinya. Logika pelaporannya ada di `lib/prodclone-refresh.ts`.
+
+Alias lama `db:refresh-prodclone` tetap bekerja dan meneruskan ke
+`db:prodclone:refresh`, sehingga automation yang sudah ada tidak patah.
 
 ## Aturan untuk fitur baru
 

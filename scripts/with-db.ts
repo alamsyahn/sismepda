@@ -53,7 +53,7 @@ if (!existsSync(envPath)) {
     `ABORT: ${spec.envFile} tidak ditemukan.\n` +
       `Peran "${spec.role}" (${spec.label}) membutuhkan file itu.\n` +
       (spec.role === "prodclone"
-        ? `Jalankan \`npm run db:refresh-prodclone\` untuk membuat clone beserta file environment-nya.`
+        ? `Jalankan \`npm run db:prodclone:refresh\` untuk membuat clone beserta file environment-nya.`
         : `Salin .env.example menjadi .env lalu isi DATABASE_URL.`),
   )
 }

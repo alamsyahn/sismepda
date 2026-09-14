@@ -102,7 +102,7 @@ All printed output passes through `redactSecrets`, which masks connection URLs
 and any `*SECRET*`/`*PASSWORD*`/`*TOKEN*`/`DATABASE_URL` assignment.
 
 Deployment tooling never reads `.env.local` or any prodclone configuration.
-`dev:local`, `dev:prodclone`, and `db:refresh-prodclone` remain entirely
+`dev:local`, `dev:prodclone`, and `db:prodclone:refresh` remain entirely
 separate; **prodclone is never sent back to production** — the sync direction is
 production → local only.
 
@@ -143,7 +143,7 @@ rehearsed migration, an RBAC backfill, a legacy date repair).
 Build before any database mutation — a failed build then costs nothing, because the database is still untouched.
 
 1. Back up the exact target database and verify the artifact (`pg_restore -l` + checksum) before anything else. See `docs/operations/backup-restore.md`.
-2. Rehearse against a **fresh** production snapshot (`npm run db:refresh-prodclone -- --keep-dump`). An older clone is not a valid rehearsal once new entries exist.
+2. Rehearse against a **fresh** production snapshot (`npm run db:prodclone:refresh -- --keep-dump`). An older clone is not a valid rehearsal once new entries exist.
 3. Update source with `git merge --ff-only origin/main`. Never force-reset; rollback of source must stay possible.
 4. Build both images, still before database mutation:
    ```bash

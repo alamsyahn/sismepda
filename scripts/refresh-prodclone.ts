@@ -494,7 +494,7 @@ step(`Menulis ${CLONE_ENV_FILE}`)
 writeFileSync(
   CLONE_ENV_FILE,
   [
-    "# Dibuat otomatis oleh `npm run db:refresh-prodclone`. JANGAN di-commit.",
+    "# Dibuat otomatis oleh `npm run db:prodclone:refresh`. JANGAN di-commit.",
     "#",
     "# Clone data produksi nyata: perlakukan kredensial di bawah seperti",
     "# kredensial nyata. File ini hanya memuat DATABASE_URL; variabel lain",
