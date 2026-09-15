@@ -5,23 +5,27 @@ import { requireTeacherManager } from "@/lib/teacher-access"
 import { authFailureResponse } from "@/lib/api-errors"
 import { teacherPopulationWhere } from "@/lib/teacher-population"
 import { parseSchoolDate, toPrismaDate } from "@/lib/school-date"
+import { recordAuditLog } from "@/lib/audit-log"
+import { teacherProfileUpdateSchema } from "@/lib/teacher-schemas"
 
-const optionalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal(""))
-
-const profileUpdate = z.object({
-  employmentStatus: z.enum(["PNS", "PPPK", "HONORER"]).nullable().optional(),
-  position: z.string().trim().max(100).optional(),
-  teachingSince: optionalDate,
-  belajarId: z.string().trim().max(254).optional(),
-  subjectNames: z.array(z.string().trim().min(1).max(80)).max(30).optional(),
-})
+const profileUpdate = teacherProfileUpdateSchema
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ teacherId: string }> }) {
   try {
-    await requireTeacherManager()
+    const actor = await requireTeacherManager()
     const { teacherId } = await params
     const body = profileUpdate.parse(await request.json())
-    const teacher = await prisma.user.findFirst({ where: { id: teacherId, ...teacherPopulationWhere() }, select: { id: true } })
+    const teacher = await prisma.user.findFirst({
+      where: { id: teacherId, ...teacherPopulationWhere() },
+      select: {
+        id: true,
+        name: true,
+        employmentStatus: true,
+        position: true,
+        teachingSince: true,
+        belajarId: true,
+      },
+    })
     if (!teacher) return NextResponse.json({ error: "Guru tidak ditemukan" }, { status: 404 })
 
     const teachingSinceValue = body.teachingSince ? parseSchoolDate(body.teachingSince) : null
@@ -30,7 +34,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ te
     const teachingSince = teachingSinceValue ? toPrismaDate(teachingSinceValue) : null
 
     await prisma.$transaction(async (tx) => {
-      await tx.user.update({
+      const updated = await tx.user.update({
         where: { id: teacherId },
         data: {
           ...(body.employmentStatus !== undefined ? { employmentStatus: body.employmentStatus } : {}),
@@ -38,6 +42,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ te
           ...(body.teachingSince !== undefined ? { teachingSince } : {}),
           ...(body.belajarId !== undefined ? { belajarId: body.belajarId || null } : {}),
         },
+        select: { employmentStatus: true, position: true, teachingSince: true, belajarId: true },
       })
 
       if (body.subjectNames) {
@@ -54,6 +59,32 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ te
           })
         }
       }
+
+      // Mutasi master data guru dicatat pada trail yang sama dengan perubahan
+      // identitas akun, sehingga riwayat satu guru tidak terbelah dua sistem.
+      await recordAuditLog(
+        {
+          actorId: actor.id,
+          action: "TEACHER_PROFILE_UPDATED",
+          entity: "User",
+          entityId: teacherId,
+          targetUserId: teacherId,
+          before: {
+            employmentStatus: teacher.employmentStatus,
+            position: teacher.position,
+            teachingSince: teacher.teachingSince ? teacher.teachingSince.toISOString().slice(0, 10) : null,
+            belajarId: teacher.belajarId,
+          },
+          after: {
+            employmentStatus: updated.employmentStatus,
+            position: updated.position,
+            teachingSince: updated.teachingSince ? updated.teachingSince.toISOString().slice(0, 10) : null,
+            belajarId: updated.belajarId,
+          },
+          summary: `Data kepegawaian guru ${teacher.name} diperbarui.`,
+        },
+        tx,
+      )
     })
 
     return NextResponse.json({ id: teacherId })

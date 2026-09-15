@@ -11,30 +11,22 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { isValidEmail, isValidPhone, normalizePhone } from "@/lib/guru-input"
 import { ExportButton } from "@/components/export/export-button"
 import { tableRowNumber } from "@/lib/table-row-number"
 import { ProfileNameLink } from "@/components/profile/profile-name-link"
+import { TeacherEditDialog, type TeacherRecord } from "@/components/guru/teacher-edit-dialog"
 
-type Teacher = {
-  id: string
-  nip: string | null
-  email: string | null
-  name: string
-  phone: string | null
-  active: boolean
-  homeroomClass: { name: string } | null
-}
-
-type EditValues = { nip: string; email: string; name: string; phone: string; password: string }
+type Teacher = TeacherRecord
 
 export function TeacherManager({
   canUpdate,
+  canUpdateProfile,
   canResetPassword,
   canManageStatus,
   canDelete,
 }: {
   canUpdate: boolean
+  canUpdateProfile: boolean
   canResetPassword: boolean
   canManageStatus: boolean
   canDelete: boolean
@@ -45,7 +37,6 @@ export function TeacherManager({
   const [query, setQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("active")
   const [editing, setEditing] = useState<Teacher | null>(null)
-  const [values, setValues] = useState<EditValues>({ nip: "", email: "", name: "", phone: "", password: "" })
   const [statusTarget, setStatusTarget] = useState<Teacher | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Teacher | null>(null)
   const [deleteConfirmation, setDeleteConfirmation] = useState("")
@@ -69,26 +60,8 @@ export function TeacherManager({
     return matchesQuery && matchesStatus
   }), [teachers, query, statusFilter])
 
-  function openEdit(teacher: Teacher) {
-    setEditing(teacher)
-    setValues({
-      nip: teacher.nip ?? "",
-      email: teacher.email ?? "",
-      name: teacher.name,
-      phone: teacher.phone ?? "",
-      password: "",
-    })
-  }
-
-  async function patchTeacher(payload: Record<string, unknown>) {
-    const response = await fetch("/api/admin/teachers", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-    const data = await response.json()
-    if (!response.ok) throw new Error(data.error ?? "Data guru gagal diperbarui")
-    setTeachers((current) => current.map((teacher) => teacher.id === data.id ? data : teacher))
+  function applyTeacher(updated: Teacher) {
+    setTeachers((current) => current.map((teacher) => teacher.id === updated.id ? { ...teacher, ...updated } : teacher))
   }
 
   async function mutateAccount(userId: string, payload: { password: string } | { active: boolean }) {
@@ -100,45 +73,6 @@ export function TeacherManager({
     const data = await response.json()
     if (!response.ok) throw new Error(data.error ?? "Akun guru gagal diperbarui")
     return data as { id: string; active: boolean }
-  }
-
-  async function saveEdit() {
-    const nip = values.nip.trim()
-    const email = values.email.trim().toLowerCase()
-    const phone = normalizePhone(values.phone)
-    if (!editing) return
-    if (canUpdate && (!values.name.trim() || (!nip && !email))) {
-      toast.error("Nama lengkap dan minimal salah satu NIP atau email wajib diisi")
-      return
-    }
-    if (canUpdate && ((nip && !/^\d+$/.test(nip)) || (email && !isValidEmail(email)))) {
-      toast.error("Format NIP atau email tidak valid")
-      return
-    }
-    if ((canUpdate && phone && !isValidPhone(phone)) || (values.password && values.password.length < 8)) {
-      toast.error("Periksa format telepon atau gunakan password minimal 8 karakter")
-      return
-    }
-
-    setSaving(true)
-    try {
-      if (values.password) await mutateAccount(editing.id, { password: values.password })
-      if (canUpdate) {
-        await patchTeacher({
-          id: editing.id,
-          nip,
-          email,
-          name: values.name.trim(),
-          phone,
-        })
-      }
-      setEditing(null)
-      toast.success("Data guru berhasil diperbarui")
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Data guru gagal diperbarui")
-    } finally {
-      setSaving(false)
-    }
   }
 
   async function changeStatus() {
@@ -221,7 +155,7 @@ export function TeacherManager({
             <TableCell>{teacher.homeroomClass?.name ?? "-"}</TableCell>
             <TableCell><Badge variant={teacher.active ? "default" : "secondary"}>{teacher.active ? "Aktif" : "Nonaktif"}</Badge></TableCell>
             <TableCell><div className="flex justify-end gap-2">
-              {canUpdate || canResetPassword ? <Button variant="outline" size="sm" onClick={() => openEdit(teacher)}><Pencil className="size-4" /> Edit</Button> : null}
+              {canUpdate || canResetPassword ? <Button variant="outline" size="sm" onClick={() => setEditing(teacher)}><Pencil className="size-4" /> Edit</Button> : null}
               {canManageStatus ? <Button variant="outline" size="sm" onClick={() => setStatusTarget(teacher)}>{teacher.active ? <UserX className="size-4" /> : <UserCheck className="size-4" />}{teacher.active ? "Nonaktifkan" : "Aktifkan"}</Button> : null}
               {canDelete ? <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => { setDeleteTarget(teacher); setDeleteConfirmation("") }}><Trash2 className="size-4" /> Hapus</Button> : null}
             </div></TableCell>
@@ -230,19 +164,14 @@ export function TeacherManager({
     </Table></div></CardContent></Card>
     <p className="text-sm text-muted-foreground">Menampilkan {filtered.length} dari {teachers.length} guru.</p>
 
-    <Dialog open={Boolean(editing)} onOpenChange={(open) => { if (!open && !saving) setEditing(null) }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Edit data guru</DialogTitle><DialogDescription>Nama dan minimal salah satu NIP atau email wajib diisi. Telepon dan password baru bersifat opsional.</DialogDescription></DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-1.5"><Label htmlFor="teacher-name">Nama lengkap</Label><Input id="teacher-name" disabled={!canUpdate} value={values.name} onChange={(event) => setValues((current) => ({ ...current, name: event.target.value }))} /></div>
-          <div className="space-y-1.5"><Label htmlFor="teacher-nip">NIP (opsional jika email diisi)</Label><Input id="teacher-nip" disabled={!canUpdate} inputMode="numeric" value={values.nip} onChange={(event) => setValues((current) => ({ ...current, nip: event.target.value.replace(/\D/g, "") }))} /></div>
-          <div className="space-y-1.5"><Label htmlFor="teacher-email">Email (opsional jika NIP diisi)</Label><Input id="teacher-email" disabled={!canUpdate} type="email" value={values.email} onChange={(event) => setValues((current) => ({ ...current, email: event.target.value }))} /></div>
-          <div className="space-y-1.5"><Label htmlFor="teacher-phone">Nomor telepon (opsional)</Label><Input id="teacher-phone" disabled={!canUpdate} value={values.phone} onChange={(event) => setValues((current) => ({ ...current, phone: event.target.value }))} /></div>
-          {canResetPassword ? <div className="space-y-1.5"><Label htmlFor="teacher-password">Password baru (opsional)</Label><Input id="teacher-password" type="password" autoComplete="new-password" value={values.password} onChange={(event) => setValues((current) => ({ ...current, password: event.target.value }))} placeholder="Minimal 8 karakter" /></div> : null}
-        </div>
-        <DialogFooter><DialogClose render={<Button variant="outline" disabled={saving} />}>Batal</DialogClose><Button onClick={saveEdit} disabled={saving}>{saving ? <Loader2 className="size-4 animate-spin" /> : null}{saving ? "Menyimpan..." : "Simpan Perubahan"}</Button></DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <TeacherEditDialog
+      teacher={editing}
+      canUpdateIdentity={canUpdate}
+      canUpdateProfile={canUpdateProfile}
+      canResetPassword={canResetPassword}
+      onClose={() => setEditing(null)}
+      onSaved={applyTeacher}
+    />
 
     <Dialog open={Boolean(statusTarget)} onOpenChange={(open) => { if (!open && !saving) setStatusTarget(null) }}>
       <DialogContent><DialogHeader><DialogTitle>{statusTarget?.active ? "Nonaktifkan guru?" : "Aktifkan kembali guru?"}</DialogTitle><DialogDescription>{statusTarget?.active ? `${statusTarget.name} tidak dapat menggunakan akun ini sampai diaktifkan kembali.` : `${statusTarget?.name} akan dapat kembali menggunakan akun ini.`}</DialogDescription></DialogHeader><DialogFooter><DialogClose render={<Button variant="outline" disabled={saving} />}>Batal</DialogClose><Button variant={statusTarget?.active ? "destructive" : "default"} onClick={changeStatus} disabled={saving}>{saving ? <Loader2 className="size-4 animate-spin" /> : null}{statusTarget?.active ? "Ya, Nonaktifkan" : "Ya, Aktifkan"}</Button></DialogFooter></DialogContent>

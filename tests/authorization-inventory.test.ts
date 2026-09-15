@@ -106,6 +106,7 @@ const LEGACY_FLAG_ALLOWED = new Map([
   // Daftar tolak mass-assignment: menyebut flag justru supaya payload yang
   // memuatnya ditolak.
   ["lib/account-schemas.ts", "denylist mass-assignment"],
+  ["lib/teacher-schemas.ts", "denylist mass-assignment"],
   // Menulis kolom inert + menampilkannya di UI pengelolaannya sendiri.
   // Authority-nya RBAC (`workbook.scope.manage`). Lihat TD-008.
   ["app/api/workbooks/scope/route.ts", "menulis kolom inert, authority RBAC"],

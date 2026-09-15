@@ -8,9 +8,12 @@ import { requirePagePermission, pageCan } from "@/lib/page-guards"
 
 export default async function GuruPage() {
   await requirePagePermission("teachers.accounts.read")
-  const [canCreate, canUpdate, canResetPassword, canManageStatus, canDelete] = await Promise.all([
+  const [canCreate, canUpdate, canUpdateProfile, canResetPassword, canManageStatus, canDelete] = await Promise.all([
     pageCan("teachers.accounts.create"),
     pageCan("teachers.accounts.update"),
+    // Profil/kepegawaian dan foto memakai penjaga yang sama dengan halaman
+    // detail guru, terpisah dari identitas akun.
+    pageCan("teachers.profile.update"),
     pageCan("accounts.credentials.manage"),
     pageCan("accounts.status.manage"),
     pageCan("accounts.delete"),
@@ -32,6 +35,7 @@ export default async function GuruPage() {
       />
       <TeacherManager
         canUpdate={canUpdate}
+        canUpdateProfile={canUpdateProfile}
         canResetPassword={canResetPassword}
         canManageStatus={canManageStatus}
         canDelete={canDelete}

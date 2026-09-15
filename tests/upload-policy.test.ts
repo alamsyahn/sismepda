@@ -231,6 +231,7 @@ const UPLOAD_ROUTES = [
   "app/api/profile/photo/route.ts",
   "app/app-logo/route.ts",
   "app/favicon.ico/route.ts",
+  "app/api/teachers/[teacherId]/photo/route.ts",
   "app/api/e-uks/officers/[officerId]/photo/route.ts",
   "app/api/e-uks/facilities/[facilityId]/photo/route.ts",
   "app/api/e-uks/hero-images/[imageId]/photo/route.ts",

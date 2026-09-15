@@ -12,6 +12,8 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   RBAC_ACCOUNT_TEACHER_FLAG_CHANGED: "Status guru akun diubah",
   RBAC_ACCOUNT_DELETED: "Akun dihapus",
   RBAC_LEGACY_BACKFILL: "Backfill legacy dijalankan",
+  TEACHER_PROFILE_UPDATED: "Profil guru diubah",
+  TEACHER_PHOTO_UPDATED: "Foto guru diubah",
 }
 
 export function auditActionLabel(action: string): string {

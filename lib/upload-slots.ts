@@ -79,6 +79,15 @@ export const UPLOAD_SLOTS: readonly UploadSlot[] = [
     allowedMimeTypes: IMAGE_PHOTO_TYPES,
   },
   {
+    key: "teachers.master.photo",
+    label: "Foto Guru (Data Master)",
+    category: "image",
+    module: "Data Guru",
+    description: "Foto guru yang diunggah administrator dari Data Master > Guru.",
+    defaultMaxBytes: 1024 * 1024,
+    allowedMimeTypes: IMAGE_PHOTO_TYPES,
+  },
+  {
     key: "branding.app.logo",
     label: "Logo Aplikasi",
     category: "image",

@@ -85,6 +85,9 @@ export type AuditAction =
   | "WHATSAPP_LOGGED_OUT"
   | "WHATSAPP_SCHEDULE_TOGGLED"
   | "WHATSAPP_MESSAGE_SENT_MANUALLY"
+  /// Mutasi data master guru dari Data Master > Guru.
+  | "TEACHER_PROFILE_UPDATED"
+  | "TEACHER_PHOTO_UPDATED"
   /// Aksi RBAC, disatukan ke trail yang sama agar tidak ada dua sistem audit.
   | RbacAuditAction
 

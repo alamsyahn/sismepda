@@ -33,6 +33,7 @@ Configured values are rejected unless they are safe integers between `MIN_CONFIG
 | Key | Module | Category | Default |
 |---|---|---|---|
 | `profile.user.photo` | Profil & Akun | image | 1 MB |
+| `teachers.master.photo` | Data Guru | image | 1 MB |
 | `branding.app.logo` | Branding Aplikasi | image | 1 MB |
 | `branding.favicon` | Branding Aplikasi | image | 512 KB |
 | `euks.officer.photo` | E-UKS | image | 2 MB |
@@ -46,7 +47,7 @@ Configured values are rejected unless they are safe integers between `MIN_CONFIG
 
 `database.restore.archive` is the single non-configurable slot: a restore archive size is an operational property of the backup, not a school policy, and lowering it from the settings page would silently break restore. It is excluded explicitly in the registry, not omitted, so the exclusion stays visible.
 
-BOS stores document URLs only (`BosDocument.url`) and accepts no file, so it has no slot. Teacher photos are served read-only and are written through the profile slot.
+BOS stores document URLs only (`BosDocument.url`) and accepts no file, so it has no slot. Teacher photos have two write paths with two slots: a teacher uploading their own photo uses `profile.user.photo`, while an administrator editing a teacher from Data Master > Guru uses `teachers.master.photo`. The slots are separate so a school can raise the administrator limit without also raising what every teacher may upload.
 
 ## Enforcement
 

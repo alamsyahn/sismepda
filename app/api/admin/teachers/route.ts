@@ -10,37 +10,12 @@ import { lockSystemAdminPopulation } from "@/lib/rbac-invariants-db"
 import { resolveAccountTargetPrivilege } from "@/lib/account-privilege"
 import { assertAccountMutationAllowed } from "@/lib/rbac-invariants"
 import { recordAuditLog } from "@/lib/audit-log"
+import { teacherCreateSchema, teacherIdentityUpdateSchema } from "@/lib/teacher-schemas"
+import { teacherPhotoUrl } from "@/lib/server-teacher-profile"
+import { fromNullablePrismaDate } from "@/lib/school-date"
 
-const optionalNip = z.string().trim().max(30).refine((value) => !value || /^\d+$/.test(value), "NIP hanya boleh berisi angka")
-const optionalEmail = z.string().trim().max(254).refine(
-  (value) => !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value),
-  "Format email tidak valid",
-)
-const optionalPhone = z.string().trim().max(20).refine(
-  (value) => !value || /^\+?\d{7,15}$/.test(value),
-  "Format nomor telepon tidak valid",
-)
-
-const teacherCreate = z.object({
-  nip: optionalNip.optional().default(""),
-  email: optionalEmail.optional().default(""),
-  name: z.string().trim().min(1).max(100),
-  phone: optionalPhone.optional().default(""),
-  password: z.string().min(8).max(128),
-}).refine((value) => Boolean(value.nip || value.email), {
-  message: "NIP atau email wajib diisi",
-  path: ["nip"],
-})
-
-const teacherUpdate = z
-  .object({
-    id: z.string().min(1),
-    nip: optionalNip.optional(),
-    email: optionalEmail.optional(),
-    name: z.string().trim().min(1).max(100).optional(),
-    phone: optionalPhone.optional(),
-  })
-  .strict()
+const teacherCreate = teacherCreateSchema
+const teacherUpdate = teacherIdentityUpdateSchema
 
 const teacherSelect = {
   id: true,
@@ -49,18 +24,58 @@ const teacherSelect = {
   name: true,
   phone: true,
   active: true,
+  photoUpdatedAt: true,
+  employmentStatus: true,
+  position: true,
+  teachingSince: true,
+  belajarId: true,
   homeroomClass: { select: { name: true } },
+  teacherSubjects: { select: { subject: { select: { name: true } } } },
 } as const
+
+type TeacherRow = {
+  id: string
+  nip: string | null
+  email: string | null
+  name: string
+  phone: string | null
+  active: boolean
+  photoUpdatedAt: Date | null
+  employmentStatus: string | null
+  position: string | null
+  teachingSince: Date | null
+  belajarId: string | null
+  homeroomClass: { name: string } | null
+  teacherSubjects: { subject: { name: string } }[]
+}
+
+/**
+ * Bentuk yang dikonsumsi layar Data Master > Guru.
+ *
+ * Kolom penyimpanan foto (`photoKey`/`photoData`/`photoMimeType`) sengaja
+ * tidak pernah keluar: klien hanya butuh URL bertanda waktu, dan membocorkan
+ * kunci penyimpanan tidak menambah kemampuan apa pun.
+ */
+function toTeacherView(teacher: TeacherRow) {
+  const { photoUpdatedAt, teacherSubjects, teachingSince, ...rest } = teacher
+  return {
+    ...rest,
+    teachingSince: fromNullablePrismaDate(teachingSince),
+    subjects: teacherSubjects.map((item) => item.subject.name).sort(),
+    photoUrl: teacherPhotoUrl(teacher.id, photoUpdatedAt),
+  }
+}
 
 export async function GET() {
   try {
     await requirePermission("teachers.accounts.read")
-    return NextResponse.json(await prisma.user.findMany({
+    const teachers = await prisma.user.findMany({
       // Populasi guru berasal dari isTeacher, bukan lagi role === "GURU".
       where: teacherPopulationWhere(),
       select: teacherSelect,
       orderBy: [{ active: "desc" }, { name: "asc" }],
-    }))
+    })
+    return NextResponse.json(teachers.map(toTeacherView))
   } catch (error) {
     return authFailureResponse(error, "Data guru gagal dimuat")
   }
@@ -123,6 +138,17 @@ export async function PATCH(request: Request) {
       const email = body.email === undefined ? existing.email : body.email ? body.email.toLowerCase() : null
       if (!nip && !email) throw new ApiError(400, "Minimal salah satu NIP atau email wajib diisi")
 
+      // NIP milik baris ini sendiri bukan duplikat: pemilik yang cocok berarti
+      // pengguna menyimpan tanpa mengubah NIP.
+      if (nip && nip !== existing.nip) {
+        const owner = await tx.user.findUnique({ where: { nip }, select: { id: true } })
+        if (owner && owner.id !== body.id) throw new ApiError(409, "NIP sudah digunakan akun lain")
+      }
+      if (email && email !== existing.email) {
+        const owner = await tx.user.findUnique({ where: { email }, select: { id: true } })
+        if (owner && owner.id !== body.id) throw new ApiError(409, "Email sudah digunakan akun lain")
+      }
+
       const result = await tx.user.update({
         where: { id: body.id },
         data: {
@@ -150,7 +176,7 @@ export async function PATCH(request: Request) {
       return result
     })
 
-    return NextResponse.json(updated)
+    return NextResponse.json(toTeacherView(updated))
   } catch (error) {
     const duplicate = typeof error === "object" && error !== null && "code" in error && error.code === "P2002"
     if (duplicate) return NextResponse.json({ error: "NIP atau email sudah digunakan akun lain" }, { status: 409 })
