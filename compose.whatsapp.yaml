@@ -46,7 +46,24 @@ services:
     # TIDAK ADA `ports:`. Worker hanya dijangkau app lewat jaringan internal
     # Docker; mengeksposnya ke host berarti membuka kendali akun WhatsApp
     # sekolah ke internet.
-    networks: [database]
+    #
+    # DUA JARINGAN, DAN KEDUANYA WAJIB:
+    #
+    #   database → menjangkau PostgreSQL, dan dijangkau app lewat nama service.
+    #   whatsapp_egress → satu-satunya jalan keluar ke internet.
+    #
+    # Jaringan `database` produksi dibuat dengan `internal: true`, yang berarti
+    # Docker TIDAK memasang default route maupun akses DNS keluar pada container
+    # yang hanya tersambung ke sana. Worker yang hanya memakai `database` bisa
+    # hidup, listen, dan bicara ke database, tetapi setiap resolusi nama keluar
+    # gagal dengan EAI_AGAIN — termasuk web.whatsapp.com. Gejalanya menyesatkan:
+    # Baileys gagal mengambil versi WA Web (jatuh ke versi bawaan, "terbaru:
+    # tidak") lalu handshake ditutup dengan status 408 sebelum QR sempat terbit.
+    #
+    # Perbaikannya BUKAN menjadikan `database` non-internal: itu memberi jalur
+    # internet kepada PostgreSQL juga. Worker mendapat jaringan bridge kedua
+    # khusus untuk outbound.
+    networks: [database, whatsapp_egress]
 
   app:
     environment:
@@ -65,3 +82,28 @@ volumes:
   # sehingga backup database saja tidak memulihkannya.
   whatsapp_session:
     name: sismepda_whatsapp_session
+
+networks:
+  # Jaringan bridge biasa — sengaja TIDAK `internal: true`, karena justru
+  # ketiadaan egress-lah yang membuat Baileys tidak pernah mencapai WhatsApp.
+  #
+  # Ini tidak membuka apa pun ke arah masuk. Bridge Docker tanpa `ports:` hanya
+  # memberi NAT keluar; tidak ada porta host yang terikat dan tidak ada rute
+  # dari internet menuju worker. Yang bertambah hanyalah kemampuan worker
+  # memulai koneksi keluar.
+  #
+  # Dipakai HANYA oleh worker. App tetap memakai proxy untuk trafik masuk, dan
+  # PostgreSQL tetap sepenuhnya terkurung di jaringan `database` yang internal:
+  # ia tidak tersambung ke sini, sehingga isolasinya tidak berubah sama sekali.
+  #
+  # Alternatif yang ditolak: menempelkan worker ke `sismepda_proxy`. Jaringan itu
+  # ada untuk trafik masuk lewat reverse proxy; memakainya sebagai jalur keluar
+  # menaruh worker satu segmen dengan permukaan yang menghadap publik tanpa
+  # alasan. Jaringan khusus ini memberi egress tanpa kedekatan itu.
+  #
+  # Tanpa `name:`, Docker menamainya `<project>_whatsapp_egress`; di produksi
+  # dengan project `sismepda` hasilnya `sismepda_whatsapp_egress`. Dibiarkan
+  # diturunkan seperti itu karena jaringan ini tidak menyimpan state — berbeda
+  # dari volume sesi, jaringan yang terbuat ulang tidak menghilangkan apa pun.
+  whatsapp_egress:
+    driver: bridge

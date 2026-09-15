@@ -352,6 +352,14 @@ test("nama service dan volume sesi konsisten antara overlay dan kontrak deploy",
   assert.ok(overlay.includes(`name: ${production.whatsappSessionVolume}`))
 })
 
+test("konstanta jaringan dan jalur sesi cocok dengan overlay", () => {
+  // Konstanta yang menyimpang dari overlay membuat test jaringan di atas
+  // memeriksa nama yang tidak ada, sehingga lulus tanpa menjamin apa pun.
+  const overlay = read("compose.whatsapp.yaml")
+  assert.ok(overlay.includes(`${production.whatsappEgressNetwork}:`))
+  assert.ok(overlay.includes(`WHATSAPP_SESSION_DIR: ${production.whatsappSessionPath}`))
+})
+
 test("worker punya service compose sendiri dengan restart otomatis", () => {
   const overlay = read("compose.whatsapp.yaml")
   assert.ok(overlay.includes("whatsapp-worker:"))
@@ -395,6 +403,131 @@ test("overlay tidak menyentuh volume media maupun database", () => {
   const overlay = read("compose.whatsapp.yaml")
   assert.ok(!overlay.includes("sismepda_media_data"))
   assert.ok(!overlay.includes("postgresql"))
+})
+
+// --- jaringan ---------------------------------------------------------------
+
+/**
+ * Buang komentar YAML agar assertion memeriksa konfigurasi, bukan prosa.
+ *
+ * Komentar overlay ini panjang dan menyebut istilah yang juga dicari assertion
+ * ("internal: true", nama jaringan), sehingga pencarian pada teks mentah bisa
+ * lulus hanya karena membaca penjelasan.
+ */
+function configOnly(source: string): string {
+  // CRLF dinormalkan lebih dulu: assertion di bawah mengandalkan batas baris,
+  // dan checkout Windows menghasilkan akhir baris yang membuat pola meleset.
+  const normalized = source.split("\r\n").join("\n")
+  return normalized.replace(/^\s*#.*$/gm, "").replace(/\s+#.*$/gm, "")
+}
+
+/**
+ * Baris-baris milik satu blok bertingkat dua (service atau jaringan).
+ *
+ * Pemindaian dilakukan per baris, bukan lewat offset string: indentasi adalah
+ * satu-satunya penanda batas blok di YAML, dan pencocokan berbasis offset
+ * mudah meleset pada baris kosong sisa komentar.
+ */
+function blockLines(source: string, name: string): string[] {
+  const lines = configOnly(source).split("\n")
+  const start = lines.findIndex((line) => line.startsWith(`  ${name}:`))
+  if (start === -1) return []
+  const rest = lines.slice(start + 1)
+  const end = rest.findIndex((line) => /^ {0,2}\S/.test(line))
+  return end === -1 ? rest : rest.slice(0, end)
+}
+
+/** Daftar jaringan sebuah service, baik bentuk inline `[a, b]` maupun blok. */
+function serviceNetworks(overlay: string, service: string): string[] {
+  const lines = blockLines(overlay, service)
+  const inlineIndex = lines.findIndex((line) => /^\s*networks:\s*\[/.test(line))
+  if (inlineIndex !== -1) {
+    const inline = lines[inlineIndex].match(/\[([^\]]+)\]/)
+    return inline ? inline[1].split(",").map((name) => name.trim()) : []
+  }
+  const blockIndex = lines.findIndex((line) => /^\s*networks:\s*$/.test(line))
+  if (blockIndex === -1) return []
+  const names: string[] = []
+  for (const line of lines.slice(blockIndex + 1)) {
+    const item = line.match(/^\s*-\s*(\S+)/)
+    if (!item) break
+    names.push(item[1])
+  }
+  return names
+}
+
+test("worker berada di jaringan database DAN jaringan egress", () => {
+  // Regresi produksi: worker hanya tersambung ke `database`, yang dibuat
+  // `internal: true`. Container di jaringan internal tidak punya default route
+  // keluar, sehingga setiap resolusi DNS gagal dengan EAI_AGAIN dan Baileys
+  // tidak pernah mencapai web.whatsapp.com — handshake ditutup 408 sebelum QR.
+  const networks = serviceNetworks(read("compose.whatsapp.yaml"), production.whatsappService)
+  assert.ok(
+    networks.includes("database"),
+    "tanpa jaringan database, worker kehilangan PostgreSQL dan tidak dapat dijangkau app",
+  )
+  assert.ok(
+    networks.includes(production.whatsappEgressNetwork),
+    "tanpa jaringan egress, worker tidak memiliki DNS/internet dan pairing selalu gagal",
+  )
+})
+
+test("jaringan egress tidak internal", () => {
+  // `internal: true` di sini akan mengembalikan persis bug yang diperbaiki:
+  // jaringan kedua ada, tetapi tetap tanpa jalan keluar.
+  const scoped = blockLines(read("compose.whatsapp.yaml"), production.whatsappEgressNetwork).join("\n")
+  assert.match(scoped, /driver:\s*bridge/, "jaringan egress harus bridge biasa")
+  assert.ok(
+    !/internal:\s*true/.test(scoped),
+    "jaringan egress yang internal tidak memberi egress apa pun",
+  )
+})
+
+test("overlay tidak membuat jaringan database menghadap internet", () => {
+  // Cara 'memperbaiki' yang salah: menjadikan `database` non-internal. Itu
+  // memberi jalur internet kepada PostgreSQL, bukan hanya kepada worker.
+  const config = configOnly(read("compose.whatsapp.yaml"))
+  assert.ok(
+    !/^\s*database:/m.test(config.slice(config.indexOf("\nnetworks:"))),
+    "overlay tidak boleh mendeklarasikan ulang jaringan database",
+  )
+  assert.ok(!/internal:\s*false/.test(config), "isolasi database tidak boleh dilonggarkan")
+})
+
+test("jaringan egress hanya dipakai worker", () => {
+  // Menyambungkan app atau database ke jaringan egress memperluas permukaan
+  // tanpa alasan; hanya worker yang perlu memulai koneksi keluar.
+  const overlay = read("compose.whatsapp.yaml")
+  for (const service of ["app", "db", "migrate"]) {
+    assert.ok(
+      !serviceNetworks(overlay, service).includes(production.whatsappEgressNetwork),
+      `${service} tidak boleh berada di jaringan egress`,
+    )
+  }
+})
+
+test("worker tidak ditempelkan ke jaringan reverse proxy", () => {
+  // Proxy adalah jalur MASUK. Worker tidak melayani trafik publik, jadi
+  // menaruhnya di sana hanya mendekatkannya pada permukaan yang terekspos.
+  const networks = serviceNetworks(read("compose.whatsapp.yaml"), production.whatsappService)
+  assert.ok(!networks.some((name) => /proxy|edge/.test(name)))
+})
+
+test("egress tidak berubah menjadi porta yang terekspos", () => {
+  // Jaringan bridge hanya memberi NAT keluar; yang membuka jalur masuk adalah
+  // `ports:`. Keduanya diperiksa bersama agar egress tidak dijadikan alasan
+  // untuk mempublikasikan porta worker.
+  const config = configOnly(read("compose.whatsapp.yaml"))
+  assert.ok(!/^\s*ports:/m.test(config))
+  assert.ok(!/expose:/.test(config))
+})
+
+test("volume sesi tetap terpasang setelah perubahan jaringan", () => {
+  // Perubahan jaringan tidak boleh mengorbankan persistensi sesi: sesi yang
+  // hilang memaksa pemindaian QR ulang pada setiap deploy.
+  const overlay = read("compose.whatsapp.yaml")
+  assert.ok(overlay.includes(`whatsapp_session:${production.whatsappSessionPath}`))
+  assert.ok(overlay.includes(`name: ${production.whatsappSessionVolume}`))
 })
 
 // --- siklus hidup -----------------------------------------------------------

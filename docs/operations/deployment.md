@@ -35,7 +35,7 @@ reviewed and tested in the repo instead of being hand-edited into the host's
 | Overlay | Adds |
 | --- | --- |
 | `compose.media.yaml` | `MEDIA_STORAGE_ROOT` + volume `sismepda_media_data` |
-| `compose.whatsapp.yaml` | service `whatsapp-worker` + volume `sismepda_whatsapp_session` |
+| `compose.whatsapp.yaml` | service `whatsapp-worker` + volume `sismepda_whatsapp_session` + network `sismepda_whatsapp_egress` |
 
 `lib/deployment.ts` assembles the file list, so every remote command becomes:
 

@@ -225,6 +225,33 @@ outside the image:
 It survives application rebuilds, so a redeploy does not require re-scanning a
 QR code.
 
+## Networking
+
+The worker sits on **two** Docker networks, and needs both:
+
+| Network | Internal | Purpose |
+|---|---|---|
+| `sismepda_database` | yes | Reach PostgreSQL; be reached by the app as `whatsapp-worker:3100` |
+| `sismepda_whatsapp_egress` | no | Outbound access to WhatsApp |
+
+The database network is created with `internal: true`. Docker gives containers
+attached only to an internal network no default route and no outbound DNS, so a
+worker with just that network starts, listens and queries the database
+correctly while every outbound name resolution fails with `EAI_AGAIN`. The
+failure surfaces far from its cause: Baileys cannot fetch the live WA Web
+version (falling back to a pinned one, logged as `terbaru: tidak`), and the
+handshake is then closed with status 408 before any QR is issued.
+
+The egress network is an ordinary bridge declared in `compose.whatsapp.yaml`.
+It adds outbound NAT only — no host port is bound and nothing can route inward
+— and only the worker joins it. PostgreSQL stays confined to the internal
+network and gains no internet path.
+
+Two fixes are deliberately **not** used: making the database network
+non-internal would expose PostgreSQL as well, and attaching the worker to the
+reverse-proxy network would place it alongside the public-facing surface for
+traffic that only ever flows outward.
+
 ## Pairing
 
 Pairing is the one part of this feature that depends on WhatsApp's own moving
@@ -380,7 +407,25 @@ session path. Otherwise the first log lines name the cause:
 | `koneksi tertutup: status=428 ... qr_pernah_terbit=tidak` | Handshake refused before pairing — check the WA Web version line and that the browser tuple is still web |
 | `koneksi tertutup: status=408 ... qr_pernah_terbit=tidak` | Handshake timed out before a QR was issued; not a network fault |
 | `koneksi tertutup: status=401` | Logged out — a human must scan a new QR |
+| `EAI_AGAIN` for any hostname | Worker has no egress — check it is on `sismepda_whatsapp_egress`, see "Networking" |
+| `versi WA Web ... (terbaru: tidak)` | Version fetch failed and fell back; usually the same egress fault |
 | No `versi WA Web ...` line at all | Version fetch failed; Baileys fell back to its built-in version |
+
+Verifying worker connectivity:
+
+```bash
+# Both networks must be listed.
+docker inspect sismepda-whatsapp-worker-1 \
+  --format '{{range $name, $conf := .NetworkSettings.Networks}}{{$name}}{{"\n"}}{{end}}'
+
+# DNS must resolve; EAI_AGAIN means the egress network is missing.
+docker exec sismepda-whatsapp-worker-1 node -e \
+  "require('node:dns').lookup('web.whatsapp.com',(e,a)=>console.log('error=',e,'address=',a))"
+
+# Outbound HTTPS must reach WhatsApp.
+docker exec sismepda-whatsapp-worker-1 node -e \
+  "fetch('https://web.whatsapp.com/sw.js').then(r=>console.log('status=',r.status)).catch(e=>console.error(e.cause??e))"
+```
 
 ### Do not delete the session volume
 

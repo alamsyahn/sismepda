@@ -42,6 +42,17 @@ export const production = {
   whatsappService: "whatsapp-worker",
   /** Volume sesi Baileys yang eksplisit; harus sama dengan compose.whatsapp.yaml. */
   whatsappSessionVolume: "sismepda_whatsapp_session",
+  /**
+   * Jaringan egress khusus worker; harus sama dengan compose.whatsapp.yaml.
+   *
+   * Jaringan `database` produksi dibuat `internal: true`, sehingga container
+   * yang hanya tersambung ke sana tidak punya DNS maupun rute keluar. Worker
+   * membutuhkan keduanya untuk menjangkau web.whatsapp.com, dan jaringan kedua
+   * ini menyediakannya tanpa melonggarkan isolasi database.
+   */
+  whatsappEgressNetwork: "whatsapp_egress",
+  /** Titik mount sesi Baileys; harus sama dengan WHATSAPP_SESSION_DIR. */
+  whatsappSessionPath: "/app/whatsapp-session",
   /** Nama volume media yang eksplisit; harus sama dengan compose.media.yaml. */
   mediaVolume: "sismepda_media_data",
   /** Titik mount media di dalam container; harus sama dengan MEDIA_STORAGE_ROOT. */
