@@ -15,8 +15,10 @@ tidak ada satu langkah pun yang wajib dilanjutkan hari itu juga.
 
 ## Kondisi produksi saat ini
 
-Diverifikasi lewat inspeksi read-only setelah rollout media pertama
-(commit `ab0c3de`):
+Diverifikasi setelah migrasi media legacy selesai (commit `478fcc4`).
+Produksi berada dalam **masa observasi pasca-migrasi**: jalur baca memakai
+penyimpanan, byte legacy tetap menjadi fallback, dan tidak ada pembersihan
+destruktif yang dijalankan.
 
 | Aspek | Kondisi |
 | --- | --- |
@@ -27,7 +29,8 @@ Diverifikasi lewat inspeksi read-only setelah rollout media pertama
 | `MEDIA_STORAGE_ROOT` | **AKTIF** — `/app/media` di container yang berjalan |
 | Runtime user app | `nextjs` (uid 1001), pemilik `/app/media` |
 | Byte media legacy | ±7,1 MB di `bytea`, **dipertahankan** sebagai fallback (22 baris) |
-| Kunci media kanonik | 0 — belum ada unggahan baru, migrasi legacy belum dijalankan |
+| Kunci media kanonik | 40 baris — 18 dari unggahan normal, 22 dari migrasi legacy |
+| Berkas volume | 43 (40 direferensikan + 3 yatim, lihat TD-020) |
 | Migrasi belum diterapkan | tidak ada |
 
 ## Persistensi media produksi
@@ -377,6 +380,30 @@ dan `legacy retained` masih sama dengan jumlah baris bermedia.
 Catat set backup terakhir dan commit yang berjalan. Byte legacy tetap tinggal.
 Pemensiunan `bytea` adalah phase terpisah di masa depan, dan baru boleh
 dipertimbangkan setelah backup media berjalan terjadwal.
+
+### Masa observasi pasca-migrasi
+
+Migrasi media legacy sudah dijalankan di produksi pada commit `478fcc4`:
+22 kandidat dipindahkan, 0 gagal, checksum `bytea` legacy cocok dengan berkas
+hasil migrasi pada seluruh 22 baris. Produksi kini berada dalam masa observasi
+dengan kontrak berikut:
+
+| Aspek | Keadaan selama observasi |
+| --- | --- |
+| Jalur baca | penyimpanan kanonik (`resolveMedia` mencoba kunci lebih dulu) |
+| Byte legacy `bytea` | **dipertahankan** sebagai fallback bila berkas tidak terbaca |
+| Backup | set lengkap = database + volume media, keduanya terverifikasi |
+| Pembersihan destruktif | tidak ada — tanpa `bytea` cleanup, tanpa garbage collection |
+
+Set backup yang mengapit migrasi:
+
+| Peran | Set | Isi |
+| --- | --- | --- |
+| Sebelum migrasi | `backup-2026-09-15T063648Z` | 21 berkas media, 18 baris berkunci |
+| Sesudah migrasi | `backup-2026-09-15T064116Z` | 43 berkas media, 40 baris berkunci |
+
+Masa observasi tidak punya tanggal berakhir otomatis. Pemensiunan `bytea`
+menuntut keputusan manusia yang terpisah, bukan jadwal.
 
 ## Smoke test media baru di produksi
 
