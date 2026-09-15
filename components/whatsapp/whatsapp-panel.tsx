@@ -19,6 +19,7 @@ import {
 import {
   CONNECTION_STATE_LABELS,
   type WhatsAppConnectionState,
+  type WhatsAppStatus,
 } from "@/lib/whatsapp-transport"
 import {
   WHATSAPP_SCHEDULE,
@@ -35,17 +36,19 @@ import {
  * `next build`.
  */
 
-type StatusPayload = {
-  state: WhatsAppConnectionState
-  phoneNumber: string | null
-  displayName: string | null
-  connectedSince: string | null
-  lastDisconnectedAt: string | null
-  lastDisconnectReason: string | null
-  lastError: string | null
-  sessionExists: boolean
-  lastHeartbeatAt: string | null
-}
+/**
+ * Payload status yang diterima klien.
+ *
+ * Diturunkan dari {@link WhatsAppStatus} lewat `Omit`, bukan ditulis ulang.
+ * Definisi manual pernah melenceng dari kontrak — `lastError` sempat dideklarasi
+ * `string | null` di sini sementara worker sudah mengirim `{ code, message }`,
+ * sehingga React menerima object sebagai child dan seluruh halaman gagal dimuat.
+ * Dengan `Omit`, perubahan kontrak berikutnya menjadi error TypeScript.
+ *
+ * `qr` dibuang karena route status memang menanggalkannya (`withoutQr`); QR
+ * diambil terpisah lewat `/api/whatsapp/qr` sebagai data URL.
+ */
+type StatusPayload = Omit<WhatsAppStatus, "qr">
 
 type ScheduleRow = {
   type: WhatsAppMessageType
@@ -277,7 +280,15 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
           ) : null}
 
           {status?.lastError ? (
-            <p className="text-destructive text-sm">{status.lastError}</p>
+            <p className="text-destructive text-sm">
+              {/* Kode dicetak halus sebagai penanda untuk operator; kalimatnya
+                  sudah aman karena berasal dari ERROR_MESSAGES, bukan dari
+                  pesan exception mentah. */}
+              <span className="text-muted-foreground font-mono text-xs">
+                {status.lastError.code}
+              </span>{" "}
+              · {status.lastError.message}
+            </p>
           ) : null}
 
           {qr ? (

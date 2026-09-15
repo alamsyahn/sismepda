@@ -11,7 +11,11 @@ import { test } from "node:test"
 
 import { mainNav } from "../lib/nav"
 import { isKnownPermission } from "../lib/rbac-permissions"
-import { CONNECTION_STATE_LABELS } from "../lib/whatsapp-transport"
+import {
+  CONNECTION_STATE_LABELS,
+  errorMessageFor,
+  type WhatsAppStatus,
+} from "../lib/whatsapp-transport"
 
 const ROOT = process.cwd()
 
@@ -245,5 +249,114 @@ test("tidak ada QR, kredensial, atau token yang masuk log", () => {
 
     assert.ok(!/\bqr\b(?!_pernah)/.test(logged), `${name} tidak boleh mencatat payload QR`)
     assert.ok(!/creds|auth|TOKEN|token/.test(logged), `${name} tidak boleh mencatat kredensial`)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Regresi: kontrak `lastError` tunggal dari worker sampai UI
+//
+// Bug yang ditangkap: panel mendeklarasikan `lastError: string | null` sendiri
+// sementara kontrak bersama sudah `{ code, message }`. React menerima object
+// sebagai child dan seluruh halaman /whatsapp gagal dimuat.
+// ---------------------------------------------------------------------------
+
+test("panel menurunkan tipe status dari kontrak bersama, bukan menulis ulang", () => {
+  const panel = codeOnly(read(PANEL))
+
+  // Inti perbaikan: satu sumber kebenaran. Definisi manual boleh melenceng
+  // tanpa terdeteksi tsc; turunan dari WhatsAppStatus tidak bisa.
+  assert.match(
+    panel,
+    /type StatusPayload = Omit<WhatsAppStatus, "qr">/,
+    "StatusPayload harus diturunkan dari WhatsAppStatus",
+  )
+  assert.ok(
+    !/lastError:\s*string\s*\|\s*null/.test(panel),
+    "lastError tidak boleh dideklarasi ulang sebagai string",
+  )
+})
+
+test("panel merender field string dari lastError, bukan objectnya", () => {
+  const panel = codeOnly(read(PANEL))
+
+  assert.match(panel, /status\.lastError\.message/, "message harus dirender")
+
+  // `{status.lastError}` di dalam JSX adalah bentuk yang membuat React melempar
+  // "Objects are not valid as a React child".
+  assert.ok(
+    !/\{\s*status\.lastError\s*\}/.test(panel),
+    "lastError tidak boleh dirender sebagai object",
+  )
+})
+
+test("kode error boleh tampil sebagai penanda operator", () => {
+  const panel = codeOnly(read(PANEL))
+  assert.match(panel, /status\.lastError\.code/)
+})
+
+test("fallback worker tak terjangkau memakai kontrak lastError yang sama", () => {
+  const route = codeOnly(read("app/api/whatsapp/route.ts"))
+
+  assert.match(route, /code:\s*"WORKER_UNREACHABLE"/)
+  assert.match(route, /message:\s*errorMessageFor\("WORKER_UNREACHABLE"\)/)
+
+  // Bentuk lama: lastError sebagai kalimat tunggal.
+  assert.ok(
+    !/lastError:\s*(`|")/.test(route),
+    "lastError tidak boleh berupa string literal",
+  )
+})
+
+test("fallback worker tak terjangkau tidak membocorkan detail exception", () => {
+  const route = codeOnly(read("app/api/whatsapp/route.ts"))
+
+  // error.message bisa memuat ECONNREFUSED beserta host/porta internal.
+  assert.ok(
+    !/error\.message/.test(route),
+    "pesan exception mentah tidak boleh dikirim ke browser",
+  )
+  assert.ok(!/error\.stack/.test(route), "stack trace tidak boleh dikirim ke browser")
+})
+
+test("setiap state status memakai bentuk lastError yang sama", () => {
+  // Kontraknya satu tipe untuk semua state, jadi tidak ada cabang yang bisa
+  // mengirim string pada satu state dan object pada state lain.
+  for (const state of [
+    "CONNECTING",
+    "WAITING_QR",
+    "CONNECTED",
+    "DISCONNECTED",
+    "LOGGED_OUT",
+    "ERROR",
+  ] as const) {
+    const status: WhatsAppStatus = {
+      state,
+      phoneNumber: null,
+      displayName: null,
+      connectedSince: null,
+      lastDisconnectedAt: null,
+      lastDisconnectReason: null,
+      lastError:
+        state === "ERROR" ? { code: "HANDSHAKE_FAILED", message: errorMessageFor("HANDSHAKE_FAILED") } : null,
+      sessionExists: false,
+      qr: null,
+      lastHeartbeatAt: null,
+    }
+
+    assert.ok(state in CONNECTION_STATE_LABELS, `${state} harus punya label`)
+    if (status.lastError) {
+      assert.equal(typeof status.lastError.code, "string")
+      assert.equal(typeof status.lastError.message, "string")
+    }
+  }
+})
+
+test("pesan lastError selalu kalimat kanonik, bukan teks bebas", () => {
+  // Kalimat berasal dari ERROR_MESSAGES sehingga tidak mungkin memuat detail
+  // teknis; inilah alasan menampilkannya di browser aman.
+  for (const code of ["WORKER_UNREACHABLE", "HANDSHAKE_FAILED", "NETWORK"] as const) {
+    const message = errorMessageFor(code)
+    assert.ok(message.length > 0)
+    assert.ok(!/Error:|at \w+ \(|ECONNREFUSED|\bstack\b/.test(message))
   }
 })

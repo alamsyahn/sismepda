@@ -6,6 +6,7 @@ import { readScheduleStatus, readSendHistory } from "@/lib/server-whatsapp"
 import { todayInSchoolTimeZone } from "@/lib/school-date"
 import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import { requireWhatsAppViewer } from "@/lib/whatsapp-access"
+import { errorMessageFor, type WhatsAppStatus } from "@/lib/whatsapp-transport"
 
 /**
  * Status koneksi, jadwal hari ini, dan histori pengiriman.
@@ -23,21 +24,27 @@ export async function GET() {
     const today = todayInSchoolTimeZone(new Date(), timeZone)
 
     const [status, schedule, history] = await Promise.all([
-      workerStatus().catch((error: unknown) => ({
-        state: "ERROR" as const,
-        phoneNumber: null,
-        displayName: null,
-        connectedSince: null,
-        lastDisconnectedAt: null,
-        lastDisconnectReason: null,
-        lastError:
-          error instanceof Error
-            ? `Worker WhatsApp tidak dapat dihubungi: ${error.message}`
-            : "Worker WhatsApp tidak dapat dihubungi.",
-        sessionExists: false,
-        qr: null,
-        lastHeartbeatAt: null,
-      })),
+      workerStatus().catch((error: unknown): WhatsAppStatus => {
+        // Detail teknis (ECONNREFUSED, URL worker, stack) hanya untuk log
+        // server. Browser hanya menerima kode + kalimat kanonik, mengikuti
+        // kontrak lastError yang sama dengan status dari worker.
+        console.error("[whatsapp] status worker tidak terbaca:", error)
+        return {
+          state: "ERROR",
+          phoneNumber: null,
+          displayName: null,
+          connectedSince: null,
+          lastDisconnectedAt: null,
+          lastDisconnectReason: null,
+          lastError: {
+            code: "WORKER_UNREACHABLE",
+            message: errorMessageFor("WORKER_UNREACHABLE"),
+          },
+          sessionExists: false,
+          qr: null,
+          lastHeartbeatAt: null,
+        }
+      }),
       readScheduleStatus(today),
       readSendHistory(50),
     ])
