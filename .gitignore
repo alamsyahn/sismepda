@@ -41,3 +41,4 @@ app/generated/prisma/
 node_modules
 .next/
 .DS_Store
+next-env.d.ts
