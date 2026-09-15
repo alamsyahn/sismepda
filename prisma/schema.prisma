@@ -110,6 +110,8 @@ model User {
   /// default implisit.
   rbacRoles UserRole[]
   rbacMigrationItems RbacMigrationItem[]
+  /// Kiriman WhatsApp manual ("Kirim sekarang") yang dipicu akun ini.
+  whatsAppSendsInitiated WhatsAppSendLog[]
 }
 
 model Subject {
@@ -849,4 +851,98 @@ model RbacMigrationItem {
 
   @@id([migrationKey, userId])
   @@index([userId])
+}
+
+/// Jenis pesan WhatsApp otomatis. Sengaja enum, bukan string bebas: nama jenis
+/// ikut menyusun idempotency key, jadi salah ketik akan mengizinkan kiriman
+/// ganda pada slot yang sama.
+enum WhatsAppMessageType {
+  /// Daftar kelas yang belum mengisi/melengkapi absensi hari itu (08.00, 10.00).
+  ATTENDANCE_MISSING
+  /// Rekap siswa tidak hadir hari itu (12.00).
+  ATTENDANCE_ABSENT
+}
+
+/// Bagaimana sebuah pengiriman dipicu. Riwayat WAJIB bisa membedakan keduanya:
+/// kiriman terjadwal dijaga idempotensi, kiriman manual sengaja boleh berulang.
+enum WhatsAppSendTrigger {
+  SCHEDULED
+  MANUAL
+}
+
+enum WhatsAppSendStatus {
+  SENT
+  FAILED
+  /// Tidak dikirim karena keputusan sadar (hari libur, toggle nonaktif, slot
+  /// terlewat). Bukan kegagalan, tetapi tetap dicatat agar admin tahu alasannya.
+  SKIPPED
+}
+
+/// Konfigurasi per jenis pesan otomatis. Satu baris per `type`.
+///
+/// Jam jadwal TIDAK disimpan di sini: ia tinggal di satu tempat di kode
+/// (`lib/whatsapp-schedule.ts`) supaya tidak tersebar sebagai magic number.
+/// Baris ini menyimpan hal yang memang milik operator: aktif/nonaktif dan
+/// tujuan yang sudah di-resolve.
+model WhatsAppConfiguration {
+  /// Satu baris per jenis pesan, jadi jenisnya sekaligus primary key.
+  type WhatsAppMessageType @id
+  /// Toggle pengiriman OTOMATIS. Tidak pernah menghalangi "Kirim sekarang":
+  /// kiriman manual adalah tindakan eksplisit admin.
+  enabled Boolean @default(false)
+  /// JID grup tujuan (`...@g.us`) — identifier kanonik. Nama grup bisa berubah
+  /// atau ganda, jadi pengiriman SELALU memakai JID ini, tidak pernah mencari
+  /// ulang berdasarkan nama pada setiap kiriman.
+  targetGroupJid String?
+  /// Nama grup saat terakhir di-resolve. Untuk tampilan saja; tidak pernah
+  /// dipakai memilih tujuan.
+  targetGroupName String?
+  targetResolvedAt DateTime?
+  /// Waktu pesan jenis ini terakhir BERHASIL terkirim, lewat jalur mana pun.
+  lastSentAt DateTime?
+  updatedAt DateTime @updatedAt
+  sendLogs WhatsAppSendLog[]
+}
+
+/// Satu baris per percobaan pengiriman, berhasil maupun gagal.
+///
+/// Isi pesan disimpan sebagai snapshot, bukan nama template: data absensi
+/// berubah setelah pesan terkirim, jadi merender ulang nanti akan menghasilkan
+/// teks yang berbeda dari yang benar-benar dibaca orang di grup.
+model WhatsAppSendLog {
+  id String @id @default(cuid())
+  type WhatsAppMessageType
+  trigger WhatsAppSendTrigger
+  status WhatsAppSendStatus
+  /// Kunci logis slot terjadwal, mis. `attendance_missing:2026-09-15:08:00`.
+  /// UNIQUE — inilah penjaga duplikat yang sesungguhnya: dua worker, retry
+  /// scheduler, atau restart tidak dapat menembus constraint database.
+  /// NULL untuk kiriman manual, yang memang boleh berulang (PostgreSQL
+  /// memperlakukan setiap NULL sebagai berbeda).
+  idempotencyKey String? @unique
+  /// Tanggal sekolah yang dilaporkan pesan ini (DATE, bebas timezone).
+  schoolDate DateTime @db.Date
+  /// Slot jadwal `HH:mm` untuk kiriman terjadwal; NULL untuk manual.
+  scheduledSlot String?
+  targetGroupJid String?
+  /// Nama grup pada saat kirim; snapshot, karena nama grup bisa berubah.
+  targetGroupName String?
+  /// Teks persis yang dikirim (atau yang akan dikirim saat gagal).
+  messageText String
+  /// ID pesan dari transport bila tersedia. Bukan rahasia.
+  providerMessageId String?
+  /// Kategori kegagalan yang stabil untuk kode/UI (mis. `NOT_CONNECTED`).
+  errorCode String?
+  /// Pesan yang aman ditampilkan ke admin. TIDAK PERNAH berisi kredensial,
+  /// isi sesi, atau stack trace mentah.
+  errorMessage String?
+  attemptedAt DateTime @default(now())
+  sentAt DateTime?
+  /// Admin yang menekan "Kirim sekarang". NULL untuk kiriman terjadwal.
+  initiatedById String?
+  initiatedBy User? @relation(fields: [initiatedById], references: [id], onDelete: SetNull)
+  configuration WhatsAppConfiguration @relation(fields: [type], references: [type], onDelete: Cascade)
+  @@index([attemptedAt])
+  @@index([type, attemptedAt])
+  @@index([schoolDate])
 }
