@@ -76,6 +76,36 @@ export async function readConfiguration(
   return row
 }
 
+/**
+ * Ubah konfigurasi satu jenis pesan.
+ *
+ * Hanya dua hal yang boleh diubah operator: aktif/nonaktif, dan grup tujuan.
+ * Jam jadwal sengaja TIDAK termasuk — itu aturan sekolah yang hidup di
+ * `lib/whatsapp-schedule.ts`, bukan pengaturan yang bisa digeser dari layar.
+ */
+export async function updateConfiguration(
+  type: WhatsAppMessageType,
+  changes: {
+    enabled?: boolean
+    targetGroupJid?: string | null
+    targetGroupName?: string | null
+  },
+): Promise<WhatsAppConfigurationRow> {
+  await readConfigurations()
+
+  const data: Record<string, unknown> = {}
+  if (changes.enabled !== undefined) data.enabled = changes.enabled
+  if (changes.targetGroupJid !== undefined) {
+    data.targetGroupJid = changes.targetGroupJid
+    data.targetGroupName = changes.targetGroupName ?? null
+    // Stempel waktu resolusi ikut diperbarui agar terlihat kapan terakhir
+    // nama grup benar-benar dicocokkan dengan JID yang hidup.
+    data.targetResolvedAt = changes.targetGroupJid ? new Date() : null
+  }
+
+  return prisma.whatsAppConfiguration.update({ where: { type }, data })
+}
+
 export type SkipReason =
   | "AUTOMATIC_DISABLED"
   | "HOLIDAY"

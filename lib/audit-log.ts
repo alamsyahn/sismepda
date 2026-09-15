@@ -25,6 +25,11 @@ export type AuditEntity =
   /// Konfigurasi kebijakan unggah (batas global + override per slot). Satu
   /// baris logis, jadi entityId selalu "default".
   | "UploadPolicy"
+  /// Koneksi WhatsApp sekolah. Satu koneksi untuk seluruh sekolah, jadi
+  /// entityId selalu "default".
+  | "WhatsAppConnection"
+  /// Satu baris WhatsAppSendLog — kiriman manual yang dipicu seorang pengguna.
+  | "WhatsAppSendLog"
   /// Entitas RBAC. Didefinisikan di lib/rbac-audit.ts agar UI dapat mengenali
   /// baris RBAC tanpa ikut menarik lib/prisma.ts ke bundel klien.
   | RbacAuditEntity
@@ -75,6 +80,11 @@ export type AuditAction =
   | "EUKS_COMPLAINT_OPTION_UPDATED"
   | "EUKS_SICK_ABSENCE_UPDATED"
   | "UPLOAD_POLICY_UPDATED"
+  | "WHATSAPP_CONNECTION_STARTED"
+  | "WHATSAPP_CONNECTION_RECONNECTED"
+  | "WHATSAPP_LOGGED_OUT"
+  | "WHATSAPP_SCHEDULE_TOGGLED"
+  | "WHATSAPP_MESSAGE_SENT_MANUALLY"
   /// Aksi RBAC, disatukan ke trail yang sama agar tidak ada dua sistem audit.
   | RbacAuditAction
 

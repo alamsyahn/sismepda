@@ -79,3 +79,16 @@ export function workerResolveTarget(name?: string): Promise<
 > {
   return call("/resolve-target", { method: "POST", body: { name } })
 }
+
+/**
+ * Buang kode QR dari payload status.
+ *
+ * QR menautkan perangkat mana pun ke akun WhatsApp sekolah, sehingga ia tidak
+ * boleh ikut dalam respons yang boleh dibaca setiap pemegang `whatsapp.read`.
+ * Pengambilannya lewat endpoint terpisah yang menuntut izin kelola koneksi.
+ */
+export function withoutQr<T extends { qr: string | null }>(status: T): Omit<T, "qr"> {
+  const copy: Record<string, unknown> = { ...status }
+  delete copy.qr
+  return copy as Omit<T, "qr">
+}

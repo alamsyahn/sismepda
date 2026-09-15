@@ -93,6 +93,63 @@ Next.js never opens a Baileys socket itself; it only asks the worker. That is
 what keeps exactly one WhatsApp connection alive regardless of how many requests
 or renders happen.
 
+## Authorization
+
+Three separate permissions, because the consequences differ sharply. Holding one
+never widens another.
+
+| Permission | Allows |
+|---|---|
+| `whatsapp.read` | Connection state, schedule status, send history |
+| `whatsapp.connection.manage` | Connect, view QR, reconnect, logout, change toggle and target group |
+| `whatsapp.send` | "Kirim sekarang" |
+
+The pairing QR is guarded by `whatsapp.connection.manage`, not `whatsapp.read`,
+and is served from its own endpoint (`GET /api/whatsapp/qr`). Anyone who scans it
+links their device to the school WhatsApp account, so it must not travel in the
+status payload every reader receives. `withoutQr()` strips it on the other
+routes.
+
+Authorization never inspects role names; every route calls `requirePermission()`
+through `lib/whatsapp-access.ts`.
+
+## API
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `GET /api/whatsapp` | `whatsapp.read` | Status, today's schedule, history. A dead worker is reported as a readable error state, not a 500 — an offline worker is a normal operational condition that must be visible on screen |
+| `GET /api/whatsapp/qr` | `whatsapp.connection.manage` | QR only; never persisted |
+| `POST /api/whatsapp/connection` | `whatsapp.connection.manage` | `connect` / `reconnect` / `logout` |
+| `GET /api/whatsapp/configuration` | `whatsapp.read` | Config plus group list when connected |
+| `PATCH /api/whatsapp/configuration` | `whatsapp.connection.manage` | Toggle and target group |
+| `POST /api/whatsapp/send` | `whatsapp.send` | Manual send |
+
+Schedule times are not writable through the API. They are a school rule in
+`lib/whatsapp-schedule.ts`; making them editable would give code and database two
+competing truths.
+
+A duplicate target group name returns `409` rather than silently picking the
+first match — choosing wrongly would send the student attendance recap to the
+wrong group with nobody noticing.
+
+Manual sends pass a `MANUAL` slot marker instead of borrowing a scheduled hour.
+`ATTENDANCE_MISSING` has two slots (08:00 and 10:00); borrowing one would make a
+manual send look like a scheduled one in both the schedule card and the history.
+The worker fixes `trigger: "MANUAL"` itself rather than reading it from the
+request body, so a caller cannot impersonate a scheduled send and write an
+idempotency key that blocks that day's real schedule.
+
+## Audit
+
+Every state-changing action writes to the shared `AuditLog`:
+`WHATSAPP_CONNECTION_STARTED`, `WHATSAPP_CONNECTION_RECONNECTED`,
+`WHATSAPP_LOGGED_OUT`, `WHATSAPP_SCHEDULE_TOGGLED`,
+`WHATSAPP_MESSAGE_SENT_MANUALLY`. Manual sends are logged whatever the outcome —
+a refused or skipped attempt is as worth tracing as a successful one. Read-only
+endpoints write nothing; logging every poll would drown the trail it exists to
+provide. Audit entries record connection state and phone number only, never
+session credentials.
+
 ## Session storage
 
 The pairing credential lives in a directory on disk, outside the repository and

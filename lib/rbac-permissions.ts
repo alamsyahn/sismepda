@@ -29,6 +29,7 @@ export type PermissionModule =
   | "school"
   | "database"
   | "rbac"
+  | "whatsapp"
   | "development"
 
 export type PermissionDefinition = {
@@ -585,6 +586,43 @@ export const PERMISSIONS: readonly PermissionDefinition[] = [
     action: "read",
     module: "rbac",
     label: "Lihat jejak audit RBAC",
+    sensitive: true,
+  }),
+
+  // --- whatsapp -----------------------------------------------------------
+  def({
+    key: "whatsapp.read",
+    resource: "whatsapp",
+    action: "read",
+    module: "whatsapp",
+    label: "Lihat status dan histori WhatsApp otomatis",
+    description:
+      "Membuka halaman WhatsApp Otomatis: status koneksi, nomor terhubung, jadwal, dan histori pengiriman beserta pesannya. Tidak dapat menghubungkan, memutus, maupun mengirim.",
+  }),
+  def({
+    key: "whatsapp.connection.manage",
+    resource: "whatsapp.connection",
+    action: "manage",
+    module: "whatsapp",
+    label: "Kelola koneksi WhatsApp",
+    description:
+      "Menghubungkan, memindai QR, menyambung ulang, dan keluar dari akun WhatsApp sekolah. Keluar akan menghapus sesi sehingga pairing harus diulang dari perangkat ponsel.",
+    dependsOn: ["whatsapp.read"],
+    // Sensitif: memegang kendali atas akun WhatsApp sekolah. Logout memutus
+    // seluruh pengiriman otomatis sampai ada yang memindai QR kembali.
+    sensitive: true,
+  }),
+  def({
+    key: "whatsapp.send",
+    resource: "whatsapp",
+    action: "send",
+    module: "whatsapp",
+    label: "Kirim pesan WhatsApp sekarang",
+    description:
+      "Memicu pengiriman laporan absensi ke grup di luar jadwal (\"Kirim sekarang\"). Pesan benar-benar terkirim ke grup dan tidak dapat ditarik kembali.",
+    dependsOn: ["whatsapp.read"],
+    // Sensitif: menghasilkan pesan nyata ke grup berisi wali kelas dan
+    // pimpinan sekolah.
     sensitive: true,
   }),
 
