@@ -15,6 +15,7 @@ import {
   Settings,
   ShieldCheck,
   ScrollText,
+  BotMessageSquare,
   FileDown,
   MessageCircleMore,
   Wallet,
@@ -321,6 +322,16 @@ export const mainNav: NavEntry[] = [
         icon: MessageCircleMore,
         description: "Salin laporan absensi untuk WhatsApp",
         permissions: ["reports.whatsapp.read.all"],
+      },
+      {
+        // Tetangga langsung Laporan WhatsApp, dan sengaja di bawahnya: yang di
+        // atas adalah laporan untuk disalin manual, yang ini adalah pengiriman
+        // otomatis dari laporan yang sama.
+        title: "WhatsApp Otomatis",
+        href: "/whatsapp",
+        icon: BotMessageSquare,
+        description: "Status koneksi, jadwal, dan histori pengiriman otomatis",
+        permissions: ["whatsapp.read"],
       },
       {
         title: "Export Data",

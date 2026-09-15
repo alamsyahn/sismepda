@@ -139,6 +139,35 @@ The worker fixes `trigger: "MANUAL"` itself rather than reading it from the
 request body, so a caller cannot impersonate a scheduled send and write an
 idempotency key that blocks that day's real schedule.
 
+## Admin page
+
+`/whatsapp` (`app/whatsapp/page.tsx`), reached from **Komunikasi & Data →
+WhatsApp Otomatis**, gated by `whatsapp.read`.
+
+The server component resolves capabilities and passes them down as
+`canManageConnection` and `canSend`; the client never infers its own rights
+from the session. Hiding a button is convenience — enforcement stays in the
+route handlers, so a hand-crafted `fetch` gains nothing.
+
+`components/whatsapp/whatsapp-panel.tsx` is a client component and therefore
+imports only pure modules (`whatsapp-transport`, `whatsapp-schedule`). Importing
+a value from `lib/server-*` would pull `pg` into the browser bundle and break
+`next build` with `Can't resolve 'util/types'`; a test locks this boundary.
+
+The panel shows:
+
+- connection state, phone number, profile name, connected-since, last
+  disconnect time and a translated reason;
+- connect / reconnect / logout, for `whatsapp.connection.manage` only;
+- the QR code, polled every 5 s and **only** while the state is `WAITING_QR`
+  and the viewer may manage the connection;
+- per-schedule toggle, per-slot delivery state, and "Kirim sekarang";
+- delivery history separating manual from scheduled sends, naming the operator
+  who triggered a manual send.
+
+Status is polled every 10 s because the connection changes without any user
+interaction — the socket drops, the worker reconnects, a scheduled send fires.
+
 ## Audit
 
 Every state-changing action writes to the shared `AuditLog`:
