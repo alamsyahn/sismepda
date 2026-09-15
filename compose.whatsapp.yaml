@@ -26,7 +26,11 @@ services:
       # Stage `runner` adalah build standalone Next tanpa tsx.
       target: migrator
     restart: unless-stopped
-    command: ["sh", "-c", "npx tsx scripts/whatsapp-worker.ts"]
+    # Berkas worker berekstensi `.mts` dan itu WAJIB: Baileys 7 bergantung pada
+    # `whatsapp-rust-bridge` yang ESM-only, sehingga varian `.ts` membuat tsx
+    # memuat rantai impor sebagai CommonJS dan worker mati saat start dengan
+    # ERR_PACKAGE_PATH_NOT_EXPORTED. Jangan kembalikan ke `.ts`.
+    command: ["sh", "-c", "npx tsx scripts/whatsapp-worker.mts"]
     environment:
       DATABASE_URL: ${DATABASE_URL}
       # Sesi Baileys di dalam container. Harus sama persis dengan titik mount
@@ -35,7 +39,7 @@ services:
       WHATSAPP_SESSION_DIR: /app/whatsapp-session
       WHATSAPP_WORKER_PORT: "3100"
       # Token bersama antara app dan worker. Tanpa ini worker menolak start:
-      # lihat scripts/whatsapp-worker.ts.
+      # lihat scripts/whatsapp-worker.mts.
       WHATSAPP_WORKER_TOKEN: ${WHATSAPP_WORKER_TOKEN}
     volumes:
       - whatsapp_session:/app/whatsapp-session

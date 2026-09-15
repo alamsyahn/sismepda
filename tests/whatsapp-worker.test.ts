@@ -9,6 +9,13 @@ import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { test } from "node:test"
 
+import {
+  production,
+  productionComposeFiles,
+  remoteActivateScript,
+  remotePreflightScript,
+} from "@/lib/deployment"
+
 /** Test dijalankan dari akar repo; jalur dibuat eksplisit agar tidak rapuh. */
 const ROOT = process.cwd()
 
@@ -114,6 +121,89 @@ test("worker tidak membocorkan detail teknis ke pemanggil", () => {
 })
 
 // --- kontrak deployment -----------------------------------------------------
+
+test("compose produksi menjalankan berkas worker ESM yang benar-benar ada", () => {
+  // BUG YANG DICEGAH: overlay pernah menjalankan `scripts/whatsapp-worker.ts`
+  // sementara berkas yang ada hanya `.mts`. Container keluar seketika, service
+  // tidak pernah mendengarkan porta 3100, dan UI melaporkan "Worker WhatsApp
+  // tidak dapat dihubungi" — kegagalan yang tidak tertangkap tsc maupun lint
+  // karena compose bukan TypeScript.
+  const overlay = read("compose.whatsapp.yaml")
+  const command = overlay.match(/command:\s*(.+)/)?.[1]
+  assert.ok(command, "overlay harus menetapkan command worker")
+
+  const script = command.match(/scripts\/whatsapp-worker\.m?ts/)?.[0]
+  assert.ok(script, "command worker harus menunjuk berkas worker")
+  assert.equal(script, WORKER_PATH, "command harus menunjuk varian .mts")
+  assert.ok(
+    existsSync(resolve(ROOT, script)),
+    `berkas yang dijalankan compose (${script}) harus benar-benar ada di repo`,
+  )
+})
+
+test("tidak ada berkas yang menunjuk varian .ts worker", () => {
+  // Dicek lintas berkas, bukan hanya di compose: satu rujukan `.ts` yang
+  // tertinggal di mana pun akan menghidupkan kembali bug yang sama.
+  for (const path of ["compose.whatsapp.yaml", "package.json", "Dockerfile"]) {
+    assert.ok(
+      !/scripts\/whatsapp-worker\.ts\b/.test(read(path)),
+      `${path} masih menunjuk scripts/whatsapp-worker.ts yang tidak ada`,
+    )
+  }
+})
+
+test("worker dibangun dari stage image yang memang punya tsx", () => {
+  // `runner` adalah build standalone Next tanpa tsx; menjalankan worker di sana
+  // gagal walau nama berkasnya benar.
+  const overlay = read("compose.whatsapp.yaml")
+  assert.match(overlay, /target:\s*migrator/)
+
+  const dockerfile = read("Dockerfile")
+  const migrator = dockerfile.slice(
+    dockerfile.indexOf("AS migrator"),
+    dockerfile.indexOf("AS runner"),
+  )
+  assert.ok(migrator.includes("COPY scripts"), "stage migrator harus memuat scripts/")
+  assert.ok(migrator.includes("COPY lib"), "worker mengimpor lib/ secara relatif")
+})
+
+test("overlay WhatsApp ikut dalam setiap perintah compose produksi", () => {
+  // BUG YANG DICEGAH: overlay ada di Git tetapi tidak pernah diteruskan ke
+  // `docker compose`, sehingga service worker tidak pernah dibuat di produksi
+  // dan app selalu melaporkan worker tak dapat dihubungi.
+  assert.equal(productionComposeFiles.includes(production.whatsappComposeFile), true)
+  assert.equal(productionComposeFiles[0], production.composeFile)
+  assert.match(remotePreflightScript(), /if test -f compose\.whatsapp\.yaml/)
+})
+
+test("aktivasi menaikkan worker tanpa menyentuh service lain", () => {
+  const activate = remoteActivateScript()
+  assert.match(activate, /up -d whatsapp-worker/)
+  // `up -d` tanpa argumen akan ikut membuat ulang database milik deploy.yaml.
+  assert.ok(
+    !/up -d\s*<\/dev\/null/.test(activate),
+    "aktivasi harus menyebut service secara eksplisit",
+  )
+})
+
+test("preflight melaporkan token worker tanpa membocorkan nilainya", () => {
+  const preflight = remotePreflightScript()
+  assert.match(preflight, /WHATSAPP_TOKEN=/)
+  assert.match(preflight, /echo present \|\| echo absent/)
+  // Yang dicetak hanya ADA/TIDAK; nilai token tidak pernah masuk log deploy.
+  assert.ok(
+    !/echo "?\$WHATSAPP_WORKER_TOKEN/.test(preflight),
+    "nilai token tidak boleh pernah dicetak",
+  )
+})
+
+test("nama service dan volume sesi konsisten antara overlay dan kontrak deploy", () => {
+  // Konstanta yang menyimpang diam-diam membuat deploy menaikkan service yang
+  // tidak ada, atau memeriksa volume yang salah.
+  const overlay = read("compose.whatsapp.yaml")
+  assert.ok(overlay.includes(`${production.whatsappService}:`))
+  assert.ok(overlay.includes(`name: ${production.whatsappSessionVolume}`))
+})
 
 test("worker punya service compose sendiri dengan restart otomatis", () => {
   const overlay = read("compose.whatsapp.yaml")

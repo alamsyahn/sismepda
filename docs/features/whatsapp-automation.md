@@ -230,3 +230,62 @@ a deliberate manual step and is never performed automatically.
 | `WHATSAPP_WORKER_URL` | Where Next.js reaches the worker. |
 | `WHATSAPP_WORKER_PORT` | Worker listen port (loopback). |
 | `WHATSAPP_SESSION_DIR` | Session/credential directory. |
+
+`WHATSAPP_WORKER_TOKEN` lives in `/etc/sismepda/sismepda.env` on the host, which
+is outside Git and survives every `git` operation. Both the app and the worker
+read the same value through the overlay. The worker **refuses to start** when it
+is empty — without it, anything on the Docker network could send messages as the
+school. Generate it once with `openssl rand -hex 32`; see
+`.env.production.example`.
+
+Deploy preflight reports `WHATSAPP_OVERLAY=` and `WHATSAPP_TOKEN=` as
+`present`/`absent`. Only that verdict is printed — the token value never reaches
+a deploy log.
+
+### Why the worker file is `.mts`
+
+`scripts/whatsapp-worker.mts` and `lib/whatsapp-baileys.mts` are true ESM
+modules, and the extension is load-bearing. Baileys 7 depends on
+`whatsapp-rust-bridge`, which is ESM-only; if any file in that import chain
+becomes `.ts`, tsx loads the whole chain as CommonJS and the worker dies at
+startup with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+
+That failure is invisible to `tsc` and to lint, so it is pinned by tests
+instead: `tests/whatsapp-worker.test.ts` asserts that the compose `command:`
+names a worker file that actually exists on disk, and that no `.ts` variant is
+referenced anywhere. The overlay also builds from the `migrator` image stage,
+the only stage carrying tsx plus `lib/` and `scripts/`.
+
+### Checking the worker in production
+
+```bash
+ssh smpn2
+cd /srv/apps/sismepda
+
+docker compose -f deploy.yaml -f compose.media.yaml -f compose.whatsapp.yaml \
+  --env-file /etc/sismepda/sismepda.env ps
+
+docker compose -f deploy.yaml -f compose.media.yaml -f compose.whatsapp.yaml \
+  --env-file /etc/sismepda/sismepda.env logs --tail=100 whatsapp-worker
+```
+
+`whatsapp-worker` must show `Up`. A healthy start logs the listen port and the
+session path. Otherwise the first log lines name the cause:
+
+| Log | Cause |
+|---|---|
+| `WHATSAPP_WORKER_TOKEN belum diatur; worker berhenti.` | Token missing in the env file |
+| `Cannot find module .../whatsapp-worker.ts` | Compose points at a file that does not exist |
+| `ERR_PACKAGE_PATH_NOT_EXPORTED` | ESM chain broken — a `.mts` file became `.ts` |
+| `Can't reach database server` | `DATABASE_URL` wrong, or worker not on the `database` network |
+| `sesi: /app/whatsapp-session (configured)` then repeated QR | Session volume not mounted |
+| `gagal menyambung saat start` | Baileys/WhatsApp connectivity, session intact |
+
+### Do not delete the session volume
+
+`sismepda_whatsapp_session` holds WhatsApp **credentials**. It is not part of a
+PostgreSQL dump, so a database backup does not restore it. Removing it — or
+letting the volume name drift — forces a fresh QR pairing. Restarting or
+redeploying the container does not: shutdown closes the socket without logging
+out, which is why pairing is needed only on first setup or after an explicit
+logout.

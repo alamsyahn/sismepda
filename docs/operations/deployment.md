@@ -25,6 +25,36 @@ cd /srv/apps/sismepda
 docker compose -f deploy.yaml --env-file /etc/sismepda/sismepda.env <subcommand>
 ```
 
+### Git-tracked overlays
+
+Two overlays live in Git and reach production through the `git merge --ff-only`
+the deploy flow already performs. They exist so that services and volumes are
+reviewed and tested in the repo instead of being hand-edited into the host's
+`deploy.yaml`:
+
+| Overlay | Adds |
+| --- | --- |
+| `compose.media.yaml` | `MEDIA_STORAGE_ROOT` + volume `sismepda_media_data` |
+| `compose.whatsapp.yaml` | service `whatsapp-worker` + volume `sismepda_whatsapp_session` |
+
+`lib/deployment.ts` assembles the file list, so every remote command becomes:
+
+```bash
+docker compose -f deploy.yaml -f compose.media.yaml -f compose.whatsapp.yaml \
+  --env-file /etc/sismepda/sismepda.env <subcommand>
+```
+
+Each overlay is added only when its file exists in the working tree. That
+tolerance is required because preflight and backup run *before* the merge that
+first delivers the overlay — without it, the very deploy introducing an overlay
+could never run. Activation still refuses to recreate the app container without
+the media overlay, and brings `whatsapp-worker` up once its overlay is present.
+
+`compose.whatsapp.yaml` requires `WHATSAPP_WORKER_TOKEN` in the env file; the
+worker exits immediately when it is empty. Preflight reports
+`WHATSAPP_OVERLAY=` and `WHATSAPP_TOKEN=` as `present`/`absent` without printing
+the secret. See [WhatsApp automation](../features/whatsapp-automation.md).
+
 ## One-command deployment from Windows
 
 Routine releases run from the local machine; there is no manual classification

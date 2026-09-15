@@ -29,6 +29,19 @@ export const production = {
    * menyunting `deploy.yaml` milik host dengan tangan.
    */
   mediaComposeFile: "compose.media.yaml",
+  /**
+   * Overlay worker WhatsApp, juga ADA di Git dan sampai ke produksi lewat
+   * `git merge --ff-only`. Alasannya sama dengan overlay media: service worker
+   * tidak boleh disuntikkan dengan tangan ke `deploy.yaml` milik host.
+   *
+   * Tanpa overlay ini dalam perintah compose, service `whatsapp-worker` tidak
+   * pernah dibuat dan app melaporkan "Worker WhatsApp tidak dapat dihubungi".
+   */
+  whatsappComposeFile: "compose.whatsapp.yaml",
+  /** Nama service worker; harus sama dengan compose.whatsapp.yaml. */
+  whatsappService: "whatsapp-worker",
+  /** Volume sesi Baileys yang eksplisit; harus sama dengan compose.whatsapp.yaml. */
+  whatsappSessionVolume: "sismepda_whatsapp_session",
   /** Nama volume media yang eksplisit; harus sama dengan compose.media.yaml. */
   mediaVolume: "sismepda_media_data",
   /** Titik mount media di dalam container; harus sama dengan MEDIA_STORAGE_ROOT. */
@@ -69,6 +82,7 @@ export const production = {
 export const productionComposeFiles: readonly string[] = [
   production.composeFile,
   production.mediaComposeFile,
+  production.whatsappComposeFile,
 ]
 
 // ---------------------------------------------------------------------------
@@ -206,6 +220,9 @@ function script(...lines: string[]): string {
     // `|| true`: di bawah `set -e`, test yang gagal akan menghentikan skrip.
     // Ketiadaan overlay di sini bukan kesalahan — hanya berarti belum di-merge.
     `if test -f ${production.mediaComposeFile}; then COMPOSE_FILES="$COMPOSE_FILES -f ${production.mediaComposeFile}"; fi`,
+    // Overlay WhatsApp diperlakukan sama: toleran sebelum merge, sehingga
+    // deploy PERTAMA yang justru membawanya tetap dapat berjalan.
+    `if test -f ${production.whatsappComposeFile}; then COMPOSE_FILES="$COMPOSE_FILES -f ${production.whatsappComposeFile}"; fi`,
     ...lines,
   ].join("\n")
 }
@@ -219,7 +236,13 @@ export function remotePreflightScript(): string {
     // ini memang belum ada. Kewajibannya ditegakkan setelah merge, pada tahap
     // yang membuat ulang container. Statusnya tetap dilaporkan.
     `echo "MEDIA_OVERLAY=$(test -f ${production.mediaComposeFile} && echo present || echo absent)"`,
+    // Status overlay WhatsApp dan KEBERADAAN tokennya dilaporkan, tidak
+    // diwajibkan: alasannya sama dengan overlay media, deploy yang membawanya
+    // berjalan sebelum berkasnya ada. Hanya ADA/TIDAK yang dicetak — nilai
+    // token tidak pernah masuk log deploy.
+    `echo "WHATSAPP_OVERLAY=$(test -f ${production.whatsappComposeFile} && echo present || echo absent)"`,
     `test -f ${production.envFile} || { echo "ABORT: env file tidak ada" >&2; exit 2; }`,
+    `echo "WHATSAPP_TOKEN=$(grep -q '^WHATSAPP_WORKER_TOKEN=.' ${production.envFile} && echo present || echo absent)"`,
     `command -v docker >/dev/null || { echo "ABORT: docker tidak tersedia" >&2; exit 2; }`,
     // `compose config` divalidasi tanpa mencetak isinya: keluarannya memuat env.
     `${compose} config >/dev/null || { echo "ABORT: konfigurasi compose tidak valid" >&2; exit 2; }`,
@@ -334,9 +357,18 @@ export function remoteMigrateDeployScript(): string {
  * `up -d` MEMBUAT ULANG container app. Tanpa overlay media, container pengganti
  * berjalan tanpa volume dan setiap unggahan sejak deploy terakhir hilang — maka
  * tahap ini menolak berjalan bila overlay tidak ada.
+ *
+ * Worker WhatsApp ikut dinaikkan HANYA bila overlay-nya sudah ada di pohon
+ * kerja. Ia disebut eksplisit, bukan lewat `up -d` tanpa argumen: bentuk tanpa
+ * argumen akan ikut menyentuh service lain milik `deploy.yaml` (termasuk
+ * database) yang sengaja tidak boleh dibuat ulang oleh deploy aplikasi.
  */
 export function remoteActivateScript(): string {
-  return script(requireMediaOverlay, `${compose} up -d ${production.appService} </dev/null`)
+  return script(
+    requireMediaOverlay,
+    `${compose} up -d ${production.appService} </dev/null`,
+    `if test -f ${production.whatsappComposeFile}; then ${compose} up -d ${production.whatsappService} </dev/null; fi`,
+  )
 }
 
 export function remoteHealthScript(): string {
