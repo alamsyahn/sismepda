@@ -16,7 +16,7 @@ import {
 } from "@/lib/school-date"
 import { readHolidayRules } from "@/lib/server-holidays"
 import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
-import { getWhatsAppReportClasses } from "@/lib/server-whatsapp-report"
+import { readWhatsAppReportClasses } from "@/lib/server-whatsapp-report"
 import {
   buildAbsentStudentsMessage,
   buildMissingAttendanceMessage,
@@ -129,7 +129,10 @@ export async function composeMessage(
   date: SchoolDate,
   slot: string,
 ): Promise<string> {
-  const classes = await getWhatsAppReportClasses(toPrismaDate(date))
+  // Data laporan dibaca lewat fungsi data-only: jalur ini juga dijalankan
+  // worker latar yang tidak punya sesi pengguna. Guard permission untuk
+  // pemanggil web ada di `lib/whatsapp-access.ts`.
+  const classes = await readWhatsAppReportClasses(toPrismaDate(date))
   // Parameter ketiga formatSchoolDate adalah LOCALE, bukan zona waktu:
   // SchoolDate sudah bebas zona waktu dan tidak boleh diproyeksikan ulang.
   const dateLabel = formatSchoolDate(date)

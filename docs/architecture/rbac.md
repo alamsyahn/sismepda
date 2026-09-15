@@ -145,7 +145,7 @@ Every key below corresponds to at least one surface in the inventory. Keys are g
 | `attendance.read` | `assigned_classes`, `all` | `GET /api/attendance` (roster/day for input page) |
 | `attendance.write` | `assigned_classes`, `all` | `POST /api/attendance`, `/absensi/input` |
 | `attendance.export` | `assigned_classes`, `all` | `/export-data`, `GET /api/export?type=attendance_students|attendance_classes`, `GET /api/class-recap/export` |
-| `reports.whatsapp.read.all` | — | `/laporan-whatsapp`, `getWhatsAppReportClasses` (school-wide in HEAD; see ambiguity A3) |
+| `reports.whatsapp.read.all` | — | `/laporan-whatsapp`, `getWhatsAppReportClasses` in `lib/whatsapp-access.ts` (school-wide in HEAD; see ambiguity A3). The data-only `readWhatsAppReportClasses` is deliberately unguarded and reserved for the background worker, which has no user session |
 | `students.master.read` | — | `/siswa`, `GET /api/admin/students` |
 | `students.master.create` / `students.master.update` / `students.master.import` | — | `/siswa/input`, `POST/PATCH /api/admin/students` (bulk CSV import is a separate right from single create) |
 | `students.master.delete` | — | `DELETE /api/admin/students` |

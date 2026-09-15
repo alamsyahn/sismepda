@@ -1,13 +1,33 @@
-import { requirePermission } from "@/lib/rbac-access"
+/**
+ * Query data laporan WhatsApp — DATA SAJA, tanpa otorisasi.
+ *
+ * MENGAPA TIDAK ADA `requirePermission()` DI SINI
+ *
+ * Modul ini dipakai dua pemanggil dengan sifat berbeda:
+ *
+ *   web request  → guard permission → readWhatsAppReportClasses()
+ *   worker latar → readWhatsAppReportClasses()
+ *
+ * Worker WhatsApp adalah proses Node biasa tanpa request, tanpa cookie, dan
+ * tanpa sesi pengguna. Menaruh `requirePermission()` di dalam fungsi query
+ * memaksa jalur worker mengimpor `@/auth` (Auth.js), yang membaca cookie
+ * permintaan yang tidak pernah ada — dan di image produksi berkas `auth.ts`
+ * memang tidak ikut disalin, sehingga worker mati dengan MODULE_NOT_FOUND.
+ *
+ * Pemisahan ini BUKAN pelemahan otorisasi. Surface yang dapat dijangkau
+ * pengguna tetap wajib melewati `getWhatsAppReportClasses()` di
+ * `lib/whatsapp-access.ts`, yang menuntut `reports.whatsapp.read.all`. Yang
+ * memakai fungsi ini secara langsung hanyalah eksekusi latar tepercaya yang
+ * hanya bisa dijalankan dari deployment internal, bukan oleh pengguna.
+ *
+ * SERVER-ONLY: mengimpor `lib/prisma.ts`.
+ */
 import { sortClasses } from "@/lib/class-order"
 import { prisma } from "@/lib/prisma"
 import type { WhatsAppReportClass, WhatsAppReportStudent } from "@/lib/whatsapp-report"
 import { fromPrismaDate, toPrismaDate } from "@/lib/school-date"
 
-export async function getWhatsAppReportClasses(date: Date): Promise<WhatsAppReportClass[]> {
-  // School-wide: laporan ini merangkum seluruh kelas, sehingga dijaga
-  // permission eksplisit, bukan sekadar "sudah login".
-  await requirePermission("reports.whatsapp.read.all")
+export async function readWhatsAppReportClasses(date: Date): Promise<WhatsAppReportClass[]> {
   const prismaDate = toPrismaDate(fromPrismaDate(date))
 
   const rows = await prisma.schoolClass.findMany({

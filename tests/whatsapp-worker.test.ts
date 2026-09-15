@@ -5,8 +5,8 @@
  * ini menjaga janji-janji yang tidak boleh rusak diam-diam saat kode diubah.
  */
 import assert from "node:assert/strict"
-import { existsSync, readFileSync } from "node:fs"
-import { resolve } from "node:path"
+import { existsSync, readFileSync, statSync } from "node:fs"
+import { dirname, relative, resolve } from "node:path"
 import { test } from "node:test"
 
 import {
@@ -118,6 +118,153 @@ test("setiap permintaan ke worker diperiksa tokennya", () => {
 test("worker tidak membocorkan detail teknis ke pemanggil", () => {
   const worker = read(WORKER_PATH)
   assert.ok(worker.includes("Terjadi kesalahan pada layanan WhatsApp."))
+})
+
+// --- batas autentikasi worker ----------------------------------------------
+
+/**
+ * Resolusi satu specifier impor menjadi berkas sumber di repo.
+ *
+ * Meniru cara tsx memuat worker: alias `@/` dipetakan ke akar, dan ekstensi
+ * `.js`/`.mjs` gaya NodeNext ditukar ke sumber `.ts`/`.mts` yang sebenarnya.
+ * Mengembalikan `null` untuk paket node_modules.
+ */
+function resolveSpecifier(spec: string, fromFile: string): string | null {
+  let base: string
+  if (spec.startsWith("@/")) base = resolve(ROOT, spec.slice(2))
+  else if (spec.startsWith(".")) base = resolve(dirname(fromFile), spec)
+  else return null
+
+  const stripped = base.replace(/\.(js|mjs|cjs)$/, "")
+  for (const candidate of [
+    stripped + ".ts",
+    stripped + ".mts",
+    stripped + ".tsx",
+    base + ".ts",
+    base + ".mts",
+    base + ".tsx",
+    resolve(base, "index.ts"),
+    base,
+  ]) {
+    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate
+  }
+  return null
+}
+
+/** Seluruh berkas repo dan paket eksternal yang tertarik dari satu entry point. */
+function importGraph(entry: string): { files: Set<string>; packages: Set<string> } {
+  const files = new Set<string>()
+  const packages = new Set<string>()
+  const queue = [resolve(ROOT, entry)]
+
+  while (queue.length > 0) {
+    const file = queue.shift()!
+    const key = relative(ROOT, file).replace(/\\/g, "/")
+    if (files.has(key)) continue
+    files.add(key)
+
+    const source = readFileSync(file, "utf8")
+    const specifiers: string[] = []
+    for (const pattern of [
+      /(?:^|\n)\s*(?:import|export)[\s\S]*?from\s*["']([^"']+)["']/g,
+      /(?:^|\n)\s*import\s*["']([^"']+)["']/g,
+    ]) {
+      let match: RegExpExecArray | null
+      while ((match = pattern.exec(source))) specifiers.push(match[1])
+    }
+
+    for (const specifier of specifiers) {
+      const target = resolveSpecifier(specifier, file)
+      if (target) queue.push(target)
+      else packages.add(specifier)
+    }
+  }
+  return { files, packages }
+}
+
+test("graf impor worker tidak menarik autentikasi pengguna", () => {
+  // BUG YANG DICEGAH: worker produksi crash-loop dengan
+  // `Cannot find module '@/auth'` karena rantai
+  // whatsapp-worker.mts → server-whatsapp.ts → server-whatsapp-report.ts
+  // → rbac-access.ts → @/auth. Worker latar tidak punya request, cookie,
+  // atau sesi; `auth.ts` bahkan tidak ikut disalin ke image worker.
+  //
+  // Diperiksa dengan menelusuri graf impor sebenarnya secara transitif, bukan
+  // grep satu berkas: bug aslinya berada empat tingkat di bawah worker dan
+  // tidak akan terlihat dari isi `whatsapp-worker.mts` saja.
+  const { files, packages } = importGraph(WORKER_PATH)
+
+  assert.ok(files.size > 10, "penelusuran graf harus benar-benar berjalan")
+  assert.ok(
+    files.has("lib/server-whatsapp.ts"),
+    "graf harus memuat layer server WhatsApp yang dipakai scheduler",
+  )
+
+  for (const forbidden of ["auth.ts", "lib/rbac-access.ts", "lib/page-guards.ts"]) {
+    assert.ok(
+      !files.has(forbidden),
+      `worker latar tidak boleh menarik ${forbidden}: ia tidak punya sesi pengguna`,
+    )
+  }
+  for (const specifier of packages) {
+    assert.ok(
+      !specifier.includes("next-auth") && specifier !== "@/auth",
+      `worker latar tidak boleh menarik paket autentikasi (${specifier})`,
+    )
+  }
+})
+
+test("fungsi data laporan WhatsApp dapat dipakai tanpa sesi", () => {
+  // Fungsi query harus bebas otorisasi agar dapat dipanggil worker latar.
+  const report = codeOnly(read("lib/server-whatsapp-report.ts"))
+  assert.ok(
+    report.includes("export async function readWhatsAppReportClasses"),
+    "fungsi data-only harus bernama read... agar sifatnya eksplisit",
+  )
+  for (const guard of [
+    "requirePermission",
+    "requireUser",
+    "getAuthorizationContext",
+    "auth()",
+  ]) {
+    assert.ok(
+      !report.includes(guard),
+      `fungsi data tidak boleh memanggil ${guard}: worker latar tidak punya sesi`,
+    )
+  }
+
+  // Jalur worker memakai fungsi data-only itu, bukan wrapper berizin.
+  const server = codeOnly(read("lib/server-whatsapp.ts"))
+  assert.ok(server.includes("readWhatsAppReportClasses(toPrismaDate(date))"))
+  assert.ok(
+    !server.includes("whatsapp-access"),
+    "layer yang dipakai worker tidak boleh mengimpor modul guard",
+  )
+})
+
+test("laporan WhatsApp di web tetap menuntut permission", () => {
+  // Pemisahan auth/data tidak boleh membuat laporan dapat dibaca tanpa izin.
+  const access = codeOnly(read("lib/whatsapp-access.ts"))
+  const wrapper = access.slice(access.indexOf("export async function getWhatsAppReportClasses"))
+  assert.ok(wrapper.length > 0, "wrapper berizin untuk web harus ada")
+  assert.ok(
+    wrapper.includes('requirePermission("reports.whatsapp.read.all")'),
+    "wrapper web harus menuntut reports.whatsapp.read.all",
+  )
+  assert.ok(
+    wrapper.indexOf('requirePermission("reports.whatsapp.read.all")') <
+      wrapper.indexOf("readWhatsAppReportClasses"),
+    "permission harus diperiksa SEBELUM query dijalankan",
+  )
+
+  // Halaman web memakai wrapper berizin, bukan fungsi data mentah.
+  const page = codeOnly(read("app/laporan-whatsapp/page.tsx"))
+  assert.ok(page.includes('from "@/lib/whatsapp-access"'))
+  assert.ok(
+    !page.includes("readWhatsAppReportClasses"),
+    "surface web tidak boleh memanggil fungsi data tanpa otorisasi",
+  )
+  assert.ok(page.includes('requirePagePermission("reports.whatsapp.read.all")'))
 })
 
 // --- kontrak deployment -----------------------------------------------------
@@ -328,9 +475,13 @@ test("isi pesan disimpan sebagai snapshot di riwayat", () => {
 test("pesan memakai sumber data yang sama dengan halaman laporan", () => {
   const server = codeOnly(read("lib/server-whatsapp.ts"))
   assert.ok(
-    server.includes("getWhatsAppReportClasses"),
+    server.includes("readWhatsAppReportClasses"),
     "query kedua akan membuat angka di grup berbeda dari angka di layar",
   )
+  // Halaman web membaca lewat wrapper berizin yang membungkus fungsi yang sama,
+  // sehingga keduanya tetap satu sumber data meski batas otorisasinya berbeda.
+  const access = codeOnly(read("lib/whatsapp-access.ts"))
+  assert.ok(access.includes("readWhatsAppReportClasses"))
 })
 
 test("jadwal memakai zona waktu sekolah, bukan jam container", () => {

@@ -113,6 +113,37 @@ routes.
 Authorization never inspects role names; every route calls `requirePermission()`
 through `lib/whatsapp-access.ts`.
 
+### Report data: authorization is a boundary, not a query concern
+
+The report query and the permission check are separate functions, because two
+callers with different natures read the same data:
+
+```
+web request  → requirePermission("reports.whatsapp.read.all") → report data
+worker       → report data
+```
+
+| Function | Module | Authorization |
+|---|---|---|
+| `readWhatsAppReportClasses(date)` | `lib/server-whatsapp-report.ts` | none — data only |
+| `getWhatsAppReportClasses(date)` | `lib/whatsapp-access.ts` | requires `reports.whatsapp.read.all` |
+
+The worker is a plain Node process: it has no request, no cookie and no user
+session, so `auth()` has nothing to read. When the permission check lived inside
+the query, the worker's import chain
+(`whatsapp-worker.mts` → `server-whatsapp.ts` → `server-whatsapp-report.ts` →
+`rbac-access.ts` → `@/auth`) pulled Auth.js into a process that cannot use it —
+and since `auth.ts` is not copied into the worker image, production crash-looped
+with `Cannot find module '@/auth'`.
+
+This is not an RBAC bypass. The worker gets no identity, no role and no generic
+exemption; it simply never passes through user authorization, because it is a
+trusted internal service startable only from the deployment. Everything a user
+can reach still goes through the permission-checking wrapper, and web surfaces
+must never call the `read...` function directly. A test walks the worker's real
+import graph transitively and fails if `auth.ts`, `rbac-access.ts` or any
+`next-auth` package reappears in it.
+
 ## API
 
 | Endpoint | Permission | Notes |
@@ -276,6 +307,7 @@ session path. Otherwise the first log lines name the cause:
 |---|---|
 | `WHATSAPP_WORKER_TOKEN belum diatur; worker berhenti.` | Token missing in the env file |
 | `Cannot find module .../whatsapp-worker.ts` | Compose points at a file that does not exist |
+| `Cannot find module '@/auth'` | The worker import chain reached user authorization — see "Report data" above |
 | `ERR_PACKAGE_PATH_NOT_EXPORTED` | ESM chain broken — a `.mts` file became `.ts` |
 | `Can't reach database server` | `DATABASE_URL` wrong, or worker not on the `database` network |
 | `sesi: /app/whatsapp-session (configured)` then repeated QR | Session volume not mounted |
