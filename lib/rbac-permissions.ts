@@ -29,6 +29,7 @@ export type PermissionModule =
   | "school"
   | "database"
   | "rbac"
+  | "development"
 
 export type PermissionDefinition = {
   /// `resource.action` atau `resource.action.scope` — selalu gabungan dari
@@ -584,6 +585,20 @@ export const PERMISSIONS: readonly PermissionDefinition[] = [
     action: "read",
     module: "rbac",
     label: "Lihat jejak audit RBAC",
+    sensitive: true,
+  }),
+
+  // --- development --------------------------------------------------------
+  def({
+    key: "development.read",
+    resource: "development",
+    action: "read",
+    module: "development",
+    label: "Lihat dokumentasi CLI Development",
+    description:
+      "Membuka halaman Development yang mendokumentasikan perintah CLI proyek, termasuk nama perintah deployment, backup, dan database. Halaman hanya menampilkan teks; tidak ada perintah yang dapat dijalankan dari peramban.",
+    // Sensitif: mengungkap topologi operasional (nama perintah deployment,
+    // backup, dan database) meski tidak memberi kemampuan mengeksekusinya.
     sensitive: true,
   }),
 ] as const

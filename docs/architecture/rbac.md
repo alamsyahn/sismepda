@@ -218,6 +218,7 @@ Every key below corresponds to at least one surface in the inventory. Keys are g
 | `rbac.roles.manage` | — | create/update/delete non-system roles, edit role permissions (new) |
 | `rbac.assignments.manage` | — | add/remove `UserRole` (new; replaces `bos.access.manage`, `sarpras.access.manage`, workbook flag edits, `canManageTeacherProfiles`) |
 | `rbac.audit.read` | — | read `AuditLog` entries for RBAC entities (new) |
+| `development.read` | — | `/development`. Read-only CLI documentation page. Sensitive because it names deployment, backup, and database commands; grants no ability to run any of them |
 
 Not created (no operation exists in HEAD): `euks.export`, `bos.export`, `sarpras.export`, `students.violations.read` (violations are read inside `students.profile.read`), `teachers.duties.read`/`teachers.schedule.read` (read inside directory), `euks.*.read` for settings sub-entities (read inside `euks.overview.read`), `attendance.delete`, any `siswa`/`wali_murid` data permission.
 

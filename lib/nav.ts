@@ -24,6 +24,7 @@ import {
   Stethoscope,
   ClipboardPlus,
   SlidersHorizontal,
+  TerminalSquare,
   type LucideIcon,
 } from "lucide-react"
 
@@ -331,6 +332,16 @@ export const mainNav: NavEntry[] = [
     ],
   },
   administrationGroup(),
+  {
+    // Top-level, BUKAN anak Administrasi: isinya dokumentasi rekayasa
+    // (perintah CLI), bukan administrasi sekolah. Satu halaman saja, jadi
+    // tidak dibungkus grup yang bisa dibuka-tutup.
+    title: "Development",
+    href: "/development",
+    icon: TerminalSquare,
+    description: "Dokumentasi perintah CLI SISMEPDA",
+    permissions: ["development.read"],
+  },
 ]
 
 /**
