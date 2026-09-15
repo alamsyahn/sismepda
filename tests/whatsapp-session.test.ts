@@ -23,6 +23,13 @@ function codeOnly(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
 }
 
+/**
+ * Lokasi berkas diuji lewat konstanta, bukan literal yang tersebar: berkas ini
+ * WAJIB berekstensi ESM (mts), dan menuliskan jalurnya berkali-kali membuat
+ * perubahan ekstensi berikutnya kembali tercecer di banyak assertion.
+ */
+const ADAPTER_PATH = "lib/whatsapp-baileys.mts"
+
 // --- lokasi sesi ------------------------------------------------------------
 
 test("tanpa konfigurasi, sesi memakai direktori pengembangan yang di-ignore Git", () => {
@@ -81,7 +88,7 @@ test("hanya adapter yang mengimpor Baileys", () => {
     !transport.includes("@whiskeysockets/baileys"),
     "batas transport kehilangan gunanya bila ikut mengimpor Baileys",
   )
-  const adapter = codeOnly(read("lib/whatsapp-baileys.ts"))
+  const adapter = codeOnly(read(ADAPTER_PATH))
   assert.ok(adapter.includes("@whiskeysockets/baileys"))
 })
 
@@ -110,7 +117,7 @@ test("Baileys dipatok pada versi persis, bukan rentang", () => {
 
 test("pustaka yang diimpor langsung dideklarasikan, bukan diwarisi dari Baileys", () => {
   const pkg = JSON.parse(read("package.json")) as { dependencies: Record<string, string> }
-  const adapter = read("lib/whatsapp-baileys.ts")
+  const adapter = read(ADAPTER_PATH)
   for (const dependency of ["@hapi/boom", "pino"]) {
     if (adapter.includes(`from "${dependency}"`)) {
       assert.ok(
@@ -122,11 +129,11 @@ test("pustaka yang diimpor langsung dideklarasikan, bukan diwarisi dari Baileys"
 })
 
 test("adapter membungkam logger Baileys agar isi pesan tidak masuk log container", () => {
-  const adapter = read("lib/whatsapp-baileys.ts")
+  const adapter = read(ADAPTER_PATH)
   assert.ok(adapter.includes("logger:"), "socket Baileys tanpa logger eksplisit mencetak seluruh protokol")
 })
 
 test("logout menghapus sesi dari disk, bukan sekadar menutup soket", () => {
-  const adapter = codeOnly(read("lib/whatsapp-baileys.ts"))
+  const adapter = codeOnly(read(ADAPTER_PATH))
   assert.ok(adapter.includes("rm(this.sessionDir"), "reset sesi tidak benar-benar mereset")
 })

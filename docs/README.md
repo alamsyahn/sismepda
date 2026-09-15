@@ -26,6 +26,7 @@ This directory is the canonical description of the system as it works now. Start
 | Budget, categories, realization entries, document URLs and delegated rights | [BOS](features/bos.md) | `/bos` |
 | Location tree, item types, quantities/condition, photos, history and delegated rights | [Sarpras](features/sarpras.md) | `/sarpras` |
 | School health unit: visit log, student health monitoring, growth charts and UKS page content | [E-UKS](features/e-uks.md) | `/e-uks` |
+| Scheduled WhatsApp attendance reports: Baileys worker, session, idempotency | [Automatic WhatsApp reporting](features/whatsapp-automation.md) | worker process |
 
 Cross-feature rules are linked rather than repeated. Attendance class scope affects student profiles and attendance exports; teacher/homeroom management defines that scope. Audit logging is shared by Workbook, BOS, Sarpras, and E-UKS.
 

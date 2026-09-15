@@ -34,7 +34,7 @@ import {
   type WhatsAppGroup,
   type WhatsAppStatus,
   type WhatsAppTransport,
-} from "@/lib/whatsapp-transport"
+} from "./whatsapp-transport.js"
 
 /**
  * Terjemahan alasan putus Baileys ke kalimat untuk admin.

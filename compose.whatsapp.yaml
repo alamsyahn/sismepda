@@ -1,0 +1,63 @@
+# Overlay produksi: worker WhatsApp otomatis.
+#
+# MENGAPA FILE TERPISAH
+#
+# Alasannya sama dengan `compose.media.yaml`: `deploy.yaml` hidup di host
+# produksi dan tidak di-track Git, sehingga menyuntikkan service ke sana berarti
+# menyunting produksi dengan tangan — tidak terlacak, tidak tertinjau, tidak
+# teruji. Overlay ini berada di Git dan sampai ke produksi lewat `git merge
+# --ff-only` yang sudah dilakukan alur deploy:
+#
+#   docker compose -f deploy.yaml -f compose.media.yaml -f compose.whatsapp.yaml ...
+#
+# MENGAPA SERVICE TERPISAH, BUKAN DI DALAM APP
+#
+# Baileys memerlukan WebSocket long-lived. Menjalankannya di dalam proses
+# Next.js berarti koneksi WhatsApp ikut mati dan hidup setiap kali aplikasi
+# di-deploy ulang, dan setiap instance akan membuka soketnya sendiri. WhatsApp
+# menanggapi pola itu dengan memblokir akun.
+
+services:
+  whatsapp-worker:
+    build:
+      context: .
+      # Worker menjalankan TypeScript lewat tsx, dan stage `migrator` sudah
+      # berisi sumber, node_modules, serta tsconfig untuk keperluan itu.
+      # Stage `runner` adalah build standalone Next tanpa tsx.
+      target: migrator
+    restart: unless-stopped
+    command: ["sh", "-c", "npx tsx scripts/whatsapp-worker.ts"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      # Sesi Baileys di dalam container. Harus sama persis dengan titik mount
+      # di bawah, atau sesi akan ditulis ke writable layer dan hilang setiap
+      # kali container dibuat ulang — memaksa pemindaian QR pada tiap deploy.
+      WHATSAPP_SESSION_DIR: /app/whatsapp-session
+      WHATSAPP_WORKER_PORT: "3100"
+      # Token bersama antara app dan worker. Tanpa ini worker menolak start:
+      # lihat scripts/whatsapp-worker.ts.
+      WHATSAPP_WORKER_TOKEN: ${WHATSAPP_WORKER_TOKEN}
+    volumes:
+      - whatsapp_session:/app/whatsapp-session
+    # TIDAK ADA `ports:`. Worker hanya dijangkau app lewat jaringan internal
+    # Docker; mengeksposnya ke host berarti membuka kendali akun WhatsApp
+    # sekolah ke internet.
+    networks: [database]
+
+  app:
+    environment:
+      # Nama service di jaringan internal, bukan alamat publik.
+      WHATSAPP_WORKER_URL: http://whatsapp-worker:3100
+      WHATSAPP_WORKER_TOKEN: ${WHATSAPP_WORKER_TOKEN}
+
+volumes:
+  # Nama eksplisit, dengan alasan yang sama seperti volume media: tanpa `name:`
+  # Docker menurunkannya dari nama project, sehingga perubahan nama project
+  # diam-diam membuat volume BARU yang kosong — dan sesi WhatsApp yang lama
+  # tetap ada di disk tetapi tidak lagi ter-mount, memaksa pairing ulang.
+  #
+  # Isi volume ini adalah KREDENSIAL: siapa pun yang membacanya dapat mengirim
+  # pesan sebagai akun sekolah. Ia juga bukan bagian dari dump PostgreSQL,
+  # sehingga backup database saja tidak memulihkannya.
+  whatsapp_session:
+    name: sismepda_whatsapp_session

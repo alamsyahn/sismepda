@@ -37,7 +37,8 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "tsx --test tests/**/*.test.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "whatsapp:worker:local": "tsx scripts/with-db.ts local -- tsx scripts/whatsapp-worker.mts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

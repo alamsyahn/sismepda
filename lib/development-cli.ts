@@ -31,6 +31,7 @@ export const CLI_CATEGORIES = [
   "Backup Production",
   "Maintenance",
   "Deployment",
+  "WhatsApp Otomatis",
   "Aplikasi & Quality",
 ] as const
 
@@ -231,6 +232,11 @@ export const CLI_METADATA: Readonly<Record<string, CliMetadata>> = {
     category: "Aplikasi & Quality",
     description:
       "Menjalankan prisma generate. Normalnya dipanggil otomatis oleh siklus hidup npm setelah instalasi dependency, bukan diketik manual.",
+  },
+  "whatsapp:worker:local": {
+    category: "WhatsApp Otomatis",
+    description:
+      "Menjalankan worker WhatsApp terhadap database lokal. Worker inilah satu-satunya pemegang koneksi Baileys; aplikasi web tidak pernah membukanya sendiri. Di produksi worker dijalankan sebagai service Docker, bukan dengan perintah ini.",
   },
 }
 
