@@ -247,9 +247,10 @@ export function runDeploy(runner: DeploymentRunner, options: DeployOptions = {})
       `lock   ${production.lockDir}`,
       `backup ${production.backupDir}/${backupFileName(runner.now(), state.sha)}`,
       `source git merge --ff-only ${shortSha(state.sha)}`,
-      `build  compose --profile migration build migrate app`,
+      `build  compose --profile migration build migrate app whatsapp-worker`,
       `db     prisma migrate deploy`,
       `app    compose up -d app`,
+      `worker compose up -d ${production.whatsappService}`,
       `health ${production.healthPath}`,
     ]) {
       runner.log(`  ${line}`)

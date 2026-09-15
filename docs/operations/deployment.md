@@ -86,11 +86,30 @@ local preflight (branch main, clean tree, origin = alamsyahn/sismepda)
 → deployment lock
 → fresh database backup + verification
 → git merge --ff-only <exact local SHA>, HEAD verified equal
-→ docker compose --profile migration build migrate app
+→ docker compose --profile migration build migrate app whatsapp-worker
 → npx prisma migrate deploy
 → docker compose up -d app
+→ docker compose up -d whatsapp-worker
 → healthcheck (container running, health healthy, /login reachable)
 ```
+
+The build step names `whatsapp-worker` only when `compose.whatsapp.yaml` is
+present in the working tree; otherwise it falls back to `build migrate app`.
+That conditional keeps the very first deploy that *introduces* the overlay
+working, because before the `git merge --ff-only` the file does not exist yet.
+
+**Why `up -d whatsapp-worker` alone is not enough.** A newer Git source does not
+imply a newer worker image. `up -d` only recreates a container when its image
+changed, so if the worker is never rebuilt, activation is a no-op and the worker
+keeps running the previous image's import graph — while `app`, which *was*
+rebuilt, runs the new commit. Production showed exactly this: `app` created
+minutes ago next to a `whatsapp-worker` created far earlier, with correct worker
+code in Git that never reached runtime. Build precedes activation for both
+services for this reason.
+
+Activation deliberately does **not** pass `--force-recreate`. Worker recreation
+is driven by image identity alone, so a deploy that does not change worker code
+leaves the Baileys session and its WhatsApp connection untouched.
 
 Each failure stops the chain and the later steps never run. Exit codes are
 distinct per stage (1 local, 2 production preflight, 3 lock, 4 backup, 5 source,
@@ -145,6 +164,27 @@ production → local only.
 | Build | Database unchanged, old app still running |
 | Migration | New app is not started; backup path and previous commit are printed; no automatic seed, reset, or restore |
 | Activation/health | Non-zero exit with attempted commit, previous commit, backup path, container state and recent app logs |
+
+### Worker health is not a deployment gate
+
+The healthcheck validates `app` only. Worker liveness is deliberately **not** a
+deploy success criterion, because the interesting worker failure modes are
+runtime concerns rather than deployment validity: WhatsApp pairing state, QR
+scanning, and WhatsApp server reachability can all be broken while the deployed
+image is perfectly correct. Gating on them would make an unrelated outage at
+Meta fail a valid deploy, and the natural "fix" — retrying the deploy — would
+rebuild and recreate the worker, disrupting a session that was fine.
+
+If a worker probe is ever added, only `container running` and an internal
+`/status` HTTP response may be asserted. `CONNECTED` state, a scanned QR, or
+WhatsApp server availability must never become deployment requirements.
+
+Check the worker after deploying instead:
+
+```bash
+docker compose -f deploy.yaml -f compose.media.yaml -f compose.whatsapp.yaml \
+  --env-file /etc/sismepda/sismepda.env ps whatsapp-worker
+```
 
 There is deliberately no automatic code rollback: reverting code against an
 already-migrated schema is not safe in general, so the tooling fails with

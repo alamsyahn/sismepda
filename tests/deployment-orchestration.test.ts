@@ -498,3 +498,74 @@ test("keluaran migrate deploy tanpa migrasi tertunda dianggap normal", () => {
 test("parseKeyValues hanya mengambil kunci huruf besar", () => {
   assert.deepEqual(parseKeyValues("HEAD=abc\nbukan=kunci\nSIZE=10"), { HEAD: "abc", SIZE: "10" })
 })
+
+// ---------------------------------------------------------------------------
+// Regresi: worker WhatsApp harus dibangun ulang, bukan hanya dinaikkan
+//
+// Bug yang ditangkap: tahap build hanya membangun `migrate app`, sementara
+// tahap aktivasi menjalankan `up -d whatsapp-worker`. Karena `up -d` hanya
+// membuat ulang container bila image berubah, worker terus memakai image lama
+// walau source Git produksi sudah diperbarui.
+// ---------------------------------------------------------------------------
+
+test("build produksi menyertakan worker WhatsApp bersama migrate dan app", () => {
+  const build = remoteBuildScript()
+  const buildLine = build
+    .split("\n")
+    .find((line) => line.includes("build") && line.includes(production.whatsappService))
+  assert.ok(buildLine, "perintah build harus menyebut whatsapp-worker")
+  assert.match(buildLine, /--profile migration build/)
+  assert.match(buildLine, /\bmigrate\b/)
+  assert.match(buildLine, new RegExp(`\\b${production.appService}\\b`))
+})
+
+test("worker dibangun lebih dulu, baru diaktifkan", () => {
+  // Urutan tahap ditentukan oleh flow: build mendahului activate. Yang diuji di
+  // sini adalah bahwa service yang sama muncul di KEDUA tahap — build tanpa
+  // activate tidak merecreate container, activate tanpa build memakai image lama.
+  assert.ok(remoteBuildScript().includes(production.whatsappService))
+  assert.ok(
+    remoteActivateScript().includes(`up -d ${production.whatsappService}`),
+    "worker harus tetap dinaikkan eksplisit setelah dibangun",
+  )
+})
+
+test("deploy pertama yang memperkenalkan overlay WhatsApp tetap dapat membangun", () => {
+  const build = remoteBuildScript()
+  // Cabang else wajib ada: sebelum merge, compose.whatsapp.yaml belum tentu ada
+  // dan menyebut service yang tidak dikenal akan menggagalkan build.
+  assert.match(build, new RegExp(`if test -f ${production.whatsappComposeFile}; then`))
+  const fallback = build
+    .split("\n")
+    .find(
+      (line) =>
+        line.includes("build") &&
+        line.includes(production.appService) &&
+        !line.includes(production.whatsappService),
+    )
+  assert.ok(fallback, "harus ada cabang build tanpa worker untuk host tanpa overlay")
+})
+
+test("aktivasi worker tidak memakai --force-recreate", () => {
+  // --force-recreate akan memutus sesi WhatsApp pada setiap deploy, termasuk
+  // deploy yang sama sekali tidak mengubah worker.
+  assert.ok(!remoteActivateScript().includes("--force-recreate"))
+})
+
+test("tahap build dan aktivasi tidak pernah menyentuh database", () => {
+  for (const script of [remoteBuildScript(), remoteActivateScript()]) {
+    assertRemoteCommandSafe(script)
+    assert.ok(!/\bdown\b/.test(script), "tidak boleh ada compose down")
+    assert.ok(!/volume\s+rm/.test(script), "tidak boleh menghapus volume")
+    // `up -d` harus selalu menyebut service eksplisit; bentuk tanpa argumen
+    // akan ikut membuat ulang container database.
+    for (const line of script.split("\n")) {
+      if (!line.includes("up -d")) continue
+      assert.ok(
+        line.includes(production.appService) || line.includes(production.whatsappService),
+        `up -d tanpa service eksplisit: ${line}`,
+      )
+      assert.ok(!line.includes(production.databaseService), `up -d menyentuh database: ${line}`)
+    }
+  }
+})

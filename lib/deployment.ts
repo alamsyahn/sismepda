@@ -327,10 +327,29 @@ export function remoteUpdateSourceScript(sha: string): string {
   )
 }
 
+/**
+ * Membangun image dari source yang BARU SAJA di-merge.
+ *
+ * Worker WhatsApp wajib ikut dibangun. Source Git yang baru tidak dengan
+ * sendirinya berarti image worker yang baru: `up -d whatsapp-worker` pada tahap
+ * aktivasi hanya membuat ulang container bila IMAGE-nya berubah. Tanpa build di
+ * sini, worker tetap memakai image lama — app berisi commit terbaru sementara
+ * worker masih menjalankan kode lama, keadaan yang pernah terjadi di produksi
+ * dan sulit dikenali karena `compose ps` melaporkan kedua service sebagai Up.
+ *
+ * Bentuk kondisional dipakai karena deploy PERTAMA yang memperkenalkan overlay
+ * baru memilikinya setelah merge; menyebut `whatsapp-worker` tanpa syarat akan
+ * menggagalkan build pada host yang overlay-nya belum ada.
+ */
 export function remoteBuildScript(): string {
+  const base = `${compose} --profile ${production.migratorProfile} build ${production.migratorService} ${production.appService}`
   return script(
     requireMediaOverlay,
-    `${compose} --profile migration build migrate ${production.appService} </dev/null`,
+    `if test -f ${production.whatsappComposeFile}; then`,
+    `  ${base} ${production.whatsappService} </dev/null`,
+    `else`,
+    `  ${base} </dev/null`,
+    `fi`,
   )
 }
 
