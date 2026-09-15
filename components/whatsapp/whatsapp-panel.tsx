@@ -157,9 +157,13 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
       const response = await fetch("/api/whatsapp/qr", { cache: "no-store" })
       if (!response.ok || cancelled) return
       const data = await response.json()
-      if (!cancelled) setQr(data.qr ?? null)
+      // Yang diterima sudah berupa data URL gambar; payload mentah tidak
+      // pernah meninggalkan server.
+      if (!cancelled) setQr(data.qrImage ?? null)
     }
     void load()
+    // WhatsApp merotasi QR setiap ±20 detik; interval 5 detik menjaga gambar
+    // di layar tetap yang sedang berlaku.
     const timer = setInterval(() => void load(), 5_000)
     return () => {
       cancelled = true
@@ -279,12 +283,29 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
           {qr ? (
             <div className="rounded-md border p-4">
               <p className="mb-2 text-sm font-medium">Pindai kode ini dari WhatsApp ponsel sekolah</p>
-              <p className="text-muted-foreground mb-3 text-xs">
-                WhatsApp → Perangkat tertaut → Tautkan perangkat. Kode berganti otomatis.
+              <ol className="text-muted-foreground mb-3 list-decimal space-y-0.5 pl-5 text-xs">
+                <li>Buka WhatsApp di ponsel sekolah</li>
+                <li>Masuk ke menu Perangkat tertaut</li>
+                <li>Pilih Tautkan perangkat, lalu arahkan kamera ke kode di bawah</li>
+              </ol>
+              {/*
+                Gambar QR dirender di server sebagai data URL. `next/image`
+                sengaja tidak dipakai: sumbernya data URL yang berubah tiap
+                beberapa detik, bukan aset yang perlu dioptimalkan. Latar putih
+                dipaksa karena pemindai membutuhkan kontras gelap-di-terang,
+                yang akan hilang pada tema gelap.
+              */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={qr}
+                alt="Kode QR untuk menautkan perangkat WhatsApp"
+                width={288}
+                height={288}
+                className="rounded bg-white p-2"
+              />
+              <p className="text-muted-foreground mt-2 text-xs">
+                Kode berganti otomatis setiap beberapa detik selama halaman terbuka.
               </p>
-              <code className="block overflow-x-auto rounded bg-muted p-3 text-[10px] leading-relaxed break-all">
-                {qr}
-              </code>
             </div>
           ) : null}
 

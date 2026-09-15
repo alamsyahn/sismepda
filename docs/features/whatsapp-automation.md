@@ -82,6 +82,8 @@ small control API on `127.0.0.1` for the Next.js app.
 | `POST /connect` | Start connecting / request a QR |
 | `POST /reconnect` | Drop and re-establish the connection |
 | `POST /logout` | Log out and delete the session |
+| `GET /groups` | Group list; `409 NOT_CONNECTED` unless the session is live |
+| `POST /resolve-target` | Group name → JID; `409 NOT_CONNECTED` unless the session is live |
 | `POST /send` | Send one slot immediately ("Kirim sekarang") |
 
 Every endpoint requires `Authorization: Bearer $WHATSAPP_WORKER_TOKEN`. The
@@ -149,7 +151,7 @@ import graph transitively and fails if `auth.ts`, `rbac-access.ts` or any
 | Endpoint | Permission | Notes |
 |---|---|---|
 | `GET /api/whatsapp` | `whatsapp.read` | Status, today's schedule, history. A dead worker is reported as a readable error state, not a 500 — an offline worker is a normal operational condition that must be visible on screen |
-| `GET /api/whatsapp/qr` | `whatsapp.connection.manage` | QR only; never persisted |
+| `GET /api/whatsapp/qr` | `whatsapp.connection.manage` | QR as a PNG data URL; never persisted, never logged |
 | `POST /api/whatsapp/connection` | `whatsapp.connection.manage` | `connect` / `reconnect` / `logout` |
 | `GET /api/whatsapp/configuration` | `whatsapp.read` | Config plus group list when connected |
 | `PATCH /api/whatsapp/configuration` | `whatsapp.connection.manage` | Toggle and target group |
@@ -190,8 +192,8 @@ The panel shows:
 - connection state, phone number, profile name, connected-since, last
   disconnect time and a translated reason;
 - connect / reconnect / logout, for `whatsapp.connection.manage` only;
-- the QR code, polled every 5 s and **only** while the state is `WAITING_QR`
-  and the viewer may manage the connection;
+- the QR code as a scannable image, polled every 5 s and **only** while the
+  state is `WAITING_QR` and the viewer may manage the connection;
 - per-schedule toggle, per-slot delivery state, and "Kirim sekarang";
 - delivery history separating manual from scheduled sends, naming the operator
   who triggered a manual send.
@@ -222,6 +224,69 @@ outside the image:
 
 It survives application rebuilds, so a redeploy does not require re-scanning a
 QR code.
+
+## Pairing
+
+Pairing is the one part of this feature that depends on WhatsApp's own moving
+parts, so the adapter pins nothing and asks the server instead.
+
+**Protocol version.** `fetchLatestWaWebVersion()` reports the version
+`web.whatsapp.com` is actually serving right now. `fetchLatestBaileysVersion()`
+reads the Baileys repository's metadata, which lags behind the server; once it
+lags far enough WhatsApp rejects the handshake and no QR is ever issued. The
+version is never hardcoded — a pinned version becomes wrong the moment WhatsApp
+raises theirs, and silently.
+
+**Browser identity.** The socket must present the web tuple
+(`Browsers.ubuntu("SISMEPDA")`). Desktop subplatforms (`WIN32`, `DARWIN`) are
+rejected with 428 before a QR appears; QR pairing is a web-client flow.
+
+**The QR is an image, never a string.** `GET /api/whatsapp/qr` renders the
+payload to a PNG data URL server-side; the raw payload never reaches the
+browser, the DOM, the database, or any log. A raw payload cannot be scanned
+anyway, and it links any device that copies it to the school account.
+
+### Diagnosing a failed connection
+
+`DisconnectReason.connectionLost` and `DisconnectReason.timedOut` are **both
+408**, and `connectionClosed` is **428**. Matching on the enum therefore reports
+every 408 as a network fault, including a handshake that timed out before
+pairing — which is why a broken pairing used to look like a flaky connection.
+
+The adapter maps raw status numbers instead, and uses "has a QR been issued yet"
+to split the collision: a 408 before any QR is a handshake failure
+(`HANDSHAKE_FAILED`), a 408 after one is a genuine network drop (`NETWORK`).
+
+On close the adapter logs the raw status code, the category, the previous state,
+whether a QR had been issued, and the error name — metadata only. Credentials,
+auth state, QR payloads, tokens and message content are never logged.
+
+| Status | Meaning |
+|---|---|
+| 401 | Logged out — requires a human to scan a new QR |
+| 403 | Account refused by WhatsApp |
+| 408 before QR | Handshake timed out |
+| 408 after QR | Network drop; reconnect is automatic |
+| 411 | Multi-device version mismatch |
+| 428 | Closed before the session formed |
+| 440 | Session taken over by another device |
+| 500 | Session files corrupt |
+| 503 | WhatsApp unavailable |
+| 515 | Restart requested |
+
+`sessionExists` is read from `creds.json` on disk, not inferred from the
+connection state, so a stored pairing still reports as present while the socket
+is down — the difference between "never paired" and "paired but disconnected".
+
+### Group listing requires a live session
+
+Group names only exist after the session forms. Both `GET /groups` and
+`POST /resolve-target` check the state first and answer `409 NOT_CONNECTED`,
+because asking too early is an ordinary condition, not a fault — returning 500
+floods the worker log with stack traces on every page load. `workerGroups()`
+checks the state before calling at all, and the configuration route swallows
+only `NOT_CONNECTED`; every other failure is still logged, so real problems stay
+visible.
 
 ## Idempotency
 
@@ -312,6 +377,10 @@ session path. Otherwise the first log lines name the cause:
 | `Can't reach database server` | `DATABASE_URL` wrong, or worker not on the `database` network |
 | `sesi: /app/whatsapp-session (configured)` then repeated QR | Session volume not mounted |
 | `gagal menyambung saat start` | Baileys/WhatsApp connectivity, session intact |
+| `koneksi tertutup: status=428 ... qr_pernah_terbit=tidak` | Handshake refused before pairing — check the WA Web version line and that the browser tuple is still web |
+| `koneksi tertutup: status=408 ... qr_pernah_terbit=tidak` | Handshake timed out before a QR was issued; not a network fault |
+| `koneksi tertutup: status=401` | Logged out — a human must scan a new QR |
+| No `versi WA Web ...` line at all | Version fetch failed; Baileys fell back to its built-in version |
 
 ### Do not delete the session volume
 

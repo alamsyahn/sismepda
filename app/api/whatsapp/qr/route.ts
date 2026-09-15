@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import QRCode from "qrcode"
 
 import { authFailureResponse } from "@/lib/api-errors"
 import { workerStatus } from "@/lib/server-whatsapp-worker-client"
@@ -14,6 +15,10 @@ import { requireWhatsAppConnectionManager } from "@/lib/whatsapp-access"
  *
  * QR tidak pernah disimpan ke database; ia hidup di memori worker dan
  * kedaluwarsa sendiri.
+ *
+ * Yang dikirim ke browser adalah GAMBAR (data URL PNG), bukan payload mentah.
+ * Payload mentah tidak dapat dipindai oleh WhatsApp, dan menaruhnya di DOM
+ * membuatnya mudah tersalin dari layar atau tangkapan layar.
  */
 export async function GET() {
   try {
@@ -21,8 +26,13 @@ export async function GET() {
 
     const status = await workerStatus()
 
+    // Rendering di server, bukan di klien: payload mentah berhenti di sini.
+    const qrImage = status.qr
+      ? await QRCode.toDataURL(status.qr, { errorCorrectionLevel: "M", margin: 2, width: 288 })
+      : null
+
     return NextResponse.json(
-      { qr: status.qr, state: status.state },
+      { qrImage, state: status.state },
       { headers: { "Cache-Control": "private, no-store" } },
     )
   } catch (error) {

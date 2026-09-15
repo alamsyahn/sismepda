@@ -129,3 +129,121 @@ test("QR hanya diambil oleh pemegang izin kelola koneksi", () => {
   // menerus dari layar setiap penonton hanya menghasilkan 403 berulang.
   assert.match(panel, /if \(!canManageConnection \|\| status\?\.state !== "WAITING_QR"\)/)
 })
+
+// --- pemulihan pairing QR -----------------------------------------------------
+//
+// Enam kegagalan di bawah ini semuanya pernah terjadi bersamaan dan tampak
+// identik dari layar admin: "Terputus, alasan jaringan". Masing-masing dikunci
+// terpisah agar perbaikannya tidak diam-diam kembali.
+
+const ADAPTER = "lib/whatsapp-baileys.mts"
+const WORKER = "scripts/whatsapp-worker.mts"
+const QR_ROUTE = "app/api/whatsapp/qr/route.ts"
+const WORKER_CLIENT = "lib/server-whatsapp-worker-client.ts"
+
+test("adapter memakai versi WA Web, bukan versi metadata Baileys", () => {
+  const adapter = codeOnly(read(ADAPTER))
+
+  // `fetchLatestBaileysVersion` membaca metadata repositori Baileys, yang bisa
+  // tertinggal dari yang benar-benar dilayani WhatsApp; handshake lalu ditolak
+  // sebelum QR terbit.
+  assert.match(adapter, /fetchLatestWaWebVersion\(\)/)
+  assert.ok(
+    !/fetchLatestBaileysVersion/.test(adapter),
+    "versi harus diambil dari WA Web, bukan dari metadata Baileys",
+  )
+
+  // Versi tidak boleh dipatok keras: WhatsApp menaikkannya tanpa pemberitahuan.
+  assert.ok(
+    !/version:\s*\[\s*\d+/.test(adapter),
+    "versi WA tidak boleh di-hardcode",
+  )
+})
+
+test("identitas browser tetap WEB, bukan desktop", () => {
+  const adapter = codeOnly(read(ADAPTER))
+
+  // Subplatform desktop (WIN32/DARWIN) dilaporkan ditolak dengan 428 sebelum
+  // QR terbit. Hanya identitas web yang merupakan jalur pairing QR didukung.
+  assert.match(adapter, /Browsers\.ubuntu\("SISMEPDA"\)/)
+  assert.ok(!/Browsers\.windows/.test(adapter), "identitas Windows Desktop ditolak WhatsApp")
+  assert.ok(!/Browsers\.macOS/.test(adapter), "identitas macOS Desktop ditolak WhatsApp")
+})
+
+test("status putus tetap dapat didiagnosis dari log", () => {
+  const adapter = codeOnly(read(ADAPTER))
+
+  // Tanpa angka status mentah di log, 428/408/401 tidak dapat dibedakan dari
+  // luar dan setiap kegagalan tampak sebagai gangguan jaringan.
+  assert.match(adapter, /status=\$\{statusCode/)
+  assert.match(adapter, /kategori=\$\{code\}/)
+  assert.match(adapter, /state_sebelumnya=\$\{previousState\}/)
+})
+
+test("408 sebelum QR tidak dilaporkan sebagai gangguan jaringan", () => {
+  const adapter = codeOnly(read(ADAPTER))
+
+  // `connectionLost` dan `timedOut` SAMA-SAMA 408 di Baileys. Mencocokkan
+  // lewat DisconnectReason membuat handshake yang gagal dilaporkan sebagai
+  // masalah jaringan — persis keluhan yang memicu perbaikan ini.
+  assert.match(adapter, /function describeDisconnect\(statusCode: number \| undefined, hadQr: boolean\)/)
+  assert.match(adapter, /hadQr\s*$/m)
+  assert.ok(
+    !/case DisconnectReason\.connectionLost/.test(adapter),
+    "pemetaan harus atas angka mentah, karena nilai enum bertabrakan",
+  )
+
+  // 428 harus punya kalimat sendiri, terpisah dari kalimat jaringan.
+  assert.match(adapter, /case 428:/)
+  assert.match(adapter, /HANDSHAKE_FAILED/)
+})
+
+test("QR dikirim sebagai gambar, bukan string mentah", () => {
+  const route = codeOnly(read(QR_ROUTE))
+  const panel = codeOnly(read(PANEL))
+
+  // Payload mentah tidak dapat dipindai WhatsApp dan mudah tersalin dari
+  // tangkapan layar; rendering berhenti di server.
+  assert.match(route, /QRCode\.toDataURL/)
+  assert.match(route, /qrImage/)
+  assert.ok(!/qr: status\.qr/.test(route), "payload QR mentah tidak boleh dikirim ke browser")
+
+  assert.match(panel, /data\.qrImage/)
+  assert.match(panel, /<img/)
+  assert.ok(
+    !/<code[^>]*>\s*\{qr\}/.test(panel),
+    "QR tidak boleh dirender sebagai teks",
+  )
+
+  // Label instruksi pairing harus ada agar admin tahu menu mana yang dibuka.
+  assert.match(panel, /Perangkat tertaut/)
+  assert.match(panel, /Tautkan perangkat/)
+})
+
+test("daftar grup tidak diminta sebelum CONNECTED", () => {
+  const worker = codeOnly(read(WORKER))
+  const client = codeOnly(read(WORKER_CLIENT))
+
+  // Produksi membanjiri log dengan NOT_CONNECTED karena grup diminta pada
+  // setiap muat halaman, jauh sebelum sesi terbentuk.
+  assert.match(client, /workerGroups/)
+  assert.match(client, /state !== "CONNECTED"/)
+
+  // Worker menjawabnya sebagai keadaan wajar (409), bukan kegagalan 500.
+  assert.match(worker, /code: "NOT_CONNECTED"/)
+  assert.match(worker, /409/)
+})
+
+test("tidak ada QR, kredensial, atau token yang masuk log", () => {
+  const adapter = read(ADAPTER)
+  const worker = read(WORKER)
+
+  for (const [name, source] of [["adapter", adapter], ["worker", worker]] as const) {
+    const logged = [...source.matchAll(/console\.(log|error|warn)\(([\s\S]*?)\n\s*\)/g)]
+      .map((match) => match[2])
+      .join("\n")
+
+    assert.ok(!/\bqr\b(?!_pernah)/.test(logged), `${name} tidak boleh mencatat payload QR`)
+    assert.ok(!/creds|auth|TOKEN|token/.test(logged), `${name} tidak boleh mencatat kredensial`)
+  }
+})

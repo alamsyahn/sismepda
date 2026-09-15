@@ -14,18 +14,21 @@ import { Boom } from "@hapi/boom"
 import makeWASocket, {
   Browsers,
   DisconnectReason,
-  fetchLatestBaileysVersion,
+  fetchLatestWaWebVersion,
   // Dialias: ESLint memperlakukan setiap pengenal berawalan `use` sebagai React
   // Hook, dan memanggilnya di dalam kelas dianggap pelanggaran. Alias ini
   // memadamkan salah-kenali itu tanpa mematikan aturan hooks untuk berkas ini.
   useMultiFileAuthState as loadMultiFileAuthState,
   type WASocket,
 } from "@whiskeysockets/baileys"
+import { existsSync } from "node:fs"
 import { rm } from "node:fs/promises"
+import { join } from "node:path"
 import P from "pino"
 
 import {
   WhatsAppSendError,
+  errorMessageFor,
   reconnectDelayMs,
   shouldReconnect,
   type SendResult,
@@ -37,36 +40,61 @@ import {
 } from "./whatsapp-transport.js"
 
 /**
- * Terjemahan alasan putus Baileys ke kalimat untuk admin.
+ * Terjemahan alasan putus ke kalimat untuk admin.
  *
- * Angka status di sisi kiri berasal dari `DisconnectReason` Baileys; admin
- * tidak boleh pernah melihat angka itu.
+ * PERHATIAN pada tabrakan nilai: di Baileys `connectionLost` dan `timedOut`
+ * SAMA-SAMA 408, dan `connectionClosed` adalah 428. Mencocokkan lewat
+ * `DisconnectReason` membuat setiap 408 dilaporkan sebagai gangguan jaringan,
+ * termasuk handshake yang kehabisan waktu sebelum QR terbit — persis kekeliruan
+ * yang membuat kegagalan pairing terlihat seperti masalah jaringan.
+ *
+ * Karena itu pemetaan dilakukan atas angka mentah, dengan `hadQr` sebagai
+ * pembeda: 408 sebelum QR pernah terbit berarti handshake gagal, bukan koneksi
+ * yang terputus di tengah jalan.
+ *
+ * Angka status tidak pernah ditampilkan kepada admin; ia hanya masuk log.
  */
-function describeDisconnect(statusCode: number | undefined): string {
+function describeDisconnect(statusCode: number | undefined, hadQr: boolean): string {
   switch (statusCode) {
-    case DisconnectReason.loggedOut:
+    case 401:
       return "Sesi dikeluarkan dari perangkat tertaut WhatsApp. Diperlukan pemindaian QR ulang."
-    case DisconnectReason.connectionReplaced:
+    case 440:
       return "Sesi diambil alih oleh perangkat lain yang memakai akun WhatsApp yang sama."
-    case DisconnectReason.connectionClosed:
-      return "Koneksi ke WhatsApp tertutup."
-    case DisconnectReason.connectionLost:
-      return "Koneksi ke WhatsApp terputus karena jaringan."
-    case DisconnectReason.restartRequired:
+    case 428:
+      return "WhatsApp menutup koneksi sebelum sesi terbentuk. Coba hubungkan kembali."
+    case 408:
+      return hadQr
+        ? "Koneksi ke WhatsApp terputus karena jaringan."
+        : "WhatsApp tidak merespons saat memulai sesi. Coba hubungkan kembali."
+    case 515:
       return "WhatsApp meminta koneksi dimulai ulang."
-    case DisconnectReason.timedOut:
-      return "Koneksi ke WhatsApp kehabisan waktu."
-    case DisconnectReason.badSession:
+    case 500:
       return "Berkas sesi rusak dan tidak dapat dipakai lagi."
-    case DisconnectReason.multideviceMismatch:
+    case 411:
       return "Versi multi-perangkat WhatsApp tidak cocok. Diperlukan pemindaian QR ulang."
-    case DisconnectReason.forbidden:
+    case 403:
       return "Akun WhatsApp ditolak oleh server WhatsApp."
-    case DisconnectReason.unavailableService:
+    case 503:
       return "Layanan WhatsApp sedang tidak tersedia."
     default:
       return "Koneksi ke WhatsApp terputus."
   }
+}
+
+/**
+ * Kategori kegagalan koneksi, untuk log dan untuk `lastError`.
+ *
+ * Membedakan handshake gagal dari gangguan jaringan adalah inti diagnosis:
+ * keduanya tampak sama di permukaan tetapi menuntut tindakan berbeda.
+ */
+function classifyDisconnect(statusCode: number | undefined, hadQr: boolean): WhatsAppErrorCode {
+  if (statusCode === 401) return "LOGGED_OUT"
+  if (statusCode === 428) return "HANDSHAKE_FAILED"
+  if (statusCode === 408) return hadQr ? "NETWORK" : "HANDSHAKE_FAILED"
+  if (statusCode === 403) return "TARGET_NOT_MEMBER"
+  if (statusCode === 429) return "RATE_LIMITED"
+  if (statusCode === undefined) return "NETWORK"
+  return "UNKNOWN"
 }
 
 /** Nomor dari JID milik sendiri, tanpa membocorkan bentuk JID mentah. */
@@ -99,6 +127,8 @@ export class BaileysWhatsAppTransport implements WhatsAppTransport {
   private socket: WASocket | null = null
   private state: WhatsAppConnectionState = "DISCONNECTED"
   private qr: string | null = null
+  /** Apakah QR pernah terbit pada percobaan koneksi berjalan. Pembeda 408. */
+  private sawQr = false
   private connectedSince: Date | null = null
   private lastDisconnectedAt: Date | null = null
   private lastDisconnectReason: string | null = null
@@ -136,8 +166,11 @@ export class BaileysWhatsAppTransport implements WhatsAppTransport {
       lastDisconnectedAt: this.lastDisconnectedAt?.toISOString() ?? null,
       lastDisconnectReason: this.lastDisconnectReason,
       lastError: this.lastError,
-      // Hanya KEBERADAAN sesi yang dilaporkan, tidak pernah isinya.
-      sessionExists: this.connectedSince !== null || this.state === "CONNECTED",
+      // Hanya KEBERADAAN sesi yang dilaporkan, tidak pernah isinya. Diperiksa
+      // dari disk, bukan disimpulkan dari state: sesi tersimpan tetap ada
+      // meskipun koneksi sedang putus, dan admin perlu tahu bedanya antara
+      // "belum pernah pairing" dan "pernah pairing tetapi sedang terputus".
+      sessionExists: existsSync(join(this.sessionDir, "creds.json")),
       qr: this.qr,
       lastHeartbeatAt: this.lastHeartbeatAt?.toISOString() ?? null,
     }
@@ -170,7 +203,16 @@ export class BaileysWhatsAppTransport implements WhatsAppTransport {
     this.setState("CONNECTING")
 
     const { state, saveCreds } = await loadMultiFileAuthState(this.sessionDir)
-    const { version } = await fetchLatestBaileysVersion()
+    // `fetchLatestWaWebVersion` membaca versi yang BENAR-BENAR dilayani
+    // web.whatsapp.com saat ini. `fetchLatestBaileysVersion` membaca metadata
+    // repositori Baileys, yang bisa tertinggal dari server dan membuat
+    // handshake ditolak sebelum QR sempat terbit. Versi tidak pernah
+    // dipatok keras: yang dipakai selalu hasil pengambilan, dan bila
+    // pengambilan gagal Baileys memakai bawaannya sendiri.
+    const { version, isLatest } = await fetchLatestWaWebVersion()
+    console.log(
+      `[whatsapp] versi WA Web ${version.join(".")} (terbaru: ${isLatest ? "ya" : "tidak"})`,
+    )
 
     const socket = makeWASocket({
       version,
@@ -178,6 +220,9 @@ export class BaileysWhatsAppTransport implements WhatsAppTransport {
       // Tanpa ini Baileys mencetak seluruh lalu lintas protokol, termasuk
       // isi pesan, ke stdout container.
       logger: this.logger,
+      // WAJIB tuple WEB. Subplatform desktop (WIN32/DARWIN) dilaporkan ditolak
+      // dengan 428 sebelum QR terbit; identitas web adalah jalur pairing QR
+      // yang didukung. Jangan ganti ke Browsers.windows/macOS.
       browser: Browsers.ubuntu("SISMEPDA"),
       // Menandai pesan terbaca akan mengubah keadaan chat orang lain; sistem
       // ini hanya mengirim, tidak pernah membaca.
@@ -190,12 +235,16 @@ export class BaileysWhatsAppTransport implements WhatsAppTransport {
       const { connection, lastDisconnect, qr } = update
 
       if (qr) {
+        // Payload QR TIDAK PERNAH dicatat: siapa pun yang membacanya di log
+        // dapat menautkan perangkatnya ke akun WhatsApp sekolah.
         this.qr = qr
+        this.sawQr = true
         this.setState("WAITING_QR")
       }
 
       if (connection === "open") {
         this.qr = null
+        this.sawQr = false
         this.reconnectAttempt = 0
         this.connectedSince = new Date()
         this.lastError = null
@@ -206,15 +255,32 @@ export class BaileysWhatsAppTransport implements WhatsAppTransport {
       }
 
       if (connection === "close") {
+        const previousState = this.state
+        const hadQr = this.sawQr
         this.lastDisconnectedAt = new Date()
-        const statusCode =
-          lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output?.statusCode : undefined
-        this.lastDisconnectReason = describeDisconnect(statusCode)
+
+        const error = lastDisconnect?.error
+        const statusCode = error instanceof Boom ? error.output?.statusCode : undefined
+        const code = classifyDisconnect(statusCode, hadQr)
+
+        // Diagnostik: tanpa angka status mentah, 428/408/401 tidak dapat
+        // dibedakan dari luar dan setiap kegagalan tampak sebagai "jaringan".
+        // Yang dicatat hanya metadata — tidak ada kredensial, auth state,
+        // payload QR, token, atau isi pesan.
+        console.error(
+          `[whatsapp] koneksi tertutup: status=${statusCode ?? "tidak ada"} kategori=${code} ` +
+            `state_sebelumnya=${previousState} qr_pernah_terbit=${hadQr ? "ya" : "tidak"} ` +
+            `error=${error instanceof Error ? error.name : "tidak ada"}`,
+        )
+
+        this.lastDisconnectReason = describeDisconnect(statusCode, hadQr)
+        this.lastError = { code, message: errorMessageFor(code) }
         this.qr = null
 
         if (statusCode === DisconnectReason.loggedOut) {
           // Kredensial sudah tidak sah. Menyambung ulang tidak akan pernah
           // berhasil; yang dibutuhkan adalah manusia memindai QR.
+          this.sawQr = false
           this.setState("LOGGED_OUT")
           return
         }

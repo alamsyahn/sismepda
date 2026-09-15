@@ -6,6 +6,7 @@ import { recordAuditLog } from "@/lib/audit-log"
 import { readConfiguration, readConfigurations, updateConfiguration } from "@/lib/server-whatsapp"
 import { workerGroups, workerResolveTarget } from "@/lib/server-whatsapp-worker-client"
 import { WHATSAPP_MESSAGE_TYPES, scheduleFor } from "@/lib/whatsapp-schedule"
+import { WhatsAppSendError } from "@/lib/whatsapp-transport"
 import {
   requireWhatsAppConnectionManager,
   requireWhatsAppViewer,
@@ -23,11 +24,19 @@ export async function GET() {
     await requireWhatsAppViewer()
 
     const configurations = await readConfigurations()
-    // Daftar grup hanya bisa dibaca saat worker terhubung. Kegagalan di sini
-    // bukan kegagalan halaman: konfigurasi tetap harus bisa dilihat.
+    // Daftar grup hanya bisa dibaca saat WhatsApp terhubung. Keadaan "belum
+    // terhubung" adalah hal normal dan dilewati diam-diam; kegagalan LAIN
+    // tetap dicatat agar masalah nyata tidak tersembunyi. Dalam kedua kasus
+    // konfigurasi tetap harus bisa dilihat, jadi halaman tidak ikut gagal.
     const groups = await workerGroups()
       .then((result) => result.groups)
-      .catch(() => null)
+      .catch((error) => {
+        const code = error instanceof WhatsAppSendError ? error.code : "UNKNOWN"
+        if (code !== "NOT_CONNECTED") {
+          console.error(`[whatsapp] daftar grup gagal dimuat: ${code}`)
+        }
+        return null
+      })
 
     return NextResponse.json(
       { configurations, groups },

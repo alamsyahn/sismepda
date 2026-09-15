@@ -42,6 +42,7 @@ export type WhatsAppErrorCode =
   | "TARGET_INVALID"
   | "RATE_LIMITED"
   | "NETWORK"
+  | "HANDSHAKE_FAILED"
   | "SEND_FAILED"
   | "UNKNOWN"
 
@@ -63,6 +64,8 @@ export const ERROR_MESSAGES: Record<WhatsAppErrorCode, string> = {
   TARGET_INVALID: "Identitas grup tujuan tidak valid. Muat ulang daftar grup untuk memperbaikinya.",
   RATE_LIMITED: "WhatsApp menolak sementara karena terlalu banyak permintaan. Coba lagi beberapa saat lagi.",
   NETWORK: "Jaringan ke WhatsApp bermasalah. Sistem akan mencoba menyambung kembali.",
+  HANDSHAKE_FAILED:
+    "WhatsApp menolak koneksi sebelum sesi terbentuk. Coba hubungkan kembali; bila berulang, keluar lalu pindai QR baru.",
   SEND_FAILED: "Pesan gagal dikirim. Periksa status koneksi lalu coba lagi.",
   UNKNOWN: "Terjadi kesalahan yang tidak dikenali. Periksa status koneksi lalu coba lagi.",
 }

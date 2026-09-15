@@ -60,7 +60,14 @@ export function workerLogout(): Promise<WhatsAppStatus> {
   return call<WhatsAppStatus>("/logout", { method: "POST" })
 }
 
-export function workerGroups(): Promise<{ groups: WhatsAppGroup[] }> {
+export async function workerGroups(): Promise<{ groups: WhatsAppGroup[] }> {
+  // Daftar grup hanya berarti setelah sesi terbentuk. Bertanya lebih awal
+  // menghasilkan kegagalan yang dapat diprediksi dan membanjiri log worker,
+  // jadi keadaan koneksi diperiksa lebih dulu di sini.
+  const status = await workerStatus()
+  if (status.state !== "CONNECTED") {
+    throw new WhatsAppSendError("NOT_CONNECTED")
+  }
   return call<{ groups: WhatsAppGroup[] }>("/groups")
 }
 

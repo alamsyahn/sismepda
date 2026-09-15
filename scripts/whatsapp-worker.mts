@@ -134,13 +134,28 @@ const server = createServer((request, response) => {
           send(response, 200, await transport.getStatus())
           return
 
-        case "GET /groups":
+        case "GET /groups": {
+          // Daftar grup hanya ada setelah sesi terbentuk. Menanyakannya saat
+          // belum terhubung bukan kegagalan sistem, melainkan keadaan yang
+          // wajar — karena itu ia dijawab 409 dengan kode yang jelas, bukan
+          // dilempar menjadi 500 yang membanjiri log dengan stack trace.
+          const status = await transport.getStatus()
+          if (status.state !== "CONNECTED") {
+            send(response, 409, { code: "NOT_CONNECTED", state: status.state, groups: [] })
+            return
+          }
           send(response, 200, { groups: await transport.listGroups() })
           return
+        }
 
         case "POST /resolve-target": {
           const body = await readJson(request)
           const name = typeof body.name === "string" ? body.name : undefined
+          const status = await transport.getStatus()
+          if (status.state !== "CONNECTED") {
+            send(response, 409, { code: "NOT_CONNECTED", state: status.state })
+            return
+          }
           send(response, 200, resolveTargetGroup(await transport.listGroups(), name))
           return
         }
