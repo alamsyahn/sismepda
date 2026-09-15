@@ -277,6 +277,84 @@ test("manifest: kunci dengan traversal ditolak", () => {
 
 const hasTar = spawnSync("tar", ["--version"], { encoding: "utf8" }).status === 0
 
+/**
+ * Sumber `media-backup.ts` tanpa komentar, mulai dari definisi runTar.
+ *
+ * Komentar dibuang karena memang menyebut nama opsi non-portable dan nama
+ * fungsi untuk menjelaskan alasannya; yang diperiksa adalah kode nyata.
+ */
+async function tarInvocationSource(): Promise<string> {
+  const source = await readFile(path.join(PROJECT, "scripts", "media-backup.ts"), "utf8")
+  return source
+    .slice(source.indexOf("function runTar"))
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "")
+}
+
+test("backup: invocation tar tidak memakai opsi khusus GNU", async () => {
+  // BUG YANG DICEGAH: implementasi memakai `--force-local`, `--transform`, dan
+  // `--files-from`. Ketiganya opsi GNU tar; bsdtar bawaan Windows 11 menolaknya
+  // dengan "Option --force-local is not supported" dan seluruh jalur backup
+  // gagal di mesin pengembangan.
+  //
+  // Dicek pada sumber, bukan hanya lewat hasil run: mesin CI/dev yang kebetulan
+  // memakai GNU tar akan tetap hijau walau implementasinya tidak portable,
+  // sehingga regresi ini lolos tanpa assertion eksplisit.
+  const invocation = await tarInvocationSource()
+
+  // Komentar boleh menyebut nama opsi (menjelaskan kenapa dihindari); yang
+  // dilarang adalah opsi yang benar-benar dikirim sebagai argumen tar.
+  const tarArguments = [...invocation.matchAll(/runTar\(\s*\[([^\]]*)\]/g)]
+    .map((match) => match[1])
+    .concat([...invocation.matchAll(/spawnSync\(\s*"tar"\s*,\s*([^)]*)\)/g)].map((m) => m[1]))
+    .join("\n")
+
+  for (const option of ["--force-local", "--transform", "--files-from", "--no-recursion", "--hard-dereference"]) {
+    assert.ok(
+      !tarArguments.includes(option),
+      `opsi tar non-portable dipakai kembali: ${option}`,
+    )
+  }
+
+  // Arsip tidak boleh diserahkan ke tar sebagai jalur absolut: `D:\...` dibaca
+  // sebagian implementasi sebagai arsip remote "host D". Selalu basename + cwd.
+  for (const call of invocation.matchAll(/runTar\(\[([^\]]*)\]/g)) {
+    assert.match(
+      call[1],
+      /path\.basename\(|archiveName/,
+      `arsip harus diberikan sebagai basename, bukan jalur absolut: runTar([${call[1]}])`,
+    )
+  }
+
+  // Setiap pemanggilan wajib menyertakan cwd eksplisit, karena basename tanpa
+  // cwd akan menulis atau mencari arsip di direktori kerja yang salah.
+  const callSites = [...invocation.matchAll(/runTar\(\s*\[([\s\S]*?)\]\s*,\s*([A-Za-z]\w*)/g)]
+  const callCount = [...invocation.matchAll(/\brunTar\(/g)].length - 1 // minus definisi
+  assert.equal(
+    callSites.length,
+    callCount,
+    "setiap runTar harus dipanggil dengan cwd eksplisit",
+  )
+  assert.ok(callCount >= 3, "create, verify, dan restore semuanya harus memakai runTar")
+
+  // Argumen tetap berupa array tanpa shell: nama berkas tidak boleh melewati
+  // parser shell (quoting + command injection).
+  assert.match(invocation, /shell:\s*false/)
+})
+
+test("backup: hanya memakai flag tar yang dipahami GNU tar maupun bsdtar", async () => {
+  const invocation = await tarInvocationSource()
+
+  // Irisan yang disepakati kedua implementasi. Flag panjang apa pun di luar ini
+  // berisiko hanya berjalan di satu platform.
+  const portable = new Set(["-czf", "-tzf", "-xzf", "-C"])
+  for (const call of invocation.matchAll(/runTar\(\[([^\]]*)\]/g)) {
+    for (const literal of call[1].matchAll(/"(-{1,2}[^"]*)"/g)) {
+      assert.ok(portable.has(literal[1]), `flag tar tidak portable: ${literal[1]}`)
+    }
+  }
+})
+
 test("backup: buat → verifikasi → restore terhadap media nyata", { skip: !hasTar }, async (t) => {
   const workspace = await mkdtemp(path.join(tmpdir(), "sismepda-backup-test-"))
   t.after(async () => {
@@ -333,14 +411,23 @@ test("backup: buat → verifikasi → restore terhadap media nyata", { skip: !ha
   assert.match(restored.stdout, /Restore uji selesai: 2 berkas/)
 
   // Arsip harus memuat setiap berkas dengan checksum yang benar.
-  const listing = spawnSync("tar", ["--force-local", "-tzf", archive], { encoding: "utf8" }).stdout
+  // Arsip dibaca dengan pola portable yang sama seperti implementasi: basename
+  // + cwd, tanpa opsi khusus GNU. Test ini akan gagal pada bsdtar bila
+  // implementasi kembali memakai jalur absolut atau flag non-portable.
+  const listing = spawnSync("tar", ["-tzf", path.basename(archive)], {
+    cwd: path.dirname(archive),
+    encoding: "utf8",
+  }).stdout
   for (const key of payloads.keys()) {
     assert.ok(listing.includes(`${MEDIA_ARCHIVE_PREFIX}/${key}`), `hilang dari arsip: ${key}`)
   }
 
   const extracted = path.join(workspace, "extracted")
   await mkdir(extracted, { recursive: true })
-  spawnSync("tar", ["--force-local", "-xzf", archive, "-C", extracted], { encoding: "utf8" })
+  spawnSync("tar", ["-xzf", path.basename(archive), "-C", extracted], {
+    cwd: path.dirname(archive),
+    encoding: "utf8",
+  })
   for (const [key, bytes] of payloads) {
     const restoredBytes = await readFile(path.join(extracted, MEDIA_ARCHIVE_PREFIX, ...key.split("/")))
     assert.equal(
@@ -388,7 +475,8 @@ test("backup: arsip tanpa manifest ditolak", { skip: !hasTar }, async (t) => {
   await writeFile(path.join(tree, "x.jpg"), Buffer.from("x"))
 
   const archive = path.join(workspace, "media_2026-01-01_00-00-00.tar.gz")
-  spawnSync("tar", ["--force-local", "-czf", archive, "-C", path.join(workspace, "tree"), MEDIA_ARCHIVE_PREFIX], {
+  spawnSync("tar", ["-czf", path.basename(archive), "-C", path.join(workspace, "tree"), MEDIA_ARCHIVE_PREFIX], {
+    cwd: path.dirname(archive),
     encoding: "utf8",
   })
 

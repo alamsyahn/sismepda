@@ -14,7 +14,7 @@
 import { createHash } from "node:crypto"
 import { spawnSync } from "node:child_process"
 import { createReadStream } from "node:fs"
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, copyFile, link, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -43,15 +43,30 @@ function fail(message: string): never {
 }
 
 /**
- * `--force-local` selalu disertakan: tanpa itu, tar pada Windows/MSYS membaca
- * `C:\\...` sebagai "host C, path ...", lalu mencoba koneksi jaringan dan gagal.
- * Pada GNU tar Linux flag ini tidak berpengaruh, sehingga aman untuk keduanya.
+ * Jalankan `tar` secara portable.
+ *
+ * Dua implementasi tar harus dilayani: GNU tar di Ubuntu produksi, dan bsdtar
+ * bawaan Windows 11 (`C:\Windows\System32\tar.exe`) di mesin pengembangan.
+ * Keduanya hanya sepakat pada irisan kecil: `-c`/`-t`/`-x`, `-z`, `-f`, dan
+ * `-C`. Opsi GNU seperti `--force-local`, `--transform`, dan `--files-from`
+ * ditolak bsdtar, jadi tidak satu pun dipakai di sini.
+ *
+ * Nama arsip SELALU diberikan sebagai basename dengan `cwd` di direktori arsip,
+ * tidak pernah sebagai jalur absolut. Sebabnya: tar menafsirkan `D:\...` sebagai
+ * "host D, path ..." (sintaks arsip remote), dan itulah yang dulu memaksa
+ * pemakaian `--force-local`. Dengan basename, `D:` tidak pernah sampai ke tar,
+ * sehingga tidak ada yang perlu dipaksa menjadi lokal — masalahnya hilang, bukan
+ * ditambal.
+ *
+ * `spawnSync` dipanggil dengan array argumen dan tanpa shell, sehingga nama
+ * berkas tidak pernah melewati parser shell.
  */
-function runTar(args: string[], cwd?: string): string {
-  const result = spawnSync("tar", ["--force-local", ...args], {
+function runTar(args: string[], cwd: string): string {
+  const result = spawnSync("tar", args, {
     cwd,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
+    shell: false,
   })
   if (result.error) throw new MediaBackupError(`tar gagal dijalankan: ${result.error.message}`)
   if (result.status !== 0) {
@@ -148,32 +163,47 @@ async function createBackup(): Promise<void> {
 
   await mkdir(backupDir, { recursive: true })
 
-  // Manifest dirakit di direktori sementara, lalu arsip dibuat dari DUA sumber
-  // `-C`: manifest dari staging, pohon media dari akar sumber. Tidak ada berkas
-  // apa pun yang ditulis ke dalam pohon media.
+  // Manifest dan pohon media dirakit lebih dulu menjadi SATU direktori staging
+  // yang sudah berbentuk persis seperti isi arsip, lalu tar dipanggil sekali
+  // dengan `-C staging .`. Sebelumnya bentuk arsip dirakit oleh tar sendiri
+  // lewat `--transform` + `--files-from`; keduanya opsi GNU yang ditolak bsdtar
+  // Windows. Merakit di filesystem memakai API Node membuat bentuk arsip
+  // identik di kedua platform tanpa bergantung pada dialek tar mana pun.
   //
-  // `--hard-dereference` TIDAK dipakai dan symlink sudah disaring saat
-  // pengumpulan berkas, sehingga arsip tidak dapat menyedot berkas dari luar
+  // Isi media dimasukkan sebagai HARD LINK, bukan salinan: tidak ada byte yang
+  // digandakan, dan pohon media sumber tetap hanya dibaca. Bila hard link tidak
+  // mungkin (mis. staging berada di volume lain), disalin sebagai cadangan.
+  //
+  // Symlink sudah disaring saat pengumpulan berkas, sehingga staging hanya
+  // pernah berisi berkas biasa dan arsip tidak dapat menyedot berkas dari luar
   // pohon media.
   const staging = await mkdtemp(path.join(tmpdir(), "sismepda-backup-"))
   try {
     await writeFile(path.join(staging, MEDIA_MANIFEST_ENTRY), JSON.stringify(manifest, null, 2))
 
-    const fileList = path.join(staging, "files.txt")
-    await writeFile(fileList, relativeFiles.map((relative) => `./${relative}`).join("\n"))
+    const payloadRoot = path.join(staging, MEDIA_ARCHIVE_PREFIX)
+    // Dibuat walau tidak ada berkas media, supaya nama anggota arsip tetap ada
+    // dan bentuk arsip sama untuk instalasi baru maupun yang sudah terisi.
+    await mkdir(payloadRoot, { recursive: true })
+    for (const relative of relativeFiles) {
+      const destination = path.join(payloadRoot, relative)
+      await mkdir(path.dirname(destination), { recursive: true })
+      const origin = path.join(source, relative)
+      try {
+        await link(origin, destination)
+      } catch {
+        await copyFile(origin, destination)
+      }
+    }
 
-    runTar([
-      "-czf",
-      archivePath,
-      "-C",
-      staging,
-      MEDIA_MANIFEST_ENTRY,
-      "-C",
-      source,
-      `--transform=s,^\\./,${MEDIA_ARCHIVE_PREFIX}/,`,
-      "--no-recursion",
-      `--files-from=${fileList}`,
-    ])
+    // Anggota arsip disebut namanya (`manifest.json`, `media`), bukan `.`:
+    // dengan `.` setiap entri menjadi `./media/...` dan bentuk arsip berubah.
+    // Arsip ditulis sebagai basename dengan cwd di direktori arsip — lihat
+    // runTar() untuk alasan drive letter.
+    runTar(
+      ["-czf", path.basename(archivePath), "-C", staging, MEDIA_MANIFEST_ENTRY, MEDIA_ARCHIVE_PREFIX],
+      backupDir,
+    )
   } finally {
     await rm(staging, { recursive: true, force: true })
   }
@@ -198,24 +228,43 @@ async function verifyBackup(archivePath: string, extractTo?: string): Promise<Ve
   console.log("")
   console.log(`  Arsip  : ${absolute}`)
 
+  // Arsip dirujuk sebagai basename dengan cwd di direktorinya, sehingga drive
+  // letter Windows tidak pernah terlihat oleh tar. Lihat runTar().
+  const archiveDir = path.dirname(absolute)
+  const archiveName = path.basename(absolute)
+
   // 1. Arsip harus benar-benar dapat dibaca, bukan sekadar ada.
-  const listing = runTar(["-tzf", absolute])
-  const entries = listing
+  //
+  // Entri direktori dibuang di sini. Kedua implementasi tar menandainya dengan
+  // garis miring di akhir, tetapi jumlah entri direktori yang ditulis berbeda
+  // antar implementasi — membandingkannya dengan `fileCount` pada manifest akan
+  // membuat verifikasi gagal hanya karena dialek tar, bukan karena arsip rusak.
+  // Yang dihitung adalah berkasnya.
+  const listing = runTar(["-tzf", archiveName], archiveDir)
+  const rawEntries = listing
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .map((line) => line.replace(/\/$/, ""))
+
+  const entries = rawEntries
+    .filter((line) => !line.endsWith("/"))
+    .map((line) => line.replace(/^\.\//, ""))
     .filter((line) => line !== "." && line !== MEDIA_ARCHIVE_PREFIX)
 
-  // 2. Tidak ada entri yang dapat lolos dari direktori ekstraksi.
-  for (const entry of entries) assertSafeArchiveEntry(entry)
+  // 2. Tidak ada entri yang dapat lolos dari direktori ekstraksi. Nama
+  // direktori ikut diperiksa: entri direktori pun tidak boleh menunjuk keluar.
+  for (const entry of rawEntries) {
+    const normalized = entry.replace(/\/$/, "").replace(/^\.\//, "")
+    if (normalized === "." || normalized === "" || normalized === MEDIA_ARCHIVE_PREFIX) continue
+    assertSafeArchiveEntry(normalized)
+  }
 
   // 3. Manifest harus ada, terbaca, dan konsisten dengan dirinya sendiri.
   const target = extractTo ?? (await mkdtemp(path.join(tmpdir(), "sismepda-verify-")))
   const ephemeral = extractTo === undefined
   try {
     await mkdir(target, { recursive: true })
-    runTar(["-xzf", absolute, "-C", target])
+    runTar(["-xzf", archiveName, "-C", target], archiveDir)
 
     const manifestRaw = await readFile(path.join(target, MEDIA_MANIFEST_ENTRY), "utf8")
     const manifest = parseManifest(JSON.parse(manifestRaw))

@@ -284,6 +284,33 @@ dapat menyedot berkas arbitrer dari luar pohon media. **Tidak ada retensi
 otomatis**: arsip lama tidak pernah dihapus sendiri: menghapus backup memerlukan
 kebijakan retensi eksplisit, bukan efek samping.
 
+### Portabilitas tar
+
+Backup media harus berjalan di dua implementasi tar yang berbeda: GNU tar pada
+Ubuntu produksi, dan bsdtar bawaan Windows 11 (`C:\Windows\System32\tar.exe`)
+pada mesin pengembangan. Keduanya hanya sepakat pada irisan kecil: `-c`/`-t`/
+`-x`, `-z`, `-f`, dan `-C`.
+
+Dua aturan berlaku untuk setiap pemanggilan tar:
+
+1. **Tanpa opsi khusus GNU.** `--force-local`, `--transform`, `--files-from`,
+   dan `--no-recursion` ditolak bsdtar. Bentuk arsip dirakit lebih dulu di
+   direktori staging memakai API Node (hard link, jatuh ke salin bila lintas
+   volume), lalu tar dipanggil sekali atas staging itu — bukan dirakit oleh tar.
+2. **Nama arsip selalu basename + `cwd`, tidak pernah jalur absolut.** Sebagian
+   implementasi tar membaca `D:\...` sebagai arsip remote "host D"; itulah yang
+   dulu memaksa pemakaian `--force-local`. Dengan basename, drive letter tidak
+   pernah sampai ke tar, sehingga tidak ada yang perlu dipaksa menjadi lokal.
+
+Verifikasi mengabaikan entri direktori saat mencocokkan jumlah berkas dengan
+manifest: jumlah entri direktori yang ditulis berbeda antar implementasi, dan
+membandingkannya akan menggagalkan verifikasi karena dialek tar, bukan karena
+arsip rusak.
+
+Aturan ini dikunci oleh `tests/media-operations.test.ts`, yang memeriksa
+invocation pada sumbernya — mesin ber-GNU tar akan tetap hijau walau
+implementasinya tidak portable, sehingga menjalankan test saja tidak cukup.
+
 ### Manifest
 
 Setiap arsip memuat `manifest.json` di puncaknya:
