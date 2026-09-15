@@ -23,6 +23,11 @@ import {
   parseDatabaseUrl,
   parseEnvFile,
 } from "@/lib/database-target"
+import {
+  businessDateColumnTypeQuery,
+  parseBusinessDateColumnTypes,
+  planLegacyDateRepair,
+} from "@/lib/legacy-date-repair"
 
 const CLONE_ENV_FILE = resolve(process.cwd(), ".env.prodclone")
 const ANALYSIS_SQL = resolve(process.cwd(), "prisma/legacy-date-analysis.sql")
@@ -57,12 +62,19 @@ try {
 // langsung dari URL hanya untuk diteruskan sebagai environment ke psql.
 const credentials = new URL(url)
 
-console.log(`Menganalisis ${describeTarget(decision.parsed)}\n`)
+// Narrowing `decision` tidak bertahan di dalam closure, dan target clone memang
+// hanya perlu ditetapkan sekali setelah seluruh guard lolos.
+const target = decision.parsed
 
-const sql = readFileSync(ANALYSIS_SQL, "utf8")
-const result = spawnSync(
-  "docker",
-  [
+console.log(`Menganalisis ${describeTarget(target)}\n`)
+
+/**
+ * Argumen psql yang dipakai dua kali: sekali untuk membaca tipe kolom, sekali
+ * untuk analisis penuh. Dibuat sebagai fungsi supaya kredensial tidak pernah
+ * disalin ke lebih dari satu tempat.
+ */
+function psqlArgs(): string[] {
+  return [
     "exec",
     "-i",
     "-e",
@@ -74,14 +86,40 @@ const result = spawnSync(
     "-U",
     decodeURIComponent(credentials.username),
     "-d",
-    decision.parsed.database,
+    target.database,
     "-v",
     "ON_ERROR_STOP=1",
     "-f",
     "-",
-  ],
-  { input: sql, encoding: "utf8" },
-)
+  ]
+}
+
+/**
+ * `prisma/legacy-date-analysis.sql` membaca `date::time`, yang hanya ada pada
+ * schema pra-migrasi date-only. Terhadap clone modern kolomnya sudah bertipe
+ * `date` dan cast itu tidak ada di PostgreSQL. Statusnya ditentukan dari
+ * metadata schema — sama seperti yang dilakukan refresh — supaya perintah ini
+ * melaporkan keadaan sebenarnya alih-alih gagal dengan error cast.
+ */
+const typeProbe = spawnSync("docker", psqlArgs(), {
+  input: businessDateColumnTypeQuery(),
+  encoding: "utf8",
+})
+if (typeProbe.status !== 0) {
+  fail(`Gagal membaca tipe kolom tanggal bisnis:\n${typeProbe.stderr?.slice(0, 1500) ?? ""}`)
+}
+const observed = parseBusinessDateColumnTypes(typeProbe.stdout ?? "")
+if (!observed) fail("Tipe kolom tanggal bisnis tidak dapat dibaca dari schema clone.")
+
+const plan = planLegacyDateRepair(observed)
+if (plan.action === "abort") fail(plan.reason)
+if (plan.action === "skip") {
+  console.log(`Tidak ada yang dianalisis.\n\n${plan.reason}`)
+  process.exit(0)
+}
+
+const sql = readFileSync(ANALYSIS_SQL, "utf8")
+const result = spawnSync("docker", psqlArgs(), { input: sql, encoding: "utf8" })
 
 if (result.status !== 0) {
   fail(`psql gagal:\n${result.stderr?.slice(0, 1500) ?? "(tanpa stderr)"}`)

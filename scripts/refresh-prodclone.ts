@@ -26,6 +26,20 @@ import {
   parseDatabaseUrl,
   verifyServedDatabase,
 } from "@/lib/database-target"
+import {
+  businessDateColumnTypeQuery,
+  businessDateInvariantQuery,
+  evaluateBusinessDateInvariant,
+  parseBusinessDateColumnTypes,
+  planLegacyDateRepair,
+} from "@/lib/legacy-date-repair"
+import {
+  evaluateRbacReadiness,
+  legacyBackfillMarkerQuery,
+  parseBackfillMarkerStatus,
+  planLegacyRbacBackfill,
+  rbacReadinessQuery,
+} from "@/lib/prodclone-rbac-bootstrap"
 
 // ---------------------------------------------------------------------------
 // Konfigurasi lokal clone
@@ -516,37 +530,79 @@ console.log(`  ${CLONE_ENV_FILE} ditulis (sudah ter-gitignore).`)
  * riwayat, jadi isinya maupun guard-nya tidak boleh diubah; guard itu justru
  * tetap menjadi pemeriksa terakhir setelah repair ini berjalan.
  *
- * Skrip SQL-nya idempoten, sehingga refresh terhadap clone yang sudah bersih
- * tidak mengubah apa pun.
+ * Yang menentukan perlu-tidaknya repair adalah TIPE KOLOM NYATA di clone, bukan
+ * asumsi. `prisma/legacy-date-repair.sql` hanya sah terhadap schema pra-migrasi
+ * (kolom `timestamp without time zone` yang memuat proyeksi zona waktu). Sejak
+ * migrasi date-only diterapkan ke produksi, dump produksi membawa kolom
+ * bertipe `date` dan skrip itu tidak dapat — serta tidak perlu — berjalan.
+ *
+ * Keputusannya dibaca dari `information_schema` lalu dinilai fungsi murni di
+ * `lib/legacy-date-repair.ts`; tidak ada try/catch yang menyembunyikan error.
  */
-step("Memperbaiki tanggal bisnis legacy (TD-014)")
-const repairSql = readFileSync(resolve(process.cwd(), "prisma/legacy-date-repair.sql"), "utf8")
-const repair = run(
-  "docker",
-  [
-    "exec",
-    "-i",
-    "-e",
-    `PGPASSWORD=${clonePassword}`,
-    CLONE_CONTAINER,
-    "psql",
-    "-h",
-    "127.0.0.1",
-    "-U",
-    CLONE_SUPERUSER,
-    "-d",
-    CLONE_DATABASE,
-    "-v",
-    "ON_ERROR_STOP=1",
-    "-f",
-    "-",
-  ],
-  { input: repairSql, allowFailure: true, quiet: true },
+step("Menentukan status perbaikan tanggal bisnis legacy (TD-014)")
+
+const columnTypes = parseBusinessDateColumnTypes(
+  clonePsql(CLONE_DATABASE, businessDateColumnTypeQuery()).stdout,
 )
-if (!repair.ok) {
-  fail(`Perbaikan data legacy gagal:\n${repair.stderr.slice(0, 1500)}`)
+if (!columnTypes) {
+  fail("Tipe kolom tanggal bisnis tidak dapat dibaca dari schema clone. Dibatalkan.")
 }
-console.log("  Tanggal bisnis legacy dinormalkan; tabrakan diselesaikan.")
+
+const repairPlan = planLegacyDateRepair(columnTypes)
+if (repairPlan.action === "abort") {
+  fail(repairPlan.reason)
+}
+
+if (repairPlan.action === "repair") {
+  console.log(`  ${repairPlan.reason}`)
+  /**
+   * Skrip SQL-nya idempoten, sehingga refresh terhadap clone yang sudah bersih
+   * tidak mengubah apa pun.
+   */
+  const repairSql = readFileSync(resolve(process.cwd(), "prisma/legacy-date-repair.sql"), "utf8")
+  const repair = run(
+    "docker",
+    [
+      "exec",
+      "-i",
+      "-e",
+      `PGPASSWORD=${clonePassword}`,
+      CLONE_CONTAINER,
+      "psql",
+      "-h",
+      "127.0.0.1",
+      "-U",
+      CLONE_SUPERUSER,
+      "-d",
+      CLONE_DATABASE,
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-f",
+      "-",
+    ],
+    { input: repairSql, allowFailure: true, quiet: true },
+  )
+  if (!repair.ok) {
+    fail(`Perbaikan data legacy gagal:\n${repair.stderr.slice(0, 1500)}`)
+  }
+  console.log("  Tanggal bisnis legacy dinormalkan; tabrakan diselesaikan.")
+} else {
+  console.log(`  Dilewati: ${repairPlan.reason}`)
+}
+
+/**
+ * Melewati repair tidak boleh berarti melewati pemeriksaan. Invariant yang
+ * dijamin migrasi date-only diverifikasi ulang secara read-only pada kedua
+ * jalur, sehingga clone yang melanggarnya tetap membatalkan refresh di sini —
+ * bukan nanti sebagai kegagalan unique constraint yang membingungkan.
+ */
+const invariant = evaluateBusinessDateInvariant(
+  clonePsql(CLONE_DATABASE, businessDateInvariantQuery()).stdout,
+)
+if (!invariant.ok) {
+  fail(invariant.reason)
+}
+console.log("  Invariant tanggal bisnis terpenuhi: tidak ada tabrakan (kelas, tanggal).")
 
 step("Menerapkan migrasi repository terbaru (prisma migrate deploy)")
 
@@ -586,21 +642,53 @@ console.log(`  Setelah migrasi: ${afterMigrationTables} tabel, ${afterMigrations
 step("Bootstrap lokal: seed registry RBAC, backfill legacy, akun uji")
 
 /**
- * Dump produksi berasal dari schema pra-RBAC, jadi clone tidak memiliki role,
- * permission, maupun keanggotaan. Tanpa tiga langkah ini aplikasi dapat login
- * tetapi tanpa satu pun izin. Urutannya mengikuti jalur forward yang sudah
- * didokumentasikan di docs/operations/development.md.
+ * Seed registry RBAC tetap idempoten dan selalu dijalankan: ia hanya menulis
+ * katalog role/permission, bukan keanggotaan.
  */
 run("npx", ["prisma", "db", "seed"], { env: { DATABASE_URL: cloneUrl } })
 
-const backfill = run(
-  "npx",
-  ["tsx", "prisma/rbac-backfill-legacy.ts", "--apply", `--database=${CLONE_DATABASE}`],
-  { env: { DATABASE_URL: cloneUrl }, allowFailure: true },
+/**
+ * Backfill legacy ditentukan dari MARKER NYATA di clone, bukan diasumsikan.
+ * Dump produksi pra-RBAC tiba tanpa keanggotaan sehingga backfill adalah jalur
+ * forward; dump pasca-RBAC sudah membawa keanggotaan beserta marker COMPLETED,
+ * dan kontrak backfill dengan benar menolak apply ulang. Keduanya keadaan sah —
+ * yang tidak sah adalah menebak salah satunya.
+ */
+const markerStatus = parseBackfillMarkerStatus(
+  clonePsql(CLONE_DATABASE, legacyBackfillMarkerQuery()).stdout,
 )
-if (!backfill.ok) {
-  fail("Backfill RBAC legacy gagal. Clone dibiarkan apa adanya; tidak ada reset otomatis.")
+if (!markerStatus) {
+  fail("Status marker backfill legacy tidak dapat dibaca dari clone. Dibatalkan.")
 }
+
+const backfillPlan = planLegacyRbacBackfill(markerStatus)
+if (backfillPlan.action === "abort") {
+  fail(backfillPlan.reason)
+}
+
+if (backfillPlan.action === "apply") {
+  console.log(`  ${backfillPlan.reason}`)
+  const backfill = run(
+    "npx",
+    ["tsx", "prisma/rbac-backfill-legacy.ts", "--apply", `--database=${CLONE_DATABASE}`],
+    { env: { DATABASE_URL: cloneUrl }, allowFailure: true },
+  )
+  if (!backfill.ok) {
+    fail("Backfill RBAC legacy gagal. Clone dibiarkan apa adanya; tidak ada reset otomatis.")
+  }
+} else {
+  console.log(`  Backfill dilewati: ${backfillPlan.reason}`)
+}
+
+/**
+ * Melewati backfill tidak boleh berarti melewati pemeriksaan: clone wajib
+ * benar-benar memiliki registry role dan keanggotaan, apa pun jalurnya.
+ */
+const readiness = evaluateRbacReadiness(clonePsql(CLONE_DATABASE, rbacReadinessQuery()).stdout)
+if (!readiness.ok) {
+  fail(readiness.reason)
+}
+console.log(`  RBAC siap: ${readiness.roles} role, ${readiness.memberships} keanggotaan.`)
 
 /**
  * Akun uji lokal memakai script yang sudah ada. Guard di

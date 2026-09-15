@@ -184,12 +184,16 @@ Rincian tiap langkah:
    yang berbeda dari container PostgreSQL lain di mesin.
 7. **Recreate** — `DROP DATABASE` hanya setelah seluruh guard lolos.
 8. **Restore** — jumlah tabel hasil restore dibandingkan dengan produksi.
-9. **Perbaikan data legacy** — `prisma/legacy-date-repair.sql` dijalankan
-   **sebelum** migrasi; lihat bagian di bawah.
+9. **Perbaikan data legacy** — status TD-014 ditentukan dari tipe kolom nyata
+   di clone; `prisma/legacy-date-repair.sql` dijalankan **sebelum** migrasi
+   hanya bila dump masih pra-migrasi. Invariant tanggal bisnis tetap
+   diverifikasi read-only pada kedua jalur; lihat bagian di bawah.
 10. **Migrasi** — `prisma migrate deploy`. Bukan `migrate dev`, bukan `db push`,
    tidak pernah `migrate reset`.
-11. **Bootstrap lokal** — `prisma db seed` (registry RBAC), backfill legacy, lalu
-    akun uji lokal lewat `scripts/ensure-local-test-user.ts` yang sudah ada.
+11. **Bootstrap lokal** — `prisma db seed` (registry RBAC) selalu; backfill
+    legacy hanya bila marker `legacy-access-backfill-v1` belum COMPLETED;
+    kesiapan RBAC diverifikasi; lalu akun uji lokal lewat
+    `scripts/ensure-local-test-user.ts` yang sudah ada.
 12. **Validasi** — jumlah `Student` clone harus sama persis dengan produksi.
 13. **Verifikasi produksi** — baseline dibandingkan ulang; selisih apa pun
     dianggap kegagalan serius.
@@ -199,13 +203,13 @@ Data uji synthetic **tidak** dibuat oleh refresh. Clone merepresentasikan data
 produksi + schema terbaru, titik. Bila memang perlu, jalankan
 `npm run euks:seed:prodclone` secara eksplisit setelah refresh.
 
-## Perbaikan data legacy tanggal bisnis
+## Perbaikan data legacy tanggal bisnis (TD-014 — selesai di sumber)
 
 Data produksi lama menyimpan tanggal bisnis sebagai proyeksi timezone: midnight
 WIB ditulis sebagai `17:00:00` UTC hari sebelumnya. Migrasi
 `20260909100000_use_date_for_business_dates` mengubah kolom itu menjadi `DATE`
 dan **sengaja abort** bila menemukan jam bukan midnight, karena `::date` polos
-akan menggeser 151 hari absensi ke tanggal yang salah tanpa suara.
+akan menggeser hari absensi ke tanggal yang salah tanpa suara.
 
 `prisma/legacy-date-repair.sql` menyelesaikan itu sebelum migrasi berjalan.
 Skrip ini idempoten, hanya menyentuh clone, dan berhenti sendiri bila menemukan
@@ -220,19 +224,90 @@ Yang dikerjakan:
 3. Baris `AttendanceDay` duplikat dihapus setelah `Attendance` anaknya
    dipindahkan, sehingga tidak ada absensi siswa yang hilang.
 
-Verifikasi bawaan skrip: setiap pasangan `(kelas, tanggal, siswa)` harus tetap
-unik dan jumlahnya sama dengan jumlah baris `Attendance` yang tersisa.
-
 Ketiga konflik nyata diselesaikan **berdasarkan kebijakan pemilik data, bukan
 bukti**. Forensik tidak menemukan jejak koreksi; lihat TD-015 di
 [technical debt](../technical-debt/README.md) untuk rinciannya dan siapa yang
 harus mengonfirmasi.
+
+### Status: repair sudah permanen di produksi, jadi normalnya dilewati
+
+Repair itu diterapkan ke produksi pada 2026-09-14, dan migrasi date-only kini
+tercatat di riwayat produksi. Akibatnya **dump produksi hari ini sudah membawa
+kolom bertipe `date`**, bukan `timestamp without time zone`.
+
+Skrip repair hanya sah terhadap schema pra-migrasi: seluruh isinya —
+`date::time`, `AT TIME ZONE`, penulisan balik sebagai `::timestamp` —
+mengasumsikan kolom timestamp. Terhadap kolom `date`, PostgreSQL menolak
+`date::time` (`cannot cast type date to time without time zone`).
+
+Karena itu refresh **menentukan sendiri** apakah repair berlaku, dari tipe
+kolom nyata di clone:
+
+```text
+information_schema.columns
+  → tipe 7 kolom tanggal bisnis
+  → lib/legacy-date-repair.ts (fungsi murni)
+      semua `timestamp without time zone` → JALANKAN repair
+      semua `date`                        → LEWATI, repair tidak berlaku
+      campuran / tipe lain / kolom hilang → ABORT
+```
+
+Tujuh kolom itu persis yang dikonversi migrasi date-only: `AttendanceDay.date`,
+`SchoolHoliday.date`, `User.teachingSince`, `AdditionalDuty.startDate`,
+`StudentViolationPoint.occurredAt`, `BosEntry.occurredAt`, dan
+`SarprasItem.acquisitionDate`.
+
+Keputusannya diambil dari metadata schema, **bukan** dengan mencoba SQL lalu
+menangkap error — try/catch akan menyamarkan kegagalan lain sebagai "tidak perlu
+diperbaiki". Schema bercampur dianggap riwayat migrasi yang tidak konsisten dan
+membatalkan refresh, bukan ditambal oleh skrip data.
+
+Melewati repair **tidak** berarti melewati pemeriksaan. Pada kedua jalur, refresh
+memverifikasi ulang invariant yang dijamin migrasi date-only secara read-only:
+tidak boleh ada tabrakan `AttendanceDay(classId, date)` maupun
+`SchoolHoliday(date)`. Pelanggaran membatalkan refresh di titik itu, bukan nanti
+sebagai kegagalan unique constraint yang membingungkan.
+
+Skrip repair dan `prisma/legacy-date-analysis.sql` **dipertahankan apa adanya**:
+keduanya tetap satu-satunya jalur yang benar bila sebuah dump lama (pra-migrasi)
+perlu direstorasi ulang. Aturannya diuji di `tests/legacy-date-repair.test.ts`.
 
 Analisis read-only tanpa mengubah apa pun:
 
 ```bash
 npm run db:analyze-legacy-dates:prodclone
 ```
+
+Perintah itu memakai deteksi tipe yang sama: terhadap clone modern ia melaporkan
+bahwa tidak ada yang perlu dianalisis alih-alih gagal dengan error cast.
+
+## Bootstrap RBAC: backfill legacy juga sudah permanen di sumber
+
+Pola yang sama berlaku untuk backfill akses legacy → RBAC. Dump produksi dulu
+berasal dari schema pra-RBAC sehingga clone tiba tanpa keanggotaan sama sekali,
+dan `prisma/rbac-backfill-legacy.ts --apply` adalah jalur forward-nya.
+
+Sejak backfill diterapkan ke produksi, dump sudah membawa keanggotaan RBAC
+beserta marker `RbacMigration[legacy-access-backfill-v1]` berstatus `COMPLETED`.
+Apply ulang ditolak kontrak backfill sendiri — dan penolakan itu **benar**:
+memulihkan grant yang sudah dicabut admin akan merusak kesetaraan clone dengan
+produksi.
+
+Refresh membaca status marker itu dan memutuskan secara eksplisit:
+
+| Status marker di clone | Tindakan |
+|---|---|
+| `ABSENT` | Jalankan backfill: dump pra-RBAC, backfill adalah jalur forward |
+| `RUNNING` / `FAILED` | Jalankan backfill: kontrak backfill memang resumable |
+| `COMPLETED` | Lewati: keanggotaan sudah terbawa restore |
+| nilai lain | Abort |
+
+`prisma db seed` tetap selalu dijalankan pada kedua jalur — ia hanya menulis
+katalog role/permission dan idempoten. Setelah itu refresh memverifikasi
+kesiapan secara read-only: clone wajib benar-benar memiliki role **dan**
+keanggotaan, apa pun jalurnya. Nol pada salah satunya membatalkan refresh,
+karena aplikasi akan dapat login tetapi tanpa satu pun izin. Aturannya diuji di
+`tests/prodclone-rbac-bootstrap.test.ts`.
 
 ## Apa yang tidak disentuh
 
@@ -278,34 +353,32 @@ Aturan lain:
 - Password superuser clone dibuat acak sekali lalu disimpan di `.env.prodclone`.
   Clone memuat data siswa nyata: perlakukan kredensialnya seperti kredensial nyata.
 
-## Status saat ini: migrasi prodclone terblokir
+## Status saat ini: refresh berjalan sampai selesai
 
-`npm run db:prodclone:refresh` berhasil sampai restore (27 tabel, 16 migrasi),
-lalu **berhenti di langkah migrasi** — sesuai desain:
+`npm run db:prodclone:refresh` menyelesaikan seluruh tahapan. Hasil yang
+diharapkan terhadap produksi hari ini:
 
 ```text
-Applying migration `20260909100000_use_date_for_business_dates`
-ERROR: Date-only migration aborted: 151 non-midnight legacy value(s) require manual review
+Restore selesai: 42 tabel, 37 migrasi tercatat.
+TD-014       : dilewati (kolom sudah `date`), invariant diverifikasi
+migrate deploy: 44 tabel, 38 migrasi
+Backfill     : dilewati (marker COMPLETED), RBAC siap 22 role / 53 keanggotaan
+Validasi     : Student clone == Student produksi (840)
+Produksi     : identik sebelum & sesudah
 ```
 
-Audit di clone (bukan di produksi) menunjukkan:
+Jumlah `User` clone sengaja satu lebih banyak dari produksi: akun uji lokal
+ditambahkan oleh `scripts/ensure-local-test-user.ts`. Itu dilaporkan sebagai
+catatan, bukan kegagalan.
 
-- 151 baris `AttendanceDay` bernilai jam `17:00:00`, seluruhnya dalam rentang
-  2026-09-06 sampai 2026-09-11. Tabel lain bersih.
-- 22 pasangan `(classId, tanggal kalender)` akan bertabrakan bila dikonversi ke
-  `DATE`, sehingga unique constraint gagal.
+Dua tahap yang dulu wajib — repair tanggal legacy dan backfill RBAC — kini
+normalnya **dilewati** karena keduanya sudah permanen di produksi. Keduanya
+tetap ada di repositori dan akan berjalan otomatis bila sebuah dump lama
+memerlukannya; lihat dua bagian di atas.
 
-`17:00:00` adalah tengah malam WIB yang tersimpan sebagai UTC — penulis legacy
-menyimpan proyeksi zona waktu, bukan tanggal kalender. Ini **drift data
-produksi nyata**, bukan masalah workflow clone: migrasi yang sama akan gagal
-dengan cara yang sama bila dijalankan terhadap produksi.
-
-Sampai keputusan bisnisnya diambil, prodclone tetap berada pada schema produksi
-(16 migrasi). Aplikasi tetap boot di atasnya, tetapi halaman yang membutuhkan
-kolom baru akan gagal — misalnya `SchoolSetting.timeZone` belum ada.
-
-Jangan menambal ini dengan `db push --force-reset` atau migrasi baru. Lihat
-`docs/technical-debt/README.md`.
+Jangan menambal kegagalan migrasi dengan `db push --force-reset` atau migrasi
+baru. Bila `migrate deploy` gagal, laporkan pesan aslinya — itu menandakan drift
+atau migrasi hilang, bukan masalah clone.
 
 ## Konsep future workflow: rebase `sismepda_dev` dari prodclone
 
@@ -354,8 +427,20 @@ arsip dengan versi lebih baru — jangan lakukan itu, gunakan container clone.
 Clone belum pernah dibuat. Jalankan `npm run db:prodclone:refresh`.
 
 **Migrasi gagal**
-Jangan reset. Baca pesan aslinya, audit datanya di clone, lalu laporkan. Lihat
-bagian "Status saat ini" di atas.
+Jangan reset. Baca pesan aslinya, audit datanya di clone, lalu laporkan.
+
+**`cannot cast type date to time without time zone`**
+Gejala lama dari tahap TD-014 yang menjalankan skrip repair pra-migrasi terhadap
+dump yang kolomnya sudah bertipe `date`. Sudah diperbaiki: status repair kini
+ditentukan dari tipe kolom nyata. Bila pesan ini muncul lagi, berarti
+`lib/legacy-date-repair.ts` membaca tipe yang berbeda dari yang dipakai skrip —
+periksa itu, jangan meng-comment SQL-nya.
+
+**`Backfill legacy-access-backfill-v1 sudah COMPLETED`**
+Gejala lama dari tahap bootstrap yang selalu memaksa `--apply`. Sudah diperbaiki:
+refresh membaca marker `RbacMigration` dan melewati backfill bila sudah
+COMPLETED. Penolakan kontrak backfill itu sendiri benar dan tidak boleh
+dilemahkan.
 
 **DATABASE_URL salah**
 Pembungkus akan menolak dengan menyebut peran, file, dan nama database yang

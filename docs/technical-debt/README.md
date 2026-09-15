@@ -129,7 +129,7 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Impact:** Three students may carry an attendance status that does not match what actually happened that day. The affected data is a single school day and the rows are otherwise complete. **This is now live production data:** the repair was applied to production on 2026-09-14 (15 collisions resolved, 15 rows discarded, 178 dates shifted), so the policy choice is no longer hypothetical and can only be corrected through the application.
 - **Reason:** "Later" here means "entered afterwards", not "verified correct"; no history survived that records the true final status.
 - **Direction:** Confirm the three statuses with the teachers who entered them — IX B: Krisna Purnawati, M.Pd and Muhammad Yoga Saputra, S.Pd; IX F: Aviana Trisepti Rusdiana, S.Pd; VII A: Miss Novita Hidayatun Nisa, S.Pd — and correct any that disagree before this data is trusted for reporting.
-- **Exit criteria:** Each of the three 2026-09-07 statuses is confirmed or corrected against the entering teacher, recorded in the repair script, and the repair still reproduces on a fresh clone.
+- **Exit criteria:** Each of the three 2026-09-07 statuses is confirmed or corrected against the entering teacher, and the correction is applied through the application. Note that a fresh clone no longer re-runs the repair: production already carries the repaired `date` columns, so `db:prodclone:refresh` detects that and skips it (see [local database workflow](../operations/local-database-workflow.md)). The clone therefore reflects whatever production holds, which is where any correction must land.
 
 ## TD-016 — Backup media belum terjadwal di produksi, dan byte legacy belum dipensiunkan
 
