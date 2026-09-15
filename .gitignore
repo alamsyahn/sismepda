@@ -32,6 +32,11 @@ app/generated/prisma/
 # (nama host, path, ukuran) dan tidak pernah boleh masuk Git.
 .backup-sets/
 
+# Sesi/kredensial WhatsApp (Baileys). Siapa pun yang memegang isinya dapat
+# mengirim pesan sebagai akun sekolah: tidak pernah boleh masuk Git. Produksi
+# menyimpannya di volume Docker terpisah, bukan di dalam image.
+.whatsapp-session/
+
 # Common ignores
 node_modules
 .next/
