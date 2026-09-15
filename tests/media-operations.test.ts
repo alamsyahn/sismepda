@@ -400,9 +400,9 @@ test("backup: arsip tanpa manifest ditolak", { skip: !hasTar }, async (t) => {
   assert.notEqual(result.status, 0, "arsip tanpa manifest seharusnya gagal")
 })
 
-// ── Alias perintah ───────────────────────────────────────────────────────────
+// ── Perintah prodclone ───────────────────────────────────────────────────────
 
-test("package.json: alias lama tetap mengarah ke perintah kanonik", async () => {
+test("package.json: perintah prodclone kanonik tersedia", async () => {
   const pkg = JSON.parse(await readFile(path.join(PROJECT, "package.json"), "utf8"))
   const scripts = pkg.scripts as Record<string, string>
 
@@ -418,8 +418,9 @@ test("package.json: alias lama tetap mengarah ke perintah kanonik", async () => 
     assert.ok(scripts[name], `perintah kanonik hilang: ${name}`)
   }
 
-  // Alias lama tidak boleh dihapus: automation existing masih memakainya.
-  assert.equal(scripts["db:refresh-prodclone"], "npm run db:prodclone:refresh")
+  // Alias lama dihapus: satu fungsi, satu nama. Kontrak penuh permukaan CLI
+  // ada di tests/cli-surface.test.ts.
+  assert.equal(scripts["db:refresh-prodclone"], undefined)
 })
 
 test("package.json: tidak ada perintah yang menjalankan migrasi media otomatis", async () => {

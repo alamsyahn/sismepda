@@ -44,11 +44,6 @@ npm run media:prodclone:sync # sinkronkan MEDIA dari produksi (incremental)
 npm run prodclone:refresh    # wrapper: database lalu media
 ```
 
-Perintah memakai konvensi `<resource>:<scope>:<action>`. Nama lama
-`db:refresh-prodclone` masih bekerja sebagai alias ke `db:prodclone:refresh`
-agar automation yang sudah ada tidak patah; dokumentasi dan skrip baru memakai
-nama kanonik.
-
 Database dan media adalah **dua lifecycle terpisah**. `db:prodclone:refresh`
 tidak menyentuh media sama sekali, dan `dev:prodclone` tidak pernah melakukan
 refresh diam-diam — ia hanya menjalankan aplikasi terhadap clone yang ada.
@@ -61,12 +56,61 @@ Kedua perintah mencetak target yang dipakai sebelum Next.js start, misalnya:
 [db:local] database development lokal → localhost:5432/sismepda_dev (schema sismepda_local)
 ```
 
-`npm run dev` yang lama tetap ada dan tidak berubah perilakunya: ia membaca
-`.env` langsung tanpa pembungkus, jadi ia selalu memakai `DATABASE_URL` apa pun
-yang tertulis di sana. Gunakan `dev:local` bila ingin jaminan eksplisit.
+## Permukaan perintah
 
-Prisma Studio mengikuti pola sama: `npm run db:studio:local` dan
-`npm run db:studio:prodclone`.
+Konvensi: `<domain>:<action>:<target>`. **Setiap perintah yang dapat membaca
+atau menulis sebuah database menyebut targetnya pada namanya**, dan target itu
+diselesaikan `scripts/with-db.ts` dari file environment peran — bukan dari
+`.env` yang kebetulan aktif. Tidak ada perintah generik tanpa target, dan tidak
+ada alias: satu fungsi punya tepat satu nama.
+
+| Perintah | Target | Fungsi |
+| --- | --- | --- |
+| `dev:local` | `sismepda_dev` | Jalankan aplikasi |
+| `dev:prodclone` | `sismepda_prodclone` | Jalankan aplikasi di atas clone |
+| `db:migrate:local` | `sismepda_dev` | `prisma migrate dev` |
+| `db:seed:local` | `sismepda_dev` | `prisma db seed` |
+| `db:setup:local` | `sismepda_dev` | migrate lalu seed |
+| `db:studio:local` | `sismepda_dev` | Prisma Studio |
+| `db:studio:prodclone` | `sismepda_prodclone` | Prisma Studio |
+| `db:ensure-test-user:local` | `sismepda_dev` | Akun uji development |
+| `db:bootstrap:local` | `sismepda_dev` | Akun uji + data uji E-UKS |
+| `db:prodclone:refresh` | `sismepda_prodclone` | Buat ulang database clone |
+| `media:prodclone:sync` | clone lokal | Sinkronkan media dari produksi |
+| `prodclone:refresh` | `sismepda_prodclone` | Orkestrasi database + media |
+| `euks:seed:local` / `euks:clear:local` | `sismepda_dev` | Data uji E-UKS |
+| `euks:seed:prodclone` / `euks:clear:prodclone` | `sismepda_prodclone` | Data uji E-UKS di clone |
+| `media:migrate:local` | `sismepda_dev` | Migrasi bytea → media kanonik |
+| `media:migrate:verify:local` | `sismepda_dev` | Verifikasi referensi media |
+| `media:migrate:production` | produksi | Migrasi media lewat migrator produksi |
+| `backup:production` / `backup:production:verify` | produksi | Backup lengkap & verifikasinya |
+| `db:analyze-legacy-dates:prodclone` | `sismepda_prodclone` | Analisis tanggal legacy, read-only |
+| `db:rbac-backfill` | ditentukan operator | Backfill RBAC; `--apply` wajib `--database=<nama>` |
+| `deploy:check` / `preflight` / `prod` / `status` | produksi | Orkestrasi deployment |
+| `build` / `start` / `lint` / `test` / `postinstall` | — | Standar Node |
+
+Tiga catatan penamaan yang disengaja:
+
+- **Tidak ada `npm run dev`.** Perintah itu dulu membaca `.env` langsung tanpa
+  guard, sehingga perintah yang sama bisa menjalankan aplikasi di atas database
+  mana pun tergantung isi file. Ketiadaan shortcut lebih baik daripada shortcut
+  yang ambigu.
+- **`db:rbac-backfill` tanpa sufiks target.** Perintah ini tidak memilih
+  database dari file peran; operator mengetik sendiri `--database=<nama>` dan
+  skrip menolak bila `current_database()` tidak sama persis. Targetnya adalah
+  argumen, jadi menempelkan sufiks peran pada namanya justru berbohong.
+- **`db:analyze-legacy-dates:prodclone` memakai sufiks** walau tidak lewat
+  `with-db.ts`: ia membaca `.env.prodclone` sendiri dan menjalankan
+  `assertDestroyableClone`, sehingga perannya tetap satu dan layak
+  terlihat di nama perintah.
+
+Tidak ada `db:migrate:production`, `db:seed:production`, atau
+`db:studio:production`, dan tidak akan ditambahkan: perubahan schema produksi
+hanya boleh lewat orkestrasi deployment. `tests/cli-surface.test.ts` mengunci
+seluruh aturan di atas — perintah kanonik yang wajib ada, nama lama yang
+dilarang muncul kembali, keharusan memakai `with-db.ts`, dan larangan jalur
+pintas produksi.
+
 
 ## Cara switching diimplementasikan
 
@@ -153,7 +197,7 @@ Rincian tiap langkah:
 
 Data uji synthetic **tidak** dibuat oleh refresh. Clone merepresentasikan data
 produksi + schema terbaru, titik. Bila memang perlu, jalankan
-`npm run dev:euks-seed` secara eksplisit setelah refresh.
+`npm run euks:seed:prodclone` secara eksplisit setelah refresh.
 
 ## Perbaikan data legacy tanggal bisnis
 
@@ -187,7 +231,7 @@ harus mengonfirmasi.
 Analisis read-only tanpa mengubah apa pun:
 
 ```bash
-npm run db:analyze-legacy-dates
+npm run db:analyze-legacy-dates:prodclone
 ```
 
 ## Apa yang tidak disentuh
@@ -276,7 +320,7 @@ prodclone terbaru
 → backup sismepda_dev ke file (wajib, diverifikasi dapat di-restore)
 → recreate sismepda_dev
 → restore/copy dari prodclone
-→ bootstrap lokal (npm run dev:bootstrap)
+→ bootstrap lokal (npm run db:bootstrap:local)
 → akun uji lokal
 → fixture synthetic
 ```

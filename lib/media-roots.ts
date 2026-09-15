@@ -54,7 +54,7 @@ export function decideMediaRoot(env: {
     }
   }
 
-  // Tanpa peran (mis. `npm run dev` telanjang, script satuan, build) akar dasar
+  // Tanpa peran (mis. script satuan atau build, yang tidak lewat with-db) akar dasar
   // dipakai apa adanya. Ia tetap ter-gitignore dan tetap terpisah dari kedua
   // direktori peran, jadi tidak ada yang tertukar diam-diam.
   return { path: DEVELOPMENT_MEDIA_DIRECTORY, source: "default", role: null }

@@ -372,7 +372,7 @@ const gradeAgeYears: Record<string, number> = { VII: 12, VIII: 13, IX: 14 }
 /**
  * Melengkapi demografi yang masih kosong. Nilai asli tidak pernah ditimpa:
  * kalau `gender`/`birthDate` sudah terisi, nilainya dipakai apa adanya dan
- * ditandai bukan hasil generator sehingga `dev:euks-clear` tidak menyentuhnya.
+ * ditandai bukan hasil generator sehingga `euks:clear:*` tidak menyentuhnya.
  */
 export function planDemographics(
   rng: Rng,

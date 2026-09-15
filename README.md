@@ -14,8 +14,8 @@ Sistem operasional sekolah berbasis Next.js 16, Auth.js, Prisma 7, dan PostgreSQ
 
 ```bash
 npm install
-npm run db:setup
-npm run dev
+npm run db:setup:local
+npm run dev:local
 ```
 
 Buka `http://localhost:3000`.

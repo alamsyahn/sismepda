@@ -1,7 +1,7 @@
 /**
  * Memastikan tepat satu akun uji khusus development/local ada di database lokal.
  *
- * Dipanggil manual (`npm run db:ensure-test-user`) atau setelah database lokal
+ * Dipanggil manual (`npm run db:ensure-test-user:local`) atau setelah database lokal
  * ditimpa dari hasil restore, BUKAN pada start aplikasi. Script ini hanya
  * menyentuh satu baris User; tidak ada delete, truncate, reset, atau perubahan
  * schema, dan tidak ada data siswa/guru/kelas/absensi/setting yang dibaca-tulis.
@@ -98,7 +98,7 @@ async function main() {
 
   if (!systemRole) {
     console.error(
-      `[ensure-local-test-user] Role "${SYSTEM_ADMIN_ROLE_KEY}" belum ada. Jalankan \`npm run db:seed\` lebih dulu agar registry RBAC terpasang.`,
+      `[ensure-local-test-user] Role "${SYSTEM_ADMIN_ROLE_KEY}" belum ada. Jalankan \`npm run db:seed:local\` lebih dulu agar registry RBAC terpasang.`,
     )
     process.exitCode = 1
     return

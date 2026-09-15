@@ -1,7 +1,8 @@
 /**
  * Generator data uji (synthetic) E-UKS — KHUSUS DEVELOPMENT/LOCAL.
  *
- * Dijalankan manual: `npm run dev:euks-seed [-- --seed=12345]`.
+ * Dijalankan manual: `npm run euks:seed:local [-- --seed=12345]`
+ * (atau `npm run euks:seed:prodclone` untuk clone lokal produksi).
  * TIDAK PERNAH dipanggil oleh build, migrasi, `prisma db seed`, startup
  * aplikasi, Docker, atau CI. Tidak boleh menyentuh database produksi dalam
  * kondisi apa pun.
@@ -47,7 +48,7 @@ import {
 } from "../lib/school-date"
 import { resolveSchoolTimeZone } from "../lib/school-time-zone"
 
-const LOG = "[dev:euks-seed]"
+const LOG = "[euks:seed]"
 
 // --- Guard A-E: sebelum koneksi apa pun dibuka ------------------------------
 const decision = planEuksTestData(process.env)

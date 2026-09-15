@@ -96,7 +96,7 @@ Akar penyimpanan ditentukan variabel lingkungan `MEDIA_STORAGE_ROOT`.
   | --- | --- |
   | `npm run dev:local` | `.media/local/` |
   | `npm run dev:prodclone` | `.media/prodclone/` |
-  | `npm run dev` (tanpa peran) | `.media/` |
+  | skrip satuan tanpa peran (mis. `next build`) | `.media/` |
 
   Pemisahan ini disengaja: media hasil sinkronisasi produksi tidak boleh
   bercampur dengan media uji lokal, karena setelah tercampur tidak ada cara
@@ -196,9 +196,9 @@ medianya masih di bytea akan bekerja persis seperti sebelumnya.
 ## Prosedur migrasi
 
 ```bash
-npm run media:migrate -- --dry-run   # inspeksi: kandidat, kategori, total byte
-npm run media:migrate                # pindahkan (memakai DATABASE_URL saat ini)
-npm run media:migrate:local          # eksplisit ke database development lokal
+npm run media:migrate:local -- --dry-run   # inspeksi: kandidat, kategori, total byte
+npm run media:migrate:local                # pindahkan (database development lokal)
+npm run media:migrate:verify:local         # verifikasi hasilnya
 ```
 
 Sifat script (`scripts/migrate-media.ts`):
@@ -413,9 +413,6 @@ gagal, database **tidak** di-rollback dan perintah melaporkan kegagalan sebagian
 secara eksplisit — mengklaim "prodclone refresh berhasil" dalam keadaan itu akan
 membuat operator menguji aplikasi terhadap data yang tidak lengkap tanpa
 menyadarinya. Logika pelaporannya ada di `lib/prodclone-refresh.ts`.
-
-Alias lama `db:refresh-prodclone` tetap bekerja dan meneruskan ke
-`db:prodclone:refresh`, sehingga automation yang sudah ada tidak patah.
 
 ## Aturan untuk fitur baru
 

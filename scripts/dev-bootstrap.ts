@@ -1,7 +1,7 @@
 /**
  * Bootstrap database development SETELAH restore production → local selesai.
  *
- * `npm run dev:bootstrap [-- --seed=12345]`
+ * `npm run db:bootstrap:local [-- --seed=12345]`
  *
  * Urutan:
  *   1. verifikasi database benar-benar development (guard fail-closed);
@@ -20,7 +20,7 @@ import { createRequire } from "node:module"
 import { REFUSAL_PREFIX, planEuksTestData } from "../lib/euks-test-data"
 import { planLocalTestUser } from "../lib/local-test-user"
 
-const LOG = "[dev:bootstrap]"
+const LOG = "[db:bootstrap:local]"
 const tsxCli = createRequire(import.meta.url).resolve("tsx/cli")
 
 // Guard dievaluasi lebih dulu supaya bootstrap berhenti sebelum langkah apa pun

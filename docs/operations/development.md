@@ -4,7 +4,7 @@ Requirements: Node/npm and PostgreSQL. Copy `.env.example` to untracked `.env` a
 
 ```bash
 npm install
-npm run db:setup       # migrate dev + idempotent seed
+npm run db:setup:local # migrate dev + idempotent seed, LOCAL database only
 npm run db:rbac-backfill                            # RBAC legacy backfill, dry-run report
 npm run db:rbac-backfill -- --apply --database=sismepda_dev   # apply once to the local DB
 npm run dev:local      # development database, target printed before Next starts
@@ -12,13 +12,13 @@ npm run dev:local      # development database, target printed before Next starts
 
 For users without database-creation rights, use a dedicated schema query parameter such as `?schema=sismepda_local`; runtime and Prisma CLI both honor it. Generated Prisma client is under `app/generated/prisma/`.
 
-Two local databases exist and are selected by script, not by editing `.env`: `npm run dev:local` (persistent `sismepda_dev`) and `npm run dev:prodclone` (disposable clone of production). Bare `npm run dev` still reads `.env` directly with no guard. See [local database workflow](local-database-workflow.md) for roles, guardrails, and the clone refresh command.
+Two local databases exist and are selected by script, not by editing `.env`: `npm run dev:local` (persistent `sismepda_dev`) and `npm run dev:prodclone` (disposable clone of production). There is no bare `npm run dev`: every command that can read or write a database names its target, and the target is resolved by `scripts/with-db.ts` from the role's env file rather than from whatever `.env` happens to be active. See [local database workflow](local-database-workflow.md) for roles, guardrails, the full command surface, and the clone refresh command.
 
 ## Local test account
 
-`npm run db:ensure-test-user` (`scripts/ensure-local-test-user.ts`) guarantees exactly one development-only account for browser/E2E testing, separate from `prisma/seed.ts`. It is manual: run it after a production→local restore overwrote the local database, never on application start. Credentials come from the untracked `.env` (`ALLOW_LOCAL_TEST_USER`, `DEV_TEST_USER_EMAIL`, `DEV_TEST_USER_PASSWORD`, `DEV_TEST_USER_NAME`) and must never be committed or documented.
+`npm run db:ensure-test-user:local` (`scripts/ensure-local-test-user.ts`) guarantees exactly one development-only account for browser/E2E testing, separate from `prisma/seed.ts`. It is manual: run it after a production→local restore overwrote the local database, never on application start. Credentials come from the untracked `.env` (`ALLOW_LOCAL_TEST_USER`, `DEV_TEST_USER_EMAIL`, `DEV_TEST_USER_PASSWORD`, `DEV_TEST_USER_NAME`) and must never be committed or documented.
 
-The account is created with the legacy `role` column set to `ADMIN`, but that column is **not** what grants access: no module under `lib/` reads `LegacyRole` as an authorization path. Post-RBAC authority comes entirely from role membership, so the helper also ensures membership in the `system_admin` RBAC role. Without that step the account could log in yet hold zero permissions on a freshly bootstrapped local database (one that never ran the legacy backfill). Behavior is idempotent: a missing account is created, an existing one is never duplicated and only minimally repaired (`active`, `role`, password hash) when it could no longer log in, and role membership is upserted on the `(userId, roleId)` primary key. If the `system_admin` role does not exist yet, the helper exits nonzero and tells you to run `npm run db:seed` first rather than writing a half-configured account. `tests/local-test-user-rbac.test.ts` locks this contract, including that neither `prisma/seed.ts` nor `prisma/seed-rbac.ts` ever calls the helper.
+The account is created with the legacy `role` column set to `ADMIN`, but that column is **not** what grants access: no module under `lib/` reads `LegacyRole` as an authorization path. Post-RBAC authority comes entirely from role membership, so the helper also ensures membership in the `system_admin` RBAC role. Without that step the account could log in yet hold zero permissions on a freshly bootstrapped local database (one that never ran the legacy backfill). Behavior is idempotent: a missing account is created, an existing one is never duplicated and only minimally repaired (`active`, `role`, password hash) when it could no longer log in, and role membership is upserted on the `(userId, roleId)` primary key. If the `system_admin` role does not exist yet, the helper exits nonzero and tells you to run `npm run db:seed:local` first rather than writing a half-configured account. `tests/local-test-user-rbac.test.ts` locks this contract, including that neither `prisma/seed.ts` nor `prisma/seed-rbac.ts` ever calls the helper.
 
 Safety guards are pure functions in `lib/local-test-user.ts`, evaluated before any database connection opens, and all fail closed: `NODE_ENV` must not be `production`, `ALLOW_LOCAL_TEST_USER` must equal `"true"`, `DATABASE_URL` must parse as PostgreSQL with a local host and a development database name (the production name is not on the allowlist), and the email must use a reserved test domain. An unparsable `DATABASE_URL` aborts instead of falling back, so no path writes to production.
 
@@ -28,7 +28,7 @@ Sync direction is always production → local. Never modify production to match 
 
 `npm run db:prodclone:refresh` automates this forward path into the disposable clone: dump → restore → `prisma migrate deploy` → RBAC seed → legacy backfill → local test account, with guards that refuse any target that is not the local clone. See [local database workflow](local-database-workflow.md); do not reconstruct the steps by hand.
 
-`prisma migrate deploy` on this path is preceded by a legacy business-date repair (`prisma/legacy-date-repair.sql`), because older production data stored WIB midnight as `17:00:00` UTC. Inspect it read-only with `npm run db:analyze-legacy-dates`, which reports how many rows shift, which `(class, business date)` pairs collide, and which collisions are exact duplicates versus real conflicts. It never writes. See [local database workflow](local-database-workflow.md) for the details.
+`prisma migrate deploy` on this path is preceded by a legacy business-date repair (`prisma/legacy-date-repair.sql`), because older production data stored WIB midnight as `17:00:00` UTC. Inspect it read-only with `npm run db:analyze-legacy-dates:prodclone`, which reports how many rows shift, which `(class, business date)` pairs collide, and which collisions are exact duplicates versus real conflicts. It never writes. See [local database workflow](local-database-workflow.md) for the details.
 
 The archive's own version still decides the path. A **pre-RBAC** dump has no `UserRole`/`RolePermission`/`RbacMigration` rows, so restoring it into a post-RBAC database leaves zero role membership and no usable account — which is why the refresh restores into an empty database first and only then migrates forward. `--apply` on the backfill refuses to run unless the named database matches `current_database()`.
 
@@ -40,18 +40,22 @@ If the dump is already **post-RBAC**, the in-app restore path applies and its pr
 
 Synthetic data belongs to the development database. `npm run db:prodclone:refresh` deliberately does **not** generate it: the clone represents production data on the latest schema, nothing else. Run the generator explicitly if a clone needs fixtures.
 
-`npm run dev:bootstrap` verifies the target, ensures the local test account, then generates data.
+`npm run db:bootstrap:local` verifies the target, ensures the local test account, then generates data.
 
 ```bash
-npm run dev:bootstrap                 # test account + synthetic E-UKS
-npm run dev:euks-seed                 # only generate E-UKS data
-npm run dev:euks-seed -- --seed=12345 # reproducible dataset
-npm run dev:euks-clear                # remove only synthetic E-UKS data
+npm run db:bootstrap:local              # test account + synthetic E-UKS (local)
+npm run euks:seed:local                 # only generate E-UKS data
+npm run euks:seed:local -- --seed=12345 # reproducible dataset
+npm run euks:clear:local                # remove only synthetic E-UKS data
+npm run euks:seed:prodclone             # same, against the disposable clone
+npm run euks:clear:prodclone
 ```
+
+The `:prodclone` variants exist because the clone is a local, disposable database — not production. Both variants run under `scripts/with-db.ts`, so the role in the command name is the role that gets written; a mismatch between the named role and the env file's database aborts before any connection opens. There is deliberately no production variant.
 
 `scripts/generate-euks-test-data.ts` uses the real students already in the local database and never creates, deletes, or deactivates a student. It writes `EuksVisit` and `StudentHealthMeasurement` rows, and fills `Student.gender`/`birthDate` only where they are still empty. Heights never decrease, weight drifts gradually, BMI is derived from the pair, visit dates avoid holidays via the existing calendar rules, and gender-specific content (menstrual complaints, iron tablets) is never given to male students. Runs are reproducible: `--seed` fixes the dataset, and without it the generated seed is printed. Without a seed argument the dataset differs per run, so record the printed seed when reporting a UI bug.
 
-Re-running is idempotent: synthetic rows are cleared before regenerating, so nothing accumulates. `npm run dev:euks-clear` deletes only rows marked synthetic and resets only generator-filled demographics; real E-UKS entries, students, attendance, accounts, and settings are untouched.
+Re-running is idempotent: synthetic rows are cleared before regenerating, so nothing accumulates. `npm run euks:clear:local` (or `:prodclone`) deletes only rows marked synthetic and resets only generator-filled demographics; real E-UKS entries, students, attendance, accounts, and settings are untouched.
 
 Guards live in `lib/euks-test-data.ts` as pure functions evaluated before any connection opens, and all fail closed: `NODE_ENV` must not be `production`; `ALLOW_EUKS_TEST_DATA` must equal `"true"`; `DATABASE_URL` must parse as PostgreSQL with a local host and a database name matching `EXPECTED_DEV_DATABASE_NAME`. Docker service names and remote hosts are rejected, and after connecting the scripts re-check `current_database()` against the plan before writing. Any refusal prints `REFUSED: Synthetic E-UKS generation is not allowed for this database.` and performs no writes. These scripts are never invoked by `prisma db seed`, migrations, `npm run build`, Docker startup, or CI; they only run when you invoke them.
 

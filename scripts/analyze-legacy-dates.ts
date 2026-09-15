@@ -8,6 +8,11 @@
  *
  * Guard sengaja sama ketatnya dengan alur destruktif: analisis hanya boleh
  * menunjuk database clone lokal, tidak pernah produksi maupun `sismepda_dev`.
+ *
+ * CLI: `npm run db:analyze-legacy-dates:prodclone`. Target ada di namanya
+ * karena skrip ini membaca `.env.prodclone` langsung, bukan lewat
+ * `scripts/with-db.ts`, sehingga peran tidak terlihat dari perintah tanpa
+ * sufiks itu.
  */
 import { spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"

@@ -175,9 +175,9 @@ model Student {
   /// Nullable untuk alasan yang sama seperti birthDate.
   gender Gender?
   /// Menandai bahwa `gender` dan/atau `birthDate` baris ini diisi oleh
-  /// generator data uji development (`npm run dev:euks-seed`), bukan data
+  /// generator data uji development (`npm run euks:seed:local`), bukan data
   /// sekolah sesungguhnya. Generator hanya mengisi kolom yang masih NULL dan
-  /// tidak pernah menimpa nilai asli; `dev:euks-clear` mengembalikan kolom
+  /// tidak pernah menimpa nilai asli; `euks:clear:*` mengembalikan kolom
   /// bertanda ini ke NULL. Selalu false pada produksi.
   syntheticDemographics Boolean @default(false)
   classId String

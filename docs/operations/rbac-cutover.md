@@ -61,8 +61,8 @@ migrasi pending; bedakan itu dari galat koneksi atau lineage.
 
 Hanya `prisma migrate deploy` yang dipakai di produksi. **Jangan** gunakan
 `prisma migrate dev`, `prisma db push`, atau `prisma migrate reset` — ketiganya
-ada di `package.json` hanya untuk pengembangan lokal (`npm run db:migrate`,
-`npm run db:setup`).
+ada di `package.json` hanya untuk pengembangan lokal (`npm run db:migrate:local`,
+`npm run db:setup:local`).
 
 Karena migrasi bersifat additive, aplikasi lama tetap valid terhadap skema baru
 pada titik ini.

@@ -304,10 +304,12 @@ dilewati, dan `bytea` **dipertahankan**.
 
 ### Jalur eksekusi produksi
 
-`npm run media:migrate` (tanpa `:production`) memakai `DATABASE_URL` apa adanya
-dan **tidak dapat menyentuh produksi**: database produksi berada di jaringan
-Docker `internal=true` tanpa port yang dipetakan ke host. Perintah itu untuk
-database lokal/prodclone saja.
+`npm run media:migrate:local` menjalankan skrip yang sama terhadap database
+development lokal dan **tidak dapat menyentuh produksi**: targetnya dipatok
+`scripts/with-db.ts` ke `sismepda_dev`, dan database produksi berada di jaringan
+Docker `internal=true` tanpa port yang dipetakan ke host. Tidak ada varian tanpa
+sufiks target: satu-satunya jalur produksi adalah `media:migrate:production`,
+yang berjalan lewat container migrator.
 
 Perintah produksi menempuh jalur berikut, seluruhnya dari mesin operator:
 
@@ -368,7 +370,7 @@ kedua melewati baris yang sudah berkunci. Tidak pernah menyentuh produksi.
 
 ```bash
 npm run media:migrate:production -- --verify   # produksi, lewat migrator
-npm run media:migrate:verify                   # lokal/prodclone
+npm run media:migrate:verify:local             # database lokal
 ```
 
 Read-only. Melaporkan `total / migrated / valid / missing / mismatch /
@@ -419,7 +421,7 @@ bahan uji: keduanya tampil di seluruh halaman.
 2. Muat ulang halaman, pastikan gambar tampil (bukan ikon rusak).
 3. Periksa bahwa kunci tersimpan dan penyimpanan terisi:
    ```bash
-   npm run media:migrate:verify
+   npm run media:migrate:verify:local
    ```
 4. Hapus foto lewat UI bila tidak diperlukan lagi. Berkas yatim yang tertinggal
    tidak berbahaya dan dibersihkan pada phase garbage collection.
@@ -523,7 +525,7 @@ Jangan dijalankan terhadap produksi kecuali benar-benar bencana.
 7. Restore media ke target bersih, bukan menimpa direktori yang sedang dipakai.
 8. Pastikan kepemilikan berkas sesuai pengguna runtime container (`nextjs`,
    uid 1001). Jangan `chmod 777`; jangan menjalankan aplikasi sebagai root.
-9. Verifikasi referensi media dengan `npm run media:migrate:verify`.
+9. Verifikasi referensi media dengan `npm run media:migrate:verify:local`.
 10. Jalankan aplikasi.
 11. Verifikasi pascarestore: health check, gambar legacy, unggah baru.
 

@@ -2,8 +2,8 @@
  * Bagian bersama script data uji E-UKS: pembuatan client dan penghapusan
  * selektif. Khusus development — tidak pernah diimpor oleh kode aplikasi.
  *
- * Penghapusan dipusatkan di sini agar `dev:euks-seed` (yang membersihkan data
- * lamanya sendiri sebelum menulis ulang) dan `dev:euks-clear` tidak mungkin
+ * Penghapusan dipusatkan di sini agar `euks:seed:*` (yang membersihkan data
+ * lamanya sendiri sebelum menulis ulang) dan `euks:clear:*` tidak mungkin
  * memakai filter yang berbeda.
  */
 import { PrismaPg } from "@prisma/adapter-pg"

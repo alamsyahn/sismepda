@@ -1,7 +1,7 @@
 /**
  * Verifikasi migrasi media — READ-ONLY.
  *
- *   npm run media:migrate:verify
+ *   npm run media:migrate:verify:local
  *
  * Script ini tidak menulis berkas, tidak mengubah baris, dan tidak menghapus
  * apa pun. Ia menjawab satu pertanyaan: untuk setiap record yang mengklaim

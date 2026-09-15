@@ -1,7 +1,7 @@
 /**
  * Menghapus data uji (synthetic) E-UKS — KHUSUS DEVELOPMENT/LOCAL.
  *
- * `npm run dev:euks-clear`
+ * `npm run euks:clear:local` atau `npm run euks:clear:prodclone`
  *
  * Hanya baris bertanda synthetic yang dihapus. Siswa, kelas, absensi, akun,
  * pengaturan, dan seluruh data E-UKS asli tidak pernah disentuh. Guard yang
@@ -16,7 +16,7 @@ import {
   createDevPrismaClient,
 } from "./euks-test-data-store"
 
-const LOG = "[dev:euks-clear]"
+const LOG = "[euks:clear]"
 
 const decision = planEuksTestData(process.env)
 if (!decision.ok) {

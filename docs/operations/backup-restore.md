@@ -42,4 +42,4 @@ Before any restore: stop writes or establish a maintenance window; make and veri
 
 There is no automated schedule, retention policy, off-site transfer, encryption workflow, or routinely tested disaster-recovery drill in this repository. Production backup operations may instead target the existing database container; its live procedure and destination must be verified on the host rather than assumed.
 
-Restoring a production dump into a local database removes the development test account, since restore truncates the target tables. Re-create it with `npm run db:ensure-test-user` ([development](development.md)); never run that command against the production database.
+Restoring a production dump into a local database removes the development test account, since restore truncates the target tables. Re-create it with `npm run db:ensure-test-user:local` ([development](development.md)); never run that command against the production database.

@@ -47,6 +47,55 @@ test("menolak runtime produksi", () => {
   assert.match(reasonOf({ ...validEnv, NODE_ENV: "production" }), /NODE_ENV=production/)
 })
 
+test("mengizinkan clone lokal produksi sebagai target data synthetic", () => {
+  // `euks:seed:prodclone` menjalankan generator di bawah peran prodclone:
+  // `with-db.ts` menyetel DATABASE_URL dan EXPECTED_DEV_DATABASE_NAME sekaligus,
+  // jadi kedua nilai itulah yang diuji di sini. Clone adalah database lokal
+  // yang disposable, bukan produksi.
+  const decision = planEuksTestData({
+    ALLOW_EUKS_TEST_DATA: "true",
+    EXPECTED_DEV_DATABASE_NAME: "sismepda_prodclone",
+    DATABASE_URL: "postgresql://u:***@localhost:5434/sismepda_prodclone",
+  })
+  assert.equal(decision.ok, true)
+  if (!decision.ok) return
+  assert.equal(decision.plan.databaseName, "sismepda_prodclone")
+})
+
+test("peran yang tertukar gagal tertutup meski keduanya database lokal", () => {
+  // Menjalankan varian :prodclone sementara DATABASE_URL menunjuk sismepda_dev
+  // (atau sebaliknya) harus batal, bukan menulis ke database yang salah.
+  assert.match(
+    reasonOf({
+      ALLOW_EUKS_TEST_DATA: "true",
+      EXPECTED_DEV_DATABASE_NAME: "sismepda_prodclone",
+      DATABASE_URL: "postgresql://u:***@localhost:5432/sismepda_dev",
+    }),
+    /tidak sama dengan EXPECTED_DEV_DATABASE_NAME/,
+  )
+  assert.match(
+    reasonOf({
+      ALLOW_EUKS_TEST_DATA: "true",
+      EXPECTED_DEV_DATABASE_NAME: "sismepda_dev",
+      DATABASE_URL: "postgresql://u:***@localhost:5434/sismepda_prodclone",
+    }),
+    /tidak sama dengan EXPECTED_DEV_DATABASE_NAME/,
+  )
+})
+
+test("nama database produksi ditolak meski EXPECTED menyebutnya", () => {
+  // Pertahanan terhadap .env yang salah isi: menyebut "sismepda" pada kedua
+  // sisi tidak boleh membuat guard setuju.
+  assert.match(
+    reasonOf({
+      ALLOW_EUKS_TEST_DATA: "true",
+      EXPECTED_DEV_DATABASE_NAME: "sismepda",
+      DATABASE_URL: "postgresql://u:***@localhost:5432/sismepda",
+    }),
+    /bukan database development/,
+  )
+})
+
 test("menolak saat ALLOW_EUKS_TEST_DATA tidak persis true", () => {
   for (const value of [undefined, "", "1", "TRUE", "yes", "false"]) {
     assert.match(reasonOf({ ...validEnv, ALLOW_EUKS_TEST_DATA: value }), /ALLOW_EUKS_TEST_DATA/)

@@ -17,8 +17,11 @@
  * Ia memakai DATABASE_URL apa adanya; pilih target lewat `scripts/with-db.ts`
  * seperti perintah database lain (lihat docs/operations/local-database-workflow.md).
  *
- *   npm run media:migrate -- --dry-run     inspeksi saja, tanpa menulis
- *   npm run media:migrate                  migrasi sungguhan
+ *   npm run media:migrate:local -- --dry-run   inspeksi saja, tanpa menulis
+ *   npm run media:migrate:local                migrasi sungguhan (database lokal)
+ *
+ * Produksi TIDAK memakai perintah ini secara langsung: jalurnya
+ * `npm run media:migrate:production` (lihat scripts/migrate-media-production.ts).
  */
 
 // Klien bersama, bukan `new PrismaClient()`: koneksi repo ini memakai adapter
