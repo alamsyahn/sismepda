@@ -161,3 +161,13 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Reason:** Penghapusan otomatis tanpa uji coba nyata lebih berisiko daripada disk terisi perlahan.
 - **Direction:** Sambungkan `selectExpiredSets` ke perintah penghapusan yang mensyaratkan konfirmasi eksplisit dan mencetak daftar sebelum menghapus.
 - **Exit criteria:** Penghapusan retensi berjalan terjadwal di produksi, dengan dry-run sebagai default.
+
+## TD-020 — Berkas media yatim menumpuk saat referensi diganti
+
+- **Area / severity:** Operations / storage hygiene — **Low**
+- **Current condition:** Mengganti media yang sudah ada (mis. foto fasilitas E-UKS) menulis berkas baru dengan kunci UUID baru lalu memindahkan referensi database; berkas lama tetap tinggal di volume tanpa ada yang menunjuknya. Tidak ada proses yang mengumpulkannya.
+- **Evidence:** Inventaris read-only produksi 2026-09-15: volume `sismepda_media_data` memuat 21 berkas sementara hanya 18 kunci yang direferensikan database. Tiga berkas yatim: `euks/facility/2e480a1e-7acb-4fab-b032-e381cb844864.jpg`, `euks/facility/64900353-df08-4c25-995c-437f2260e107.jpg`, `euks/facility/c50de1c3-c52d-472f-80f8-ec2fdd07877c.jpg`. Konsisten dengan 11 `EUKS_FACILITY_PHOTO_UPDATED` atas 8 fasilitas di AuditLog.
+- **Impact:** Volume dan arsip backup media tumbuh melebihi kebutuhan. Tidak merusak apa pun: kunci selalu UUID baru, sehingga berkas yatim tidak pernah bertabrakan dengan migrasi media legacy maupun unggahan berikutnya.
+- **Reason:** Penghapusan berkas atas dasar pemindaian referensi berisiko menghapus berkas yang baru saja ditulis tetapi referensinya belum tersimpan. Menunda lebih murah daripada kehilangan media.
+- **Direction:** Pemindaian referensi yang aman di seluruh sumber media, ditambah masa tenggang berdasarkan mtime berkas, dengan dry-run sebagai default. Jangan dijalankan bersamaan dengan migrasi media legacy.
+- **Exit criteria:** Garbage collection berjalan terjadwal dengan dry-run default, dan jumlah berkas volume sama dengan jumlah kunci yang direferensikan ditambah hanya berkas dalam masa tenggang.

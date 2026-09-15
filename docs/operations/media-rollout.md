@@ -291,18 +291,81 @@ belum pernah ada.
 secara eksplisit dan menolak set bootstrap untuk tujuan migrasi.
 
 ```bash
-npm run media:migrate -- --dry-run   # nol tulisan
-# tinjau keluaran, lalu:
-npm run media:migrate
+npm run media:migrate:production -- --dry-run   # nol tulisan
+# tinjau keluaran, lalu — hanya setelah backup lengkap yang baru:
+npm run media:migrate:production -- --apply --backup-set <direktori set lokal>
 ```
 
 Migrasi bersifat idempoten dan dapat diulang: baris yang sudah punya kunci
 dilewati, dan `bytea` **dipertahankan**.
 
+### Jalur eksekusi produksi
+
+`npm run media:migrate` (tanpa `:production`) memakai `DATABASE_URL` apa adanya
+dan **tidak dapat menyentuh produksi**: database produksi berada di jaringan
+Docker `internal=true` tanpa port yang dipetakan ke host. Perintah itu untuk
+database lokal/prodclone saja.
+
+Perintah produksi menempuh jalur berikut, seluruhnya dari mesin operator:
+
+```text
+npm run media:migrate:production -- --dry-run
+  → ssh smpn2
+    → docker compose -f deploy.yaml -f compose.media.yaml --env-file /etc/sismepda/sismepda.env
+      → --profile migration run --rm migrate      (container sekali-jalan)
+        → DATABASE_URL produksi lewat jaringan `database` (tetap internal=true)
+        → volume sismepda_media_data ter-mount di /app/media
+          → npx tsx scripts/migrate-media.ts --dry-run
+```
+
+Container `migrate` adalah satu-satunya tempat yang sah: runner aplikasi adalah
+build standalone Next **tanpa `tsx`**, sedangkan image migrator memuat `tsx`,
+`scripts/`, `lib/`, dan Prisma client hasil generate. Sejak overlay media
+memasang volume yang sama ke service `migrate`, migrator menulis ke penyimpanan
+kanonik yang sama dengan yang dibaca aplikasi — bukan ke writable layer
+container yang lenyap saat `--rm`.
+
+**Mode wajib disebutkan.** Tanpa flag, perintah membatalkan dan mencetak
+pemakaian; tidak ada default yang menulis.
+
+| Perintah | Menulis | Gate backup |
+|---|---|---|
+| `-- --dry-run` | tidak | tidak diperlukan |
+| `-- --verify` | tidak | tidak diperlukan |
+| `-- --apply --backup-set <dir>` | ya | wajib, `authorizeLegacyMediaMigration` |
+
+Sebelum menjalankan skripnya, jalur remote membatalkan bila: overlay media tidak
+ada, skrip tidak ada di dalam image, `npx` tidak tersedia, atau `/app/media`
+ternyata bukan mount (dibandingkan lewat device id direktori dan induknya).
+
+**Prasyarat backup harus BARU.** Set yang dibuat sebelum gelombang unggahan
+terakhir tidak sah untuk migrasi meski berstatus `complete`: memulihkannya akan
+mengembalikan volume ke keadaan lama sementara database menunjuk kunci yang
+lebih baru. Buat set baru, verifikasi dengan
+`npm run backup:production:verify -- <direktori set lokal>`, lalu pakai
+direktori itu untuk `--backup-set`.
+
+**Berhenti** bila: gate backup menolak, jumlah kandidat skrip berbeda dari
+inventaris SQL read-only, atau dry-run melaporkan `invalid`/`errors` bukan nol.
+
+### Menguji jalur eksekusinya
+
+```bash
+docker build --target migrator -t sismepda-migrator:itest .
+bash scripts/media-migration-integration-test.sh
+```
+
+Membangun image migrator nyata, menjalankannya terhadap database sekali pakai
+dan volume media sementara, lalu membuktikan: skrip + `tsx` + `lib` ada di dalam
+image, `/app/media` adalah mount, dry-run tidak mengubah baris maupun berkas,
+migrasi sungguhnya menulis kunci + berkas, byte legacy tetap utuh, dan eksekusi
+kedua melewati baris yang sudah berkunci. Tidak pernah menyentuh produksi.
+
 ## PHASE 7 — Verifikasi migrasi
 
 ```bash
-npm run media:migrate:verify
+npm run media:migrate:production -- --verify   # produksi, lewat migrator
+npm run media:migrate:verify                   # lokal/prodclone
 ```
 
 Read-only. Melaporkan `total / migrated / valid / missing / mismatch /

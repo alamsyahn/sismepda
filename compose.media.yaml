@@ -32,6 +32,24 @@ services:
     volumes:
       - media:/app/media
 
+  # Migrator memakai VOLUME DAN AKAR YANG SAMA dengan app.
+  #
+  # Migrasi media legacy menulis berkas ke penyimpanan kanonik lalu memperbarui
+  # referensi database. Bila migrator menulis ke tempat lain — volume terpisah
+  # atau writable layer container — database produksi akan menunjuk kunci yang
+  # tidak pernah bisa dibaca aplikasi, dan berkasnya hilang begitu container
+  # sekali-jalan itu dibuang.
+  #
+  # Service ini ada di profil `migration`, jadi ia tidak pernah ikut
+  # `compose up`; ia hanya hidup saat operator menjalankannya lewat
+  # `compose run --rm`. Menambahkan mount di sini tidak mengubah apa pun pada
+  # container yang sedang berjalan.
+  migrate:
+    environment:
+      MEDIA_STORAGE_ROOT: /app/media
+    volumes:
+      - media:/app/media
+
 volumes:
   # Nama ditulis eksplisit, bukan dibiarkan diturunkan dari nama project.
   # Tanpa `name:`, Docker menamai volume `<project>_media`, sehingga perubahan

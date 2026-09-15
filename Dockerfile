@@ -31,6 +31,14 @@ COPY lib ./lib
 # impor seperti "@/lib/rbac-legacy" pada lib/rbac-backfill.ts. Tanpa berkas ini
 # perintah backfill legacy gagal MODULE_NOT_FOUND di dalam image.
 COPY prisma.config.ts package.json tsconfig.json ./
+# Perkakas operasional yang dijalankan operator DI DALAM image ini, bukan di
+# runner: runner adalah build standalone Next tanpa tsx, sehingga satu-satunya
+# tempat yang dapat mengeksekusi skrip TypeScript di produksi adalah di sini.
+# Yang membutuhkannya hari ini: scripts/migrate-media.ts dan
+# scripts/verify-media-migration.ts (lihat docs/operations/media-rollout.md
+# PHASE 6). Isinya sumber saja — tanpa cache, tanpa test, tanpa rahasia — dan
+# tidak pernah ikut ke image runner, yang tetap lean.
+COPY scripts ./scripts
 # Deployment normal HANYA menjalankan migrate deploy. Seed adalah operasi
 # bootstrap eksplisit untuk database baru (`--entrypoint sh migrate -c "npx
 # prisma db seed"`), bukan bagian rilis rutin: menjalankannya pada tiap deploy

@@ -19,6 +19,7 @@
     "media:migrate": "tsx scripts/migrate-media.ts",
     "media:migrate:local": "tsx scripts/with-db.ts local -- tsx scripts/migrate-media.ts",
     "media:migrate:verify": "tsx scripts/verify-media-migration.ts",
+    "media:migrate:production": "tsx scripts/migrate-media-production.ts",
     "media:migrate:verify:local": "tsx scripts/with-db.ts local -- tsx scripts/verify-media-migration.ts",
     "db:studio:local": "tsx scripts/with-db.ts local -- prisma studio",
     "db:studio:prodclone": "tsx scripts/with-db.ts prodclone -- prisma studio",

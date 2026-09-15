@@ -59,3 +59,36 @@ test("perintah default migrator tidak menjalankan backfill legacy otomatis", () 
   // bukan ikut berjalan pada deploy/seed normal.
   assert.doesNotMatch(migratorStage(), /rbac-backfill-legacy/)
 })
+
+test("stage migrator menyertakan scripts/ untuk perkakas operasional", () => {
+  // Migrasi media legacy hanya dapat dijalankan di produksi dari dalam image
+  // ini: runner adalah build standalone Next tanpa tsx, dan database produksi
+  // berada di jaringan internal tanpa port terbuka. Tanpa COPY ini,
+  // `npm run media:migrate:production` gagal karena skripnya tidak ada.
+  assert.match(migratorStage(), /COPY scripts \.\/scripts/)
+})
+
+test("perintah default migrator tidak menjalankan migrasi media otomatis", () => {
+  // Deploy hanya boleh MENYEDIAKAN perkakasnya. Migrasi media legacy adalah
+  // operasi sekali-jalan yang dipicu operator setelah backup lengkap, bukan
+  // efek samping rilis rutin. Yang diuji adalah CMD — bukan komentar, yang
+  // memang menyebut nama skrip untuk menjelaskan alasan COPY di atasnya.
+  const cmd = migratorStage()
+    .split("\n")
+    .filter((line) => line.startsWith("CMD") || line.startsWith("ENTRYPOINT"))
+    .join("\n")
+  assert.ok(cmd.length > 0, "stage migrator harus punya CMD")
+  assert.doesNotMatch(cmd, /migrate-media/)
+  assert.doesNotMatch(cmd, /media:migrate/)
+})
+
+test("stage runner tetap lean: tidak ikut menyalin scripts/", () => {
+  // scripts/ hanya berguna bila ada tsx; runner tidak punya tsx, jadi
+  // menyalinnya ke sana hanya memperbesar permukaan image produksi.
+  const start = dockerfile.indexOf("AS runner")
+  assert.ok(start > 0, "stage runner harus ada")
+  const rest = dockerfile.slice(start)
+  const nextStage = rest.indexOf("\nFROM ")
+  const runnerStage = nextStage === -1 ? rest : rest.slice(0, nextStage)
+  assert.doesNotMatch(runnerStage, /COPY scripts/)
+})

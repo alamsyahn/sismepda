@@ -36,6 +36,14 @@ export const production = {
   envFile: "/etc/sismepda/sismepda.env",
   appService: "app",
   databaseService: "db",
+  /**
+   * Service sekali-jalan untuk perkakas operasional (migrasi Prisma, migrasi
+   * media legacy). Ada di profil compose `migration`, jadi ia tidak pernah ikut
+   * `compose up` — hanya hidup saat dipanggil `compose run --rm`.
+   */
+  migratorService: "migrate",
+  /** Profil compose yang mengaktifkan {@link migratorService}. */
+  migratorProfile: "migration",
   branch: "main",
   /** Dipakai hanya untuk memastikan origin memang repositori yang benar. */
   repositorySlug: "alamsyahn/sismepda",
