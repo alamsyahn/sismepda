@@ -71,6 +71,11 @@ The admin never writes a condition. `templateKeyFor()` picks one of four:
 `ABSENT_NONE` is a separate template rather than `ABSENT_PRESENT` with an empty
 list, because the NIHIL message has a different shape, not merely less content.
 
+Only the conditions a message type can actually reach are offered in the editor:
+`templateKeysForType()` gives the reminder card its two reminder conditions and
+the attendance card its two report conditions. All four still exist in storage —
+the filter is about which conditions that card can reach, not which are stored.
+
 ### Placeholders
 
 Scalars available to every template: `tanggal`, `waktu`, `nama_sekolah`,
@@ -78,20 +83,56 @@ Scalars available to every template: `tanggal`, `waktu`, `nama_sekolah`,
 `jumlah_siswa`, `jumlah_hadir`, `jumlah_tidak_hadir`, `jumlah_sakit`,
 `jumlah_izin`, `jumlah_dispensasi`, `jumlah_alfa`.
 
+`catatan_kelas_belum_rekap` renders the completeness note when classes are still
+missing and an empty string when every class has submitted, so the admin never
+needs a conditional. `placeholderGroups()` decides which variables the editor
+offers for the condition being edited, grouped as Umum / Jumlah / Bagian siap
+pakai / Daftar / Catatan.
+
+#### Composed sections
+
+`bagian_sakit`, `bagian_izin`, `bagian_alfa` and `bagian_dispensasi` each expand
+to a bold heading with its count followed by that status's list:
+
+```text
+*SAKIT — 3*
+• 7A — Ahmad
+```
+
+A status with no students still prints its heading (`*ALFA — 0*`) with no list
+and no fake bullet. The report exists partly to state that there were no Alfa
+that day; hiding the heading would leave the reader unsure whether the data was
+simply missing. Because empty placeholders leave blank lines behind,
+`renderTemplate()` collapses runs of blank lines and trims the result.
+
 Collection placeholders are restricted to the templates where they mean
-something: `daftar_kelas_belum_rekap` only on `MISSING_PENDING`, and
-`daftar_siswa_tidak_hadir` only on `ABSENT_PRESENT`. Each has its own item
-format and separator (one newline or a blank line), with its own placeholders:
+something: `daftar_kelas_belum_rekap` only on `MISSING_PENDING`, and the absence
+lists only on `ABSENT_PRESENT`. Each has its own item format and separator (one
+newline or a blank line), with its own placeholders:
 
 | Collection | Item placeholders |
 |---|---|
 | `daftar_kelas_belum_rekap` | `no`, `nama_kelas`, `tingkat`, `wali_kelas`, `jumlah_siswa_belum_diisi` |
 | `daftar_siswa_tidak_hadir` | `no`, `nama_siswa`, `nama_kelas`, `tingkat`, `status`, `keterangan` |
+| `daftar_sakit`, `daftar_izin`, `daftar_alfa`, `daftar_dispensasi` | `no`, `nama_siswa`, `nama_kelas`, `status`, `keterangan` |
+
+`daftar_siswa_tidak_hadir` is kept even though the built-in text now uses the
+`bagian_*` sections, so custom templates that list every absent student in one
+block keep working.
+
+There is no `nomor_absen` placeholder: `Student` has no attendance-number column,
+so within a class students are ordered by name.
+
+#### Ordering
+
+Absent rows are sorted by status (SAKIT → IZIN → ALFA → DISPENSASI), then by
+class using `sortClasses()` — the same natural class order the rest of the
+application uses, so `7B` precedes `8A` — then by student name. The order is
+therefore deterministic and never depends on the order the database returned
+rows.
 
 `wali_kelas` comes from `SchoolClass.homeroomUser` and `keterangan` from
 `Attendance.note`; both are real columns, and both fall back to `-` when empty.
-Absent rows are ordered SAKIT → IZIN → ALFA → DISPENSASI, which reproduces the
-grouping of the original message without needing conditionals in the template.
 
 ### Validation
 
@@ -107,23 +148,32 @@ through untouched.
 ### Fallback
 
 Fallback is per condition, not per row. Any condition that has no valid stored
-template uses the built-in text from `lib/whatsapp-template-defaults.ts`, which
-reproduces the message SISMEPDA sent before templates existed. A row whose JSON
-is corrupt or partially invalid therefore still sends the remaining three
-conditions normally, and an installation that never opens the editor sees no
-change at all. "Restore defaults" writes `NULL` rather than a copy of the
+template uses the built-in text from `lib/whatsapp-template-defaults.ts`. A row
+whose JSON is corrupt or partially invalid therefore still sends the remaining
+three conditions normally, and an installation that never opens the editor sees
+the built-in text. "Restore defaults" writes `NULL` rather than a copy of the
 built-in text, so later improvements to the defaults still reach that row.
 
-Two deliberate differences from the old text: the "Catatan: N kelas belum
-mengisi absensi" line on the attendance report and the per-status counts now
-always appear, because a template cannot know a condition. Both read `0` when
-they do not apply.
+Because a stored template is only ever a condition the admin explicitly saved,
+changing the built-in text never overwrites customised text: rows that kept
+`NULL` pick the new default up, rows with saved text keep theirs. That is why
+the `ABSENT_PRESENT` default could be rewritten into the grouped `bagian_*` shape
+without a data migration or any backfill.
+
+One deliberate difference from the pre-template text remains on the reminder
+message: the per-status counts always appear, because a template cannot know a
+condition. They read `0` when they do not apply. The attendance report no longer
+has this problem — `catatan_kelas_belum_rekap` is empty when every class has
+submitted.
 
 ### Preview
 
 The preview renders in the browser from labelled sample data in
-`lib/whatsapp-template-sample.ts`. It is not an endpoint and has no path to the
-transport, so it cannot send anything.
+`lib/whatsapp-template-sample.ts`, using the same renderer and the same sorting
+as production. The sample deliberately contains several SAKIT, one IZIN, one
+DISPENSASI, zero ALFA and some unsubmitted classes, so the zero-count heading and
+the completeness note are both visible before saving. It is not an endpoint and
+has no path to the transport, so it cannot send anything.
 
 ## Architecture
 
@@ -307,7 +357,9 @@ The panel shows:
   state is `WAITING_QR` and the viewer may manage the connection;
 - per-schedule toggle, per-slot delivery state, and "Kirim sekarang";
 - a collapsed "Format Pesan Otomatis" section per message type, holding the
-  template editor for that type's conditions, the list of available variables,
+  template editor for that type's conditions only (two per card), shown beside a
+  live preview on wide screens and stacked on narrow ones, the contextual list of
+  available variables,
   the per-item format for collections, a sample-data preview and "Kembalikan ke
   template bawaan"; shown only to `whatsapp.connection.manage`;
 - delivery history separating manual from scheduled sends, naming the operator

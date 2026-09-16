@@ -29,18 +29,19 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { SAMPLE_CONTEXT } from "@/lib/whatsapp-template-sample"
+import type { WhatsAppMessageType } from "@/lib/whatsapp-schedule"
 import {
   COLLECTION_LABELS,
   ITEM_PLACEHOLDERS,
   SEPARATOR_LABELS,
   TEMPLATE_DESCRIPTIONS,
-  TEMPLATE_KEYS,
   TEMPLATE_LABELS,
   collectionsFor,
   isItemSeparator,
   placeholderGroups,
   renderTemplate,
   templateErrorMessage,
+  templateKeysForType,
   validateTemplate,
   type ItemSeparator,
   type WhatsAppCollectionKey,
@@ -49,7 +50,7 @@ import {
 } from "@/lib/whatsapp-template"
 
 type Props = {
-  type: string
+  type: WhatsAppMessageType
   templates: WhatsAppTemplateSet
   /** Kondisi yang benar-benar tersimpan; sisanya masih memakai bawaan. */
   customized: readonly WhatsAppTemplateKey[]
@@ -64,7 +65,11 @@ export function WhatsAppTemplateEditor({
   disabled,
   onSaved,
 }: Props) {
-  const [active, setActive] = useState<WhatsAppTemplateKey>("MISSING_PENDING")
+  // HANYA kondisi milik jenis otomatisasi ini. Kartu pengingat tidak pernah
+  // mengirim rekap kehadiran, jadi menampilkan tab-nya hanya membuat admin
+  // menyunting teks yang tak akan pernah terkirim dari kartu itu.
+  const keys = templateKeysForType(type)
+  const [active, setActive] = useState<WhatsAppTemplateKey>(keys[0])
   const [draft, setDraft] = useState<WhatsAppTemplateSet>(templates)
   const [saving, setSaving] = useState(false)
   const bodyRef = useRef<HTMLTextAreaElement | null>(null)
@@ -72,6 +77,12 @@ export function WhatsAppTemplateEditor({
   const template = draft[active]
   const errors = useMemo(() => validateTemplate(active, template), [active, template])
   const collections = collectionsFor(active)
+  // Daftar yang sedang dibuka pada pemilih format item. Satu kali buka satu
+  // daftar: kondisi rekap kehadiran punya lima daftar, dan menampilkan semuanya
+  // sekaligus membuat halaman menjadi deretan kotak teks.
+  const [openCollection, setOpenCollection] = useState<WhatsAppCollectionKey | null>(null)
+  const collection =
+    openCollection && collections.includes(openCollection) ? openCollection : collections[0]
 
   // Pratinjau tetap dirender walaupun template belum sah, tetapi hanya bila
   // kesalahannya bukan pada struktur — placeholder tak dikenal sengaja
@@ -181,7 +192,7 @@ export function WhatsAppTemplateEditor({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        {TEMPLATE_KEYS.map((key) => (
+        {keys.map((key) => (
           <Button
             key={key}
             type="button"
@@ -199,15 +210,31 @@ export function WhatsAppTemplateEditor({
 
       <p className="text-sm text-muted-foreground">{TEMPLATE_DESCRIPTIONS[active]}</p>
 
-      <div className="space-y-1">
-        <p className="text-sm font-medium">Isi pesan</p>
-        <textarea
-          ref={bodyRef}
-          className="min-h-40 w-full rounded-md border bg-transparent p-2 font-mono text-sm"
-          value={template.body}
-          disabled={disabled}
-          onChange={(event) => updateBody(event.target.value)}
-        />
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Dua kolom HANYA pada layar lebar. Di layar sempit editor dan
+            pratinjau menumpuk, karena memaksa dua kolom di ponsel membuat
+            keduanya terlalu sempit untuk dibaca. */}
+        <div className="space-y-1">
+          <p className="text-sm font-medium">Isi pesan</p>
+          <textarea
+            ref={bodyRef}
+            className="min-h-[360px] w-full resize-y rounded-md border bg-transparent p-3 font-mono text-sm leading-relaxed"
+            value={template.body}
+            disabled={disabled}
+            onChange={(event) => updateBody(event.target.value)}
+          />
+        </div>
+
+        <div className="space-y-1">
+          <p className="text-sm font-medium">Pratinjau — data contoh</p>
+          <p className="text-xs text-muted-foreground">
+            Angka dan nama di bawah adalah contoh, bukan data hari ini. Pratinjau tidak
+            mengirim pesan apa pun.
+          </p>
+          <pre className="min-h-[360px] overflow-x-auto whitespace-pre-wrap rounded-md border p-3 text-sm leading-relaxed">
+            {preview}
+          </pre>
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -234,57 +261,79 @@ export function WhatsAppTemplateEditor({
         ))}
       </div>
 
-      {collections.map((collection) => {
-        const item = template.items[collection]
-        return (
-          <div key={collection} className="space-y-2 rounded-md border p-3">
-            <p className="text-sm font-medium">
-              Format setiap item — {COLLECTION_LABELS[collection]}
-            </p>
-            <textarea
-              className="min-h-16 w-full rounded-md border bg-transparent p-2 font-mono text-sm"
-              value={item?.format ?? ""}
+      {collection ? (
+        <div className="space-y-2 rounded-md border p-3">
+          {/* SATU daftar sekali buka. Kondisi rekap kehadiran punya lima daftar;
+              menampilkan kelimanya sekaligus mengubah halaman ini menjadi
+              deretan kotak teks yang sulit ditelusuri. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium">Format daftar</span>
+            <Select
+              value={collection}
               disabled={disabled}
-              onChange={(event) => updateItem(collection, { format: event.target.value })}
-            />
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted-foreground">Pemisah antar-item</span>
-              <Select
-                value={item?.separator ?? "NEWLINE"}
-                disabled={disabled}
-                onValueChange={(value) => {
-                  if (isItemSeparator(value)) updateItem(collection, { separator: value })
-                }}
-              >
-                <SelectTrigger className="w-56">
-                  {/* Label ditulis eksplisit; SelectValue tanpa anak akan
-                      menampilkan nilai mentah seperti BLANK_LINE. */}
-                  <SelectValue>{SEPARATOR_LABELS[item?.separator ?? "NEWLINE"]}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(SEPARATOR_LABELS) as ItemSeparator[]).map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {SEPARATOR_LABELS[value]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">
-                Variabel item — hanya berlaku di dalam kotak ini
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {Object.entries(ITEM_PLACEHOLDERS[collection]).map(([name, description]) => (
-                  <Badge key={name} variant="outline" title={description as string}>
-                    {`{{${name}}}`}
-                  </Badge>
+              onValueChange={(value) => setOpenCollection(value as WhatsAppCollectionKey)}
+            >
+              <SelectTrigger className="w-64">
+                <SelectValue>{COLLECTION_LABELS[collection]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {collections.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {COLLECTION_LABELS[value]}
+                  </SelectItem>
                 ))}
-              </div>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <p className="text-xs text-muted-foreground">Format setiap item</p>
+          <textarea
+            className="min-h-20 w-full resize-y rounded-md border bg-transparent p-2 font-mono text-sm leading-relaxed"
+            value={template.items[collection]?.format ?? ""}
+            disabled={disabled}
+            onChange={(event) => updateItem(collection, { format: event.target.value })}
+          />
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Pemisah antar-item</span>
+            <Select
+              value={template.items[collection]?.separator ?? "NEWLINE"}
+              disabled={disabled}
+              onValueChange={(value) => {
+                if (isItemSeparator(value)) updateItem(collection, { separator: value })
+              }}
+            >
+              <SelectTrigger className="w-56">
+                {/* Label ditulis eksplisit; SelectValue tanpa anak akan
+                    menampilkan nilai mentah seperti BLANK_LINE. */}
+                <SelectValue>
+                  {SEPARATOR_LABELS[template.items[collection]?.separator ?? "NEWLINE"]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(SEPARATOR_LABELS) as ItemSeparator[]).map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {SEPARATOR_LABELS[value]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Variabel item — hanya berlaku di dalam kotak ini
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {Object.entries(ITEM_PLACEHOLDERS[collection]).map(([name, description]) => (
+                <Badge key={name} variant="outline" title={description as string}>
+                  {`{{${name}}}`}
+                </Badge>
+              ))}
             </div>
           </div>
-        )
-      })}
+        </div>
+      ) : null}
 
       {errors.length > 0 ? (
         <ul className="space-y-1 text-sm text-destructive">
@@ -293,17 +342,6 @@ export function WhatsAppTemplateEditor({
           ))}
         </ul>
       ) : null}
-
-      <div className="space-y-1">
-        <p className="text-sm font-medium">Pratinjau — data contoh</p>
-        <p className="text-xs text-muted-foreground">
-          Angka dan nama di bawah adalah contoh, bukan data hari ini. Pratinjau tidak
-          mengirim pesan apa pun.
-        </p>
-        <pre className="overflow-x-auto whitespace-pre-wrap rounded-md border p-3 text-sm">
-          {preview}
-        </pre>
-      </div>
 
       <div className="flex flex-wrap gap-2">
         <Button type="button" onClick={save} disabled={disabled || saving || errors.length > 0}>

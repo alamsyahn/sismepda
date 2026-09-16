@@ -16,6 +16,41 @@
  */
 import type { TemplateContext } from "@/lib/whatsapp-template"
 
+/**
+ * Baris contoh sengaja dipilih agar setiap perilaku terlihat sekaligus:
+ * beberapa siswa Sakit dari kelas berbeda, satu Izin, satu Dispensasi,
+ * ALFA KOSONG supaya `*ALFA — 0*` benar-benar terlihat, dan kelas yang belum
+ * merekap supaya baris catatan ikut muncul.
+ *
+ * Urutan baris sudah seperti hasil pengurutan sesungguhnya (kelas menaik),
+ * sehingga pratinjau tidak menjanjikan urutan yang berbeda dari kiriman nyata.
+ */
+const SAKIT = [
+  { nama_siswa: "Ahmad Fauzi", nama_kelas: "7A", status: "SAKIT", keterangan: "Demam" },
+  { nama_siswa: "Citra Lestari", nama_kelas: "7B", status: "SAKIT", keterangan: "-" },
+  { nama_siswa: "Rafi Pratama", nama_kelas: "8C", status: "SAKIT", keterangan: "-" },
+]
+
+const IZIN = [
+  {
+    nama_siswa: "Budi Santoso",
+    nama_kelas: "7A",
+    status: "IZIN",
+    keterangan: "Acara keluarga",
+  },
+]
+
+const ALFA: Record<string, string>[] = []
+
+const DISPENSASI = [
+  {
+    nama_siswa: "Dewi Anggraini",
+    nama_kelas: "9A",
+    status: "DISPENSASI",
+    keterangan: "Lomba",
+  },
+]
+
 export const SAMPLE_CONTEXT: TemplateContext = {
   scalars: {
     tanggal: "Senin, 16 September 2026",
@@ -25,11 +60,13 @@ export const SAMPLE_CONTEXT: TemplateContext = {
     jumlah_kelas_sudah_rekap: "24",
     jumlah_kelas_belum_rekap: "3",
     jumlah_siswa: "840",
-    jumlah_tidak_hadir: "4",
-    jumlah_sakit: "2",
-    jumlah_izin: "1",
-    jumlah_dispensasi: "0",
-    jumlah_alfa: "1",
+    jumlah_tidak_hadir: String(SAKIT.length + IZIN.length + ALFA.length + DISPENSASI.length),
+    jumlah_sakit: String(SAKIT.length),
+    jumlah_izin: String(IZIN.length),
+    jumlah_dispensasi: String(DISPENSASI.length),
+    jumlah_alfa: String(ALFA.length),
+    catatan_kelas_belum_rekap:
+      "Catatan: 3 kelas belum mengisi absensi sehingga data belum lengkap.",
   },
   collections: {
     daftar_kelas_belum_rekap: [
@@ -37,12 +74,11 @@ export const SAMPLE_CONTEXT: TemplateContext = {
       { nama_kelas: "7B", wali_kelas: "Pak Budi", jumlah_siswa_belum_diisi: "5" },
       { nama_kelas: "8A", wali_kelas: "Bu Sari", jumlah_siswa_belum_diisi: "30" },
     ],
-    // Urutannya mengikuti pengelompokan nyata: SAKIT → IZIN → ALFA.
-    daftar_siswa_tidak_hadir: [
-      { nama_siswa: "Ahmad", nama_kelas: "7A", status: "SAKIT", keterangan: "Demam" },
-      { nama_siswa: "Citra", nama_kelas: "8B", status: "SAKIT", keterangan: "-" },
-      { nama_siswa: "Budi", nama_kelas: "7B", status: "IZIN", keterangan: "Acara keluarga" },
-      { nama_siswa: "Dewi", nama_kelas: "9A", status: "ALFA", keterangan: "-" },
-    ],
+    daftar_sakit: SAKIT,
+    daftar_izin: IZIN,
+    daftar_alfa: ALFA,
+    daftar_dispensasi: DISPENSASI,
+    // Daftar gabungan mengikuti urutan status yang sama dengan pesan nyata.
+    daftar_siswa_tidak_hadir: [...SAKIT, ...IZIN, ...ALFA, ...DISPENSASI],
   },
 }

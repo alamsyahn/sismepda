@@ -21,6 +21,7 @@
  * MURNI: tanpa Prisma, tanpa jaringan, tanpa jam sistem — aman diimpor
  * komponen klien untuk preview maupun validasi.
  */
+import type { WhatsAppMessageType } from "@/lib/whatsapp-schedule"
 
 /** Empat kondisi yang ditentukan SISTEM, bukan ditulis admin. */
 export type WhatsAppTemplateKey =
@@ -39,6 +40,30 @@ export const TEMPLATE_KEYS: readonly WhatsAppTemplateKey[] = [
   "ABSENT_PRESENT",
   "ABSENT_NONE",
 ]
+
+/**
+ * Kondisi mana yang MUNGKIN terjadi pada satu jenis otomatisasi.
+ *
+ * Keempat kondisi memang ada sebagai sistem, tetapi satu jenis otomatisasi
+ * hanya pernah menghasilkan dua di antaranya: jam pengingat tidak pernah
+ * mengirim rekap kehadiran, dan sebaliknya. Menampilkan keempatnya di kedua
+ * kartu membuat admin menyunting teks yang tidak akan pernah terkirim dari
+ * kartu itu.
+ *
+ * Ini SEMATA-MATA soal kondisi mana yang relevan untuk satu jenis. Penyimpanan
+ * tetap menyimpan keempat kunci apa adanya, sehingga template yang pernah
+ * disimpan tidak hilang.
+ */
+const TYPE_TEMPLATE_KEYS: Record<WhatsAppMessageType, readonly WhatsAppTemplateKey[]> = {
+  ATTENDANCE_MISSING: ["MISSING_PENDING", "MISSING_COMPLETE"],
+  ATTENDANCE_ABSENT: ["ABSENT_PRESENT", "ABSENT_NONE"],
+}
+
+export function templateKeysForType(
+  type: WhatsAppMessageType,
+): readonly WhatsAppTemplateKey[] {
+  return TYPE_TEMPLATE_KEYS[type]
+}
 
 export const TEMPLATE_LABELS: Record<WhatsAppTemplateKey, string> = {
   MISSING_PENDING: "Pengingat — Belum Semua Rekap",
@@ -64,12 +89,47 @@ export const TEMPLATE_DESCRIPTIONS: Record<WhatsAppTemplateKey, string> = {
  * Setiap koleksi punya template ITEM tersendiri, karena bentuk satu barisnya
  * memang milik admin juga, bukan hanya teks di sekelilingnya.
  */
-export type WhatsAppCollectionKey = "daftar_kelas_belum_rekap" | "daftar_siswa_tidak_hadir"
+export type WhatsAppCollectionKey =
+  | "daftar_kelas_belum_rekap"
+  | "daftar_siswa_tidak_hadir"
+  | "daftar_sakit"
+  | "daftar_izin"
+  | "daftar_alfa"
+  | "daftar_dispensasi"
 
 export const COLLECTION_LABELS: Record<WhatsAppCollectionKey, string> = {
   daftar_kelas_belum_rekap: "Daftar kelas belum rekap",
-  daftar_siswa_tidak_hadir: "Daftar siswa tidak hadir",
+  daftar_siswa_tidak_hadir: "Semua siswa tidak hadir",
+  daftar_sakit: "Sakit",
+  daftar_izin: "Izin",
+  daftar_alfa: "Alfa",
+  daftar_dispensasi: "Dispensasi",
 }
+
+/**
+ * Daftar per status dan padanan `bagian_*`-nya.
+ *
+ * Urutannya adalah urutan tampil pada template bawaan, dan juga urutan
+ * pilihan pada editor.
+ */
+export const ABSENCE_SECTIONS = [
+  { status: "SAKIT", heading: "SAKIT", list: "daftar_sakit", section: "bagian_sakit", count: "jumlah_sakit" },
+  { status: "IZIN", heading: "IZIN", list: "daftar_izin", section: "bagian_izin", count: "jumlah_izin" },
+  { status: "ALFA", heading: "ALFA", list: "daftar_alfa", section: "bagian_alfa", count: "jumlah_alfa" },
+  {
+    status: "DISPENSASI",
+    heading: "DISPENSASI",
+    list: "daftar_dispensasi",
+    section: "bagian_dispensasi",
+    count: "jumlah_dispensasi",
+  },
+] as const satisfies readonly {
+  status: string
+  heading: string
+  list: WhatsAppCollectionKey
+  section: string
+  count: string
+}[]
 
 /** Placeholder yang berlaku di dalam template ITEM `daftar_kelas_belum_rekap`. */
 export const CLASS_ITEM_PLACEHOLDERS = {
@@ -94,6 +154,12 @@ export type StudentItemPlaceholder = keyof typeof STUDENT_ITEM_PLACEHOLDERS
 export const ITEM_PLACEHOLDERS: Record<WhatsAppCollectionKey, Record<string, string>> = {
   daftar_kelas_belum_rekap: CLASS_ITEM_PLACEHOLDERS,
   daftar_siswa_tidak_hadir: STUDENT_ITEM_PLACEHOLDERS,
+  // Daftar per status memuat baris siswa yang sama, hanya sudah tersaring,
+  // sehingga variabel itemnya persis sama.
+  daftar_sakit: STUDENT_ITEM_PLACEHOLDERS,
+  daftar_izin: STUDENT_ITEM_PLACEHOLDERS,
+  daftar_alfa: STUDENT_ITEM_PLACEHOLDERS,
+  daftar_dispensasi: STUDENT_ITEM_PLACEHOLDERS,
 }
 
 /**
@@ -122,7 +188,29 @@ const SCALAR_PLACEHOLDERS: Record<string, string> = {
   jumlah_izin: "Banyak siswa berstatus IZIN",
   jumlah_dispensasi: "Banyak siswa berstatus DISPENSASI",
   jumlah_alfa: "Banyak siswa berstatus ALFA",
+  catatan_kelas_belum_rekap:
+    "Kalimat catatan bila masih ada kelas yang belum mengisi absensi; kosong bila seluruh kelas sudah selesai",
 }
+
+/**
+ * Placeholder `bagian_*` — gabungan judul, jumlah, dan daftar satu status.
+ *
+ * MENGAPA ADA
+ *
+ * Tanpa ini admin harus menulis sendiri `*SAKIT — {{jumlah_sakit}}*` lalu
+ * `{{daftar_sakit}}` untuk setiap status, dan salah satu pasti terlewat ketika
+ * ada perubahan. `bagian_*` menyusun keduanya dengan bentuk yang konsisten.
+ *
+ * Judul TETAP tercetak walaupun jumlahnya nol. Laporan ini juga berfungsi
+ * menyatakan secara eksplisit bahwa hari itu memang tidak ada Alfa — berbeda
+ * artinya dari bagian yang hilang karena datanya tidak terbaca.
+ */
+const SECTION_PLACEHOLDERS: Record<string, string> = Object.fromEntries(
+  ABSENCE_SECTIONS.map((section) => [
+    section.section,
+    `Judul *${section.heading} — jumlah* beserta daftarnya; judul tetap muncul walaupun jumlahnya 0`,
+  ]),
+)
 
 /**
  * Placeholder koleksi per template.
@@ -134,8 +222,21 @@ const SCALAR_PLACEHOLDERS: Record<string, string> = {
 const TEMPLATE_COLLECTIONS: Record<WhatsAppTemplateKey, WhatsAppCollectionKey[]> = {
   MISSING_PENDING: ["daftar_kelas_belum_rekap"],
   MISSING_COMPLETE: [],
-  ABSENT_PRESENT: ["daftar_siswa_tidak_hadir"],
+  ABSENT_PRESENT: [
+    "daftar_siswa_tidak_hadir",
+    ...ABSENCE_SECTIONS.map((section) => section.list),
+  ],
   ABSENT_NONE: [],
+}
+
+/** Bagian status yang berlaku pada satu kondisi. */
+function sectionsFor(key: WhatsAppTemplateKey): readonly (typeof ABSENCE_SECTIONS)[number][] {
+  return key === "ABSENT_PRESENT" ? ABSENCE_SECTIONS : []
+}
+
+/** Placeholder `bagian_*` hanya berlaku pada kondisi yang punya daftar siswa. */
+function sectionNamesFor(key: WhatsAppTemplateKey): string[] {
+  return sectionsFor(key).map((section) => section.section)
 }
 
 export function collectionsFor(key: WhatsAppTemplateKey): readonly WhatsAppCollectionKey[] {
@@ -144,10 +245,20 @@ export function collectionsFor(key: WhatsAppTemplateKey): readonly WhatsAppColle
 
 /** Semua nama placeholder yang sah untuk satu template. */
 export function allowedPlaceholders(key: WhatsAppTemplateKey): Set<string> {
-  return new Set<string>([...Object.keys(SCALAR_PLACEHOLDERS), ...TEMPLATE_COLLECTIONS[key]])
+  return new Set<string>([
+    ...Object.keys(SCALAR_PLACEHOLDERS),
+    ...TEMPLATE_COLLECTIONS[key],
+    ...sectionNamesFor(key),
+  ])
 }
 
-/** Kelompok placeholder untuk ditampilkan di UI. */
+/**
+ * Kelompok placeholder untuk ditampilkan di UI.
+ *
+ * Isinya BERGANTUNG pada kondisi yang sedang disunting. Kartu pengingat tidak
+ * perlu melihat variabel rekap kehadiran, dan sebaliknya: daftar panjang berisi
+ * variabel yang selalu bernilai nol pada kondisi itu justru menyesatkan.
+ */
 export function placeholderGroups(key: WhatsAppTemplateKey): PlaceholderGroup[] {
   const entry = (name: string, description: string) => ({ name, description })
   const groups: PlaceholderGroup[] = [
@@ -159,26 +270,39 @@ export function placeholderGroups(key: WhatsAppTemplateKey): PlaceholderGroup[] 
         entry("nama_sekolah", SCALAR_PLACEHOLDERS.nama_sekolah),
       ],
     },
-    {
-      label: "Rekap kelas",
+  ]
+
+  const isAbsence = key === "ABSENT_PRESENT" || key === "ABSENT_NONE"
+
+  if (!isAbsence) {
+    groups.push({
+      label: "Jumlah",
       entries: [
         entry("jumlah_kelas", SCALAR_PLACEHOLDERS.jumlah_kelas),
         entry("jumlah_kelas_sudah_rekap", SCALAR_PLACEHOLDERS.jumlah_kelas_sudah_rekap),
         entry("jumlah_kelas_belum_rekap", SCALAR_PLACEHOLDERS.jumlah_kelas_belum_rekap),
       ],
-    },
-    {
-      label: "Kehadiran",
+    })
+  } else {
+    groups.push({
+      label: "Jumlah",
       entries: [
         entry("jumlah_siswa", SCALAR_PLACEHOLDERS.jumlah_siswa),
         entry("jumlah_tidak_hadir", SCALAR_PLACEHOLDERS.jumlah_tidak_hadir),
-        entry("jumlah_sakit", SCALAR_PLACEHOLDERS.jumlah_sakit),
-        entry("jumlah_izin", SCALAR_PLACEHOLDERS.jumlah_izin),
-        entry("jumlah_dispensasi", SCALAR_PLACEHOLDERS.jumlah_dispensasi),
-        entry("jumlah_alfa", SCALAR_PLACEHOLDERS.jumlah_alfa),
+        ...ABSENCE_SECTIONS.map((section) =>
+          entry(section.count, SCALAR_PLACEHOLDERS[section.count]),
+        ),
       ],
-    },
-  ]
+    })
+  }
+
+  const sections = sectionNamesFor(key)
+  if (sections.length > 0) {
+    groups.push({
+      label: "Bagian siap pakai",
+      entries: sections.map((name) => entry(name, SECTION_PLACEHOLDERS[name])),
+    })
+  }
 
   const collections = TEMPLATE_COLLECTIONS[key]
   if (collections.length > 0) {
@@ -187,6 +311,16 @@ export function placeholderGroups(key: WhatsAppTemplateKey): PlaceholderGroup[] 
       entries: collections.map((name) => entry(name, COLLECTION_LABELS[name])),
     })
   }
+
+  if (isAbsence) {
+    groups.push({
+      label: "Catatan",
+      entries: [
+        entry("catatan_kelas_belum_rekap", SCALAR_PLACEHOLDERS.catatan_kelas_belum_rekap),
+      ],
+    })
+  }
+
   return groups
 }
 
@@ -331,6 +465,9 @@ export type TemplateContext = {
  * Koleksi dirender LEBIH DAHULU menjadi string, lalu ikut sebagai nilai biasa
  * dalam satu kali penggantian. Dengan begitu isi daftar tidak pernah dipindai
  * ulang sebagai template.
+ *
+ * `bagian_*` disusun dari hasil koleksi yang sama, sehingga angka pada judul
+ * tidak mungkin berbeda dengan panjang daftar di bawahnya.
  */
 export function renderTemplate(
   key: WhatsAppTemplateKey,
@@ -343,5 +480,32 @@ export function renderTemplate(
     const rows = context.collections[collection] ?? []
     values[collection] = item ? renderCollection(item.format, item.separator, rows) : ""
   }
-  return renderText(template.body, values)
+
+  for (const section of sectionsFor(key)) {
+    const rows = context.collections[section.list] ?? []
+    const heading = `*${section.heading} — ${rows.length}*`
+    const list = values[section.list] ?? ""
+    // Daftar kosong tidak menambah baris apa pun: judul berdiri sendiri.
+    // Inilah yang membuat `*ALFA — 0*` muncul tanpa bullet palsu di bawahnya.
+    values[section.section] = list.length > 0 ? `${heading}\n${list}` : heading
+  }
+
+  return normalizeBlankLines(renderText(template.body, values))
+}
+
+/**
+ * Merapikan baris kosong berlebih.
+ *
+ * Template bawaan memberi satu baris kosong antar-bagian. Ketika placeholder
+ * yang berdiri sendiri pada satu baris menghasilkan teks kosong — terutama
+ * `{{catatan_kelas_belum_rekap}}` saat seluruh kelas sudah merekap — baris itu
+ * menyisakan celah ganda atau ekor baris kosong. Di WhatsApp celah semacam itu
+ * terlihat seperti pesan yang terpotong.
+ *
+ * Yang dilakukan hanya dua: rentetan tiga baris baru atau lebih dipadatkan
+ * menjadi satu baris kosong, dan ekor spasi dibuang. Baris kosong TUNGGAL yang
+ * sengaja ditulis admin tetap dipertahankan.
+ */
+function normalizeBlankLines(text: string): string {
+  return text.replace(/\n{3,}/g, "\n\n").trimEnd()
 }

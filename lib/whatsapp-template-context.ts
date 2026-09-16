@@ -11,19 +11,26 @@
  *
  * MURNI: tanpa Prisma, tanpa jaringan, tanpa jam sistem.
  */
+import { compareClassNames } from "@/lib/class-order"
 import { incompleteClasses, slotLabel } from "@/lib/whatsapp-messages"
 import { reportClassName, type WhatsAppReportClass } from "@/lib/whatsapp-report"
-import type { TemplateContext, WhatsAppTemplateKey } from "@/lib/whatsapp-template"
+import {
+  ABSENCE_SECTIONS,
+  type TemplateContext,
+  type WhatsAppTemplateKey,
+} from "@/lib/whatsapp-template"
 
 /**
  * Urutan status untuk daftar siswa tidak hadir.
  *
  * Inilah yang mempertahankan PENGELOMPOKAN pesan lama tanpa memerlukan
  * percabangan di dalam template: baris yang berstatus sama selalu berdampingan,
- * dalam urutan yang sama seperti bagian-bagian pesan sebelumnya.
+ * dalam urutan yang sama seperti bagian-bagian pesan sebelumnya. Urutannya
+ * diambil dari `ABSENCE_SECTIONS` supaya daftar gabungan, daftar per status,
+ * dan `bagian_*` tidak pernah berbeda urutan.
  */
-const ABSENCE_ORDER = ["SAKIT", "IZIN", "ALFA", "DISPENSASI"] as const
-type AbsenceStatus = (typeof ABSENCE_ORDER)[number]
+const ABSENCE_ORDER = ABSENCE_SECTIONS.map((section) => section.status)
+type AbsenceStatus = (typeof ABSENCE_SECTIONS)[number]["status"]
 
 /** Placeholder kosong ditampilkan sebagai tanda hubung, bukan ruang kosong. */
 const EMPTY = "-"
@@ -33,6 +40,27 @@ export type AbsentRow = {
   nama_kelas: string
   status: string
   keterangan: string
+  /**
+   * Nama kelas apa adanya, HANYA untuk pengurutan. Dibuang sebelum baris
+   * dipakai merender, supaya tidak ikut menjadi variabel yang terlihat admin.
+   */
+  sortName: string
+}
+
+/**
+ * Membuang field bantu sehingga hanya variabel resmi yang tersisa.
+ *
+ * `no` sengaja tidak ada di sini: penomoran diberikan `renderCollection()`
+ * mengikuti posisi baris dalam daftar yang bersangkutan, sehingga daftar per
+ * status bernomor 1..n sendiri, bukan meneruskan nomor daftar gabungan.
+ */
+function renderableRow(row: AbsentRow): Record<string, string> {
+  return {
+    nama_siswa: row.nama_siswa,
+    nama_kelas: row.nama_kelas,
+    status: row.status,
+    keterangan: row.keterangan,
+  }
 }
 
 export type PendingClassRow = {
@@ -62,6 +90,18 @@ export function pendingClassRows(
  *
  * Deduplikasi per siswa dipertahankan dari implementasi lama: satu baris per
  * siswa, bukan satu baris per baris data.
+ *
+ * URUTAN DI DALAM SATU STATUS: kelas menaik secara natural, lalu nama siswa.
+ *
+ * Kelas diurutkan dengan `compareClassNames` — helper yang sama dengan yang
+ * dipakai seluruh aplikasi — sehingga 7A → 7B → … → 8A → 9C, bukan urutan
+ * leksikal yang menaruh "10A" sebelum "7A". Urutan hasil query tidak dijadikan
+ * sandaran karena laporan dibangun dari beberapa sumber.
+ *
+ * TIDAK ADA NOMOR ABSEN. Model `Student` SISMEPDA tidak punya kolom nomor
+ * absen; yang ada hanya `nis`/`nisn` yang bukan urutan di kelas. Karena itu
+ * pengurutan kedua memakai nama siswa, dan `{{nomor_absen}}` sengaja tidak
+ * disediakan daripada menyajikan angka yang bukan nomor absen.
  */
 export function absentStudentRows(classes: readonly WhatsAppReportClass[]): AbsentRow[] {
   const byStatus = new Map<AbsenceStatus, AbsentRow[]>()
@@ -79,12 +119,33 @@ export function absentStudentRows(classes: readonly WhatsAppReportClass[]): Abse
         nama_kelas: reportClassName(schoolClass.name),
         status,
         keterangan: student.note?.trim() || EMPTY,
+        // Nama kelas ASLI disimpan untuk pengurutan: `reportClassName`
+        // memendekkan "VII A" menjadi "7A", sedangkan pembanding kelas bekerja
+        // pada bentuk aslinya.
+        sortName: schoolClass.name,
       })
       byStatus.set(status, rows)
     }
   }
 
-  return ABSENCE_ORDER.flatMap((status) => byStatus.get(status) ?? [])
+  return ABSENCE_ORDER.flatMap((status) => sortAbsentRows(byStatus.get(status) ?? []))
+}
+
+/** Kelas natural menaik, lalu nama siswa. Deterministik. */
+function sortAbsentRows(rows: readonly AbsentRow[]): AbsentRow[] {
+  return [...rows].sort(
+    (a, b) =>
+      compareClassNames(a.sortName, b.sortName) ||
+      a.nama_siswa.localeCompare(b.nama_siswa, "id", { numeric: true }),
+  )
+}
+
+/** Baris satu status saja, untuk `{{daftar_sakit}}` dan kawan-kawannya. */
+export function rowsWithStatus(
+  rows: readonly AbsentRow[],
+  status: AbsenceStatus,
+): AbsentRow[] {
+  return rows.filter((row) => row.status === status)
 }
 
 function countByStatus(rows: readonly AbsentRow[], status: AbsenceStatus): number {
@@ -140,10 +201,23 @@ export function buildTemplateContext(input: {
       jumlah_izin: String(countByStatus(absent, "IZIN")),
       jumlah_dispensasi: String(countByStatus(absent, "DISPENSASI")),
       jumlah_alfa: String(countByStatus(absent, "ALFA")),
+      // SISTEM yang menentukan perlu-tidaknya catatan, bukan admin lewat
+      // conditional. Kosong bila seluruh kelas sudah merekap, sehingga baris
+      // catatan pada template menghilang dengan sendirinya.
+      catatan_kelas_belum_rekap:
+        pending.length > 0
+          ? `Catatan: ${pending.length} kelas belum mengisi absensi sehingga data belum lengkap.`
+          : "",
     },
     collections: {
       daftar_kelas_belum_rekap: pending,
-      daftar_siswa_tidak_hadir: absent,
+      daftar_siswa_tidak_hadir: absent.map(renderableRow),
+      ...Object.fromEntries(
+        ABSENCE_SECTIONS.map((section) => [
+          section.list,
+          rowsWithStatus(absent, section.status).map(renderableRow),
+        ]),
+      ),
     },
   }
 }
