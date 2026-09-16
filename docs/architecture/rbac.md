@@ -222,6 +222,15 @@ Every key below corresponds to at least one surface in the inventory. Keys are g
 | `whatsapp.read` | — | `GET /api/whatsapp`, `GET /api/whatsapp/configuration`. Connection state, schedule, send history. Never includes the pairing QR |
 | `whatsapp.connection.manage` | — | `POST /api/whatsapp/connection`, `GET /api/whatsapp/qr`, `PATCH /api/whatsapp/configuration`. Sensitive: holds the school WhatsApp account, and logout stops all automatic sending until someone rescans the QR |
 | `whatsapp.send` | — | `POST /api/whatsapp/send`. Sensitive: produces a real, unretractable message in the homeroom group |
+| `schedule.own.read` | — | `/jadwal`, `GET /api/jadwal/guru` for the signed-in teacher, `GET /api/jadwal/waktu` |
+| `schedule.classes.read` | — | `GET /api/jadwal/kelas`, `GET /api/jadwal/entries` |
+| `schedule.teachers.read` | — | `GET /api/jadwal/guru` for **another** teacher. Not needed to read one's own |
+| `schedule.free_teachers.read` | — | `GET /api/jadwal/jam-kosong` |
+| `schedule.entries.create/update/delete` | — | `POST` / `PATCH` / `DELETE /api/jadwal/entries` |
+| `schedule.time.manage` | — | `PUT /api/jadwal/waktu`. Sensitive: shifts displayed clock times school-wide because entries store period numbers, not times |
+| `schedule.import` | — | `POST /api/jadwal/impor`, `POST`/`DELETE /api/jadwal/impor/[importId]`, `PUT /api/jadwal/mapping`. Sensitive: applying overwrites manual edits that differ from the file |
+| `schedule.revisions.read` | — | `GET /api/jadwal/revisi` |
+| `schedule.revisions.rollback` | — | `POST /api/jadwal/revisi`. Sensitive: changes the active timetable |
 
 Not created (no operation exists in HEAD): `euks.export`, `bos.export`, `sarpras.export`, `students.violations.read` (violations are read inside `students.profile.read`), `teachers.duties.read`/`teachers.schedule.read` (read inside directory), `euks.*.read` for settings sub-entities (read inside `euks.overview.read`), `attendance.delete`, any `siswa`/`wali_murid` data permission.
 
@@ -230,7 +239,7 @@ Not created (no operation exists in HEAD): `euks.export`, `bos.export`, `sarpras
 | Role key | Name | Permissions |
 |---|---|---|
 | `system_admin` | Admin Sistem | bypass (protected) |
-| `guru` | Guru | `attendance.dashboard.read.assigned_classes`, `attendance.reports.read.assigned_classes`, `attendance.read.assigned_classes`, `attendance.write.assigned_classes`, `attendance.export.assigned_classes`, `reports.whatsapp.read.all`, `students.profile.read.assigned_classes`, `students.violations.create.assigned_classes`, `teachers.directory.read`, `workbook.links.read.own`, `workbook.links.update.own` |
+| `guru` | Guru | `attendance.dashboard.read.assigned_classes`, `attendance.reports.read.assigned_classes`, `attendance.read.assigned_classes`, `attendance.write.assigned_classes`, `attendance.export.assigned_classes`, `reports.whatsapp.read.all`, `students.profile.read.assigned_classes`, `students.violations.create.assigned_classes`, `teachers.directory.read`, `workbook.links.read.own`, `workbook.links.update.own`, `schedule.own.read`, `schedule.classes.read`, `schedule.free_teachers.read` |
 | `pengawas` | Pengawas | `attendance.dashboard.read.all`, `attendance.reports.read.all`, `attendance.export.all`, `students.profile.read.all`, `teachers.directory.read`, `workbook.supervision.read`, `workbook.supervision.review` |
 | `kepala_sekolah` | Kepala Sekolah | `attendance.dashboard.read.all`, `attendance.reports.read.all`, `attendance.export.all`, `reports.whatsapp.read.all`, `students.profile.read.all`, `teachers.directory.read`, `workbook.supervision.read`, `bos.read`, `sarpras.read`, `euks.overview.read`, `euks.visits.read`, `euks.monitoring.read` |
 | `pengurus_uks` | Pengurus UKS | all `euks.*` |

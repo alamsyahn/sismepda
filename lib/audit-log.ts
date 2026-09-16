@@ -30,6 +30,13 @@ export type AuditEntity =
   | "WhatsAppConnection"
   /// Satu baris WhatsAppSendLog — kiriman manual yang dipicu seorang pengguna.
   | "WhatsAppSendLog"
+  /// Modul Jadwal. `ScheduleTimeProfile` memakai entityId profil; revisi,
+  /// impor, dan pemetaan memakai id barisnya masing-masing.
+  | "ScheduleTimeProfile"
+  | "ScheduleRevision"
+  | "ScheduleEntry"
+  | "ScheduleImport"
+  | "ScheduleExternalMapping"
   /// Entitas RBAC. Didefinisikan di lib/rbac-audit.ts agar UI dapat mengenali
   /// baris RBAC tanpa ikut menarik lib/prisma.ts ke bundel klien.
   | RbacAuditEntity
@@ -88,6 +95,18 @@ export type AuditAction =
   /// Mutasi data master guru dari Data Master > Guru.
   | "TEACHER_PROFILE_UPDATED"
   | "TEACHER_PHOTO_UPDATED"
+  /// Modul Jadwal. Payload audit hanya memuat metadata dan ringkasan angka —
+  /// isi berkas XML tidak pernah ikut tercatat.
+  | "SCHEDULE_TIME_SLOTS_UPDATED"
+  | "SCHEDULE_ENTRY_CREATED"
+  | "SCHEDULE_ENTRY_UPDATED"
+  | "SCHEDULE_ENTRY_DELETED"
+  | "SCHEDULE_IMPORT_UPLOADED"
+  | "SCHEDULE_IMPORT_FAILED"
+  | "SCHEDULE_IMPORT_APPLIED"
+  | "SCHEDULE_IMPORT_CANCELLED"
+  | "SCHEDULE_MAPPING_UPDATED"
+  | "SCHEDULE_REVISION_ROLLED_BACK"
   /// Aksi RBAC, disatukan ke trail yang sama agar tidak ada dua sistem audit.
   | RbacAuditAction
 

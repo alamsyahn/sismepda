@@ -43,6 +43,7 @@ Configured values are rejected unless they are safe integers between `MIN_CONFIG
 | `sarpras.item.photo` | Sarpras | image | 2 MB |
 | `students.import.csv` | Data Siswa | document | 5 MB |
 | `teachers.import.csv` | Data Guru | document | 5 MB |
+| `schedule.asc.xml` | Jadwal | document | 10 MB |
 | `database.restore.archive` | Operasi Sistem | document | 200 MB, `configurable: false` |
 
 `database.restore.archive` is the single non-configurable slot: a restore archive size is an operational property of the backup, not a school policy, and lowering it from the settings page would silently break restore. It is excluded explicitly in the registry, not omitted, so the exclusion stays visible.

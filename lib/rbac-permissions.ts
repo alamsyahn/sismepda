@@ -30,6 +30,7 @@ export type PermissionModule =
   | "database"
   | "rbac"
   | "whatsapp"
+  | "schedule"
   | "development"
 
 export type PermissionDefinition = {
@@ -623,6 +624,109 @@ export const PERMISSIONS: readonly PermissionDefinition[] = [
     dependsOn: ["whatsapp.read"],
     // Sensitif: menghasilkan pesan nyata ke grup berisi wali kelas dan
     // pimpinan sekolah.
+    sensitive: true,
+  }),
+
+  // --- schedule -----------------------------------------------------------
+  def({
+    key: "schedule.own.read",
+    resource: "schedule.own",
+    action: "read",
+    module: "schedule",
+    label: "Lihat jadwal mengajar sendiri",
+    description:
+      "Membuka menu Jadwal dan melihat jadwal mengajar milik akun sendiri beserta struktur waktu harian. Tidak menampilkan jadwal guru lain.",
+  }),
+  def({
+    key: "schedule.classes.read",
+    resource: "schedule.classes",
+    action: "read",
+    module: "schedule",
+    label: "Lihat jadwal kelas",
+    description:
+      "Melihat susunan pelajaran satu kelas pada hari tertentu, termasuk mata pelajaran, pengajar, jam, dan ruang.",
+  }),
+  def({
+    key: "schedule.teachers.read",
+    resource: "schedule.teachers",
+    action: "read",
+    module: "schedule",
+    label: "Lihat jadwal guru lain",
+    description:
+      "Memilih guru mana pun pada tab Jadwal Saya dan melihat jadwal mengajarnya. Tidak diperlukan untuk melihat jadwal sendiri.",
+  }),
+  def({
+    key: "schedule.free_teachers.read",
+    resource: "schedule.free_teachers",
+    action: "read",
+    module: "schedule",
+    label: "Lihat jam kosong guru",
+    description:
+      "Melihat daftar guru yang tidak memiliki jadwal mengajar pada satu hari dan jam pelajaran. Tidak berarti guru tersebut bebas tugas.",
+  }),
+  def({
+    key: "schedule.entries.create",
+    resource: "schedule.entries",
+    action: "create",
+    module: "schedule",
+    label: "Tambah penempatan jadwal",
+    dependsOn: ["schedule.classes.read"],
+  }),
+  def({
+    key: "schedule.entries.update",
+    resource: "schedule.entries",
+    action: "update",
+    module: "schedule",
+    label: "Ubah penempatan jadwal",
+    dependsOn: ["schedule.classes.read"],
+  }),
+  def({
+    key: "schedule.entries.delete",
+    resource: "schedule.entries",
+    action: "delete",
+    module: "schedule",
+    label: "Hapus penempatan jadwal",
+    dependsOn: ["schedule.classes.read"],
+  }),
+  def({
+    key: "schedule.time.manage",
+    resource: "schedule.time",
+    action: "manage",
+    module: "schedule",
+    label: "Kelola Waktu & Kegiatan",
+    description:
+      "Menentukan jam mulai/selesai tiap jam pelajaran, istirahat, dan kegiatan. Perubahan ini menggeser tampilan jam seluruh sekolah karena jadwal hanya menyimpan nomor jam, bukan pukul.",
+    // Sensitif dalam arti berdampak sekolah-lebar, tetapi bukan kewenangan
+    // akses: tidak masuk SENSITIVE_AUTHORITY_FAMILIES.
+    sensitive: true,
+  }),
+  def({
+    key: "schedule.import",
+    resource: "schedule",
+    action: "import",
+    module: "schedule",
+    label: "Impor jadwal dari aSc TimeTables",
+    description:
+      "Mengunggah berkas XML aSc, memetakan guru/kelas/mapel, dan menerapkan hasilnya sebagai jadwal aktif baru. Penerapan menimpa penyesuaian manual yang berbeda dari berkas.",
+    dependsOn: ["schedule.classes.read"],
+    sensitive: true,
+  }),
+  def({
+    key: "schedule.revisions.read",
+    resource: "schedule.revisions",
+    action: "read",
+    module: "schedule",
+    label: "Lihat riwayat versi jadwal",
+  }),
+  def({
+    key: "schedule.revisions.rollback",
+    resource: "schedule.revisions",
+    action: "rollback",
+    module: "schedule",
+    label: "Kembalikan jadwal ke versi sebelumnya",
+    description:
+      "Menjadikan salah satu versi lama sebagai jadwal aktif. Versi baru dibuat dari salinan versi tersebut; tidak ada riwayat yang dihapus.",
+    dependsOn: ["schedule.revisions.read"],
     sensitive: true,
   }),
 

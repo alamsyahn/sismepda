@@ -112,6 +112,10 @@ model User {
   rbacMigrationItems RbacMigrationItem[]
   /// Kiriman WhatsApp manual ("Kirim sekarang") yang dipicu akun ini.
   whatsAppSendsInitiated WhatsAppSendLog[]
+  /// Modul Jadwal (lihat docs/features/jadwal.md).
+  scheduleEntries ScheduleEntry[] @relation("ScheduleEntryTeacher")
+  scheduleRevisionsCreated ScheduleRevision[] @relation("ScheduleRevisionAuthor")
+  scheduleImportsUploaded ScheduleImport[] @relation("ScheduleImportUploader")
 }
 
 model Subject {
@@ -119,6 +123,7 @@ model Subject {
   name String @unique
   teacherSubjects TeacherSubject[]
   assignments TeachingAssignment[]
+  scheduleEntries ScheduleEntry[]
 }
 
 model TeacherSubject {
@@ -163,6 +168,7 @@ model SchoolClass {
   students Student[]
   attendanceDays AttendanceDay[]
   teachingAssignments TeachingAssignment[]
+  scheduleEntries ScheduleEntry[]
 }
 
 model Student {
@@ -980,4 +986,201 @@ model WhatsAppSendLog {
   @@index([attemptedAt])
   @@index([type, attemptedAt])
   @@index([schoolDate])
+}
+
+/// ---------------------------------------------------------------------------
+/// MODUL JADWAL
+///
+/// Empat hal sengaja DIPISAH (lihat docs/features/jadwal.md):
+///   * WAKTU        — ScheduleTimeProfile/ScheduleTimeSlot: pukul berapa
+///     "Jam ke-1" berlangsung. Otoritas SISMEPDA, bukan XML aSc.
+///   * JADWAL       — ScheduleRevision/ScheduleEntry: siapa mengajar apa, di
+///     kelas mana, hari apa, jam ke berapa. Selalu relasi ID, tidak pernah nama.
+///   * MAPPING      — ScheduleExternalMapping: entity aSc mana merujuk entity
+///     SISMEPDA mana. Persisten, berbasis external ID, bukan pencocokan nama.
+///   * IMPOR        — ScheduleImport: berkas yang sudah di-parse, menunggu
+///     konfirmasi admin. Tidak pernah menyentuh jadwal aktif sebelum Apply.
+/// ---------------------------------------------------------------------------
+
+/// Jenis satu baris pada struktur waktu harian.
+enum ScheduleSlotKind {
+  /// Jam pelajaran; satu-satunya jenis yang boleh punya `ascPeriod`.
+  PELAJARAN
+  ISTIRAHAT
+  /// Pembiasaan, upacara, apel, dan kegiatan non-pelajaran lain.
+  KEGIATAN
+}
+
+/// Profil waktu harian (mis. Reguler, Ramadan). Tepat satu baris `active`;
+/// keunikannya ditegakkan transaksi, bukan constraint parsial, supaya
+/// mengganti profil aktif tidak pernah butuh window tanpa profil aktif.
+model ScheduleTimeProfile {
+  id        String              @id @default(cuid())
+  /// Kunci stabil lowercase, dipakai seed/idempotensi.
+  key       String              @unique
+  name      String
+  active    Boolean             @default(false)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  slots     ScheduleTimeSlot[]
+
+  @@index([active])
+}
+
+/// Satu baris pada struktur waktu: urutan, jenis, nama, mulai, selesai.
+///
+/// Waktu disimpan sebagai MENIT SEJAK TENGAH MALAM (0..1439), bukan DateTime:
+/// ini jam dinding sekolah yang berlaku setiap hari, sehingga menyimpannya
+/// sebagai timestamp akan menyeret tanggal dan zona waktu ke dalam data yang
+/// sama sekali tidak memilikinya.
+model ScheduleTimeSlot {
+  id          String              @id @default(cuid())
+  profileId   String
+  /// Urutan tampil dalam satu hari. Unik per profil.
+  position    Int
+  kind        ScheduleSlotKind
+  name        String
+  startMinute Int
+  endMinute   Int
+  /// Nomor period aSc untuk slot PELAJARAN. Null untuk istirahat/kegiatan.
+  /// Inilah jembatan tunggal antara `card.period` XML dan jam dinding sekolah.
+  ascPeriod   Int?
+  profile     ScheduleTimeProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, position])
+  @@unique([profileId, ascPeriod])
+  @@index([profileId])
+}
+
+/// Asal sebuah revisi jadwal.
+enum ScheduleRevisionSource {
+  ASC_IMPORT
+  MANUAL
+  ROLLBACK
+}
+
+/// Satu versi lengkap jadwal sekolah. Tepat satu baris `active`.
+///
+/// Snapshot penuh per revisi dipilih dengan sadar: satu revisi ≈ jumlah slot
+/// mengajar satu sekolah (ribuan baris kecil berisi ID saja), sementara diff
+/// inkremental akan membuat "jadwal Rabu" hanya dapat dijawab dengan memutar
+/// ulang seluruh riwayat. Rollback menjadi penyalinan satu snapshot.
+model ScheduleRevision {
+  id        String                 @id @default(cuid())
+  /// Nomor urut manusiawi ("Versi 4"). Unik, naik monoton.
+  number    Int                    @unique
+  source    ScheduleRevisionSource
+  active    Boolean                @default(false)
+  note      String?
+  /// Ringkasan angka (jumlah entri, +/~/- terhadap revisi sebelumnya).
+  /// Tidak pernah memuat isi berkas XML.
+  summary   Json?
+  createdById String?
+  createdAt DateTime               @default(now())
+  createdBy User?                  @relation("ScheduleRevisionAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  entries   ScheduleEntry[]
+  imports   ScheduleImport[]
+
+  @@index([active])
+  @@index([createdAt])
+}
+
+/// Satu penempatan: guru X mengajar mapel Y di kelas Z, hari H, jam ke-P.
+///
+/// `period` adalah nomor period (sama dengan `ScheduleTimeSlot.ascPeriod`),
+/// BUKAN pukul. Jam dinding selalu diresolusi lewat profil waktu aktif.
+model ScheduleEntry {
+  id         String           @id @default(cuid())
+  revisionId String
+  /// 1 = Senin .. 6 = Sabtu, mengikuti konvensi TeachingAssignment.day.
+  day        Int
+  period     Int
+  classId    String
+  subjectId  String
+  /// Guru pengampu. Null berarti slot terisi tanpa guru yang dapat dipetakan
+  /// (impor aSc dengan guru belum termapping) — bukan "kosong".
+  teacherId  String?
+  room       String?
+  revision   ScheduleRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  schoolClass SchoolClass     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject    Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher    User?            @relation("ScheduleEntryTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
+
+  /// Satu kelas tidak boleh punya dua pelajaran pada slot yang sama. Bentrok
+  /// guru TIDAK dijadikan constraint database karena satu guru sah mengajar
+  /// kelas gabungan; penegakannya ada di lapisan aplikasi dengan pesan yang
+  /// menyebut bentrokannya.
+  @@unique([revisionId, day, period, classId])
+  @@index([revisionId, teacherId, day, period])
+  @@index([revisionId, day, period])
+}
+
+/// Sumber data eksternal yang boleh dipetakan ke entity SISMEPDA.
+enum ScheduleExternalSource {
+  ASC_TIMETABLES
+}
+
+/// Jenis entity yang dipetakan.
+enum ScheduleExternalEntity {
+  TEACHER
+  CLASS
+  SUBJECT
+}
+
+/// Pemetaan persisten external ID → ID internal.
+///
+/// Inilah alasan nama boleh typo di XML: pencocokan nama hanya dipakai untuk
+/// MENYARANKAN, sedangkan yang disimpan dan dipakai impor berikutnya adalah
+/// pasangan ID. `externalName` disimpan hanya sebagai keterangan tampilan dan
+/// tidak pernah menimpa nama resmi Data Master.
+model ScheduleExternalMapping {
+  id           String                 @id @default(cuid())
+  source       ScheduleExternalSource
+  entityType   ScheduleExternalEntity
+  externalId   String
+  internalId   String
+  externalName String?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  @@unique([source, entityType, externalId])
+  @@index([source, entityType, internalId])
+}
+
+/// Status satu berkas impor.
+enum ScheduleImportStatus {
+  /// Sudah di-parse dan divalidasi, menunggu konfirmasi admin.
+  PREVIEW
+  APPLIED
+  CANCELLED
+  FAILED
+}
+
+/// Satu upaya impor aSc.
+///
+/// Byte XML mentah TIDAK disimpan: yang dibutuhkan Apply hanyalah hasil parse
+/// yang sudah dinormalkan (`payload`), sehingga tidak ada berkas pengguna yang
+/// menumpuk di database dan tidak ada kolom biner baru (lihat
+/// docs/architecture/media-storage.md).
+model ScheduleImport {
+  id           String               @id @default(cuid())
+  fileName     String
+  fileSize     Int
+  status       ScheduleImportStatus @default(PREVIEW)
+  /// Hasil parse ternormalisasi: daftar guru/kelas/mapel eksternal dan
+  /// penempatan (day, period, externalId). Bukan berkas aslinya.
+  payload      Json
+  /// Ringkasan preview terakhir yang dihitung untuk berkas ini.
+  summary      Json?
+  error        String?
+  uploadedById String?
+  createdAt    DateTime             @default(now())
+  appliedAt    DateTime?
+  /// Revisi yang dihasilkan bila impor ini jadi diterapkan.
+  revisionId   String?
+  uploadedBy   User?                @relation("ScheduleImportUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  revision     ScheduleRevision?    @relation(fields: [revisionId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([createdAt])
 }

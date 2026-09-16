@@ -63,6 +63,11 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "teachers.directory.read",
       "workbook.links.read.own",
       "workbook.links.update.own",
+      // Jadwal: hanya kemampuan MELIHAT. Jadwal guru lain, pengelolaan,
+      // impor, dan Waktu & Kegiatan tetap harus diberikan secara sengaja.
+      "schedule.own.read",
+      "schedule.classes.read",
+      "schedule.free_teachers.read",
     ],
   },
   {

@@ -1,3 +1,4 @@
+import { SCHEDULE_PAGE_PERMISSIONS } from "@/lib/schedule-authorization"
 import {
   LayoutDashboard,
   ClipboardCheck,
@@ -25,6 +26,7 @@ import {
   Stethoscope,
   ClipboardPlus,
   SlidersHorizontal,
+  CalendarClock,
   TerminalSquare,
   type LucideIcon,
 } from "lucide-react"
@@ -295,6 +297,15 @@ export const mainNav: NavEntry[] = [
         ],
       },
     ],
+  },
+  {
+    // Satu menu untuk seluruh modul: "Jadwal Saya", "Jadwal Kelas", dan
+    // seterusnya adalah TAB di dalam halaman ini, bukan item sidebar sendiri.
+    title: "Jadwal",
+    href: "/jadwal",
+    icon: CalendarClock,
+    description: "Jadwal pelajaran mingguan, jam kosong guru, dan struktur waktu",
+    permissions: SCHEDULE_PAGE_PERMISSIONS,
   },
   {
     title: "BOS",

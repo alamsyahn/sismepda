@@ -212,6 +212,8 @@ const MIME_LABELS: Record<string, string> = {
   "image/svg+xml": "SVG",
   "image/x-icon": "ICO",
   "text/csv": "CSV",
+  "text/xml": "XML",
+  "application/xml": "XML",
 }
 
 /** Daftar format dalam bahasa manusia: "JPG, PNG, atau WebP". */

@@ -165,6 +165,16 @@ export const UPLOAD_SLOTS: readonly UploadSlot[] = [
     allowedMimeTypes: ["text/csv"],
   },
   {
+    key: "schedule.asc.xml",
+    label: "Impor Jadwal aSc TimeTables (XML)",
+    category: "document",
+    module: "Jadwal",
+    description:
+      "Berkas ekspor XML dari aSc TimeTables. Hanya dibaca untuk pratinjau; berkas aslinya tidak disimpan.",
+    defaultMaxBytes: 10 * 1024 * 1024,
+    allowedMimeTypes: ["text/xml", "application/xml"],
+  },
+  {
     key: "database.restore.archive",
     label: "Berkas Restore Database",
     category: "document",
