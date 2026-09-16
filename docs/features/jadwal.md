@@ -31,6 +31,13 @@ memegang `legacy_guru` tidak muncul sebagai guru di modul Jadwal; migrasi
 keanggotaan `legacy_guru` → `guru` dikerjakan administrator secara manual di
 luar modul ini.
 
+Selama migrasi itu belum dijalankan, populasi guru bisa **kosong sepenuhnya**.
+Itu keadaan sah, bukan kerusakan — tetapi UI wajib menjelaskannya. Dropdown guru
+di tab "Jadwal Saya" dan di tabel pemetaan impor dinonaktifkan saat daftar
+kosong dan disertai keterangan syarat populasi guru, supaya tidak tampak seperti
+komponen rusak yang membuka menu tanpa isi. Aturan yang sama berlaku untuk kelas
+dan mata pelajaran ketika Data Master-nya masih kosong.
+
 `User` adalah entitas guru itu sendiri (`ScheduleEntry.teacherId → User`), sama
 seperti `TeachingAssignment` yang sudah ada — modul ini tidak menambah entitas
 guru kedua.

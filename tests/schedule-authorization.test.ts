@@ -186,3 +186,33 @@ test("komponen klien modul Jadwal tidak mengimpor value dari modul server-only",
     }
   }
 })
+
+test("dropdown yang kehabisan pilihan tidak boleh diam: ada penjelasan dan trigger dinonaktifkan", () => {
+  const importPanel = readFileSync(new URL("../components/jadwal/import-panel.tsx", import.meta.url), "utf8")
+
+  // Populasi guru boleh kosong selama migrasi legacy_guru belum dijalankan admin.
+  // Yang tidak boleh: Select membuka daftar kosong tanpa memberi tahu sebabnya.
+  assert.match(
+    importPanel,
+    /disabled=\{options\.length === 0\}/,
+    "Select pemetaan harus dinonaktifkan saat tidak ada pilihan",
+  )
+  assert.match(
+    importPanel,
+    /options\.length === 0 \?/,
+    "tabel pemetaan harus merender penjelasan saat daftar master kosong",
+  )
+  assert.match(importPanel, /emptyOptionsHint/, "setiap tabel pemetaan wajib memberi keterangan spesifik")
+
+  const mySchedule = readFileSync(new URL("../components/jadwal/my-schedule-tab.tsx", import.meta.url), "utf8")
+  assert.match(
+    mySchedule,
+    /disabled=\{teachers\.length === 0\}/,
+    "pemilih guru harus dinonaktifkan saat populasi guru kosong",
+  )
+  assert.match(
+    mySchedule,
+    /teachers\.length === 0 \?/,
+    "tab Jadwal Saya harus menjelaskan mengapa tidak ada guru yang bisa dipilih",
+  )
+})

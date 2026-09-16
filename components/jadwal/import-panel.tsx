@@ -37,6 +37,7 @@ function MappingTable({
   entityType,
   plan,
   options,
+  emptyOptionsHint,
   onChanged,
 }: {
   title: string
@@ -44,6 +45,7 @@ function MappingTable({
   entityType: EntityType
   plan: MappingPlan
   options: readonly { id: string; name: string }[]
+  emptyOptionsHint: string
   onChanged: () => void
 }) {
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -92,7 +94,14 @@ function MappingTable({
             Berkas ini tidak merujuk entitas apa pun pada kategori tersebut.
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-border/60">
+          <>
+            {options.length === 0 ? (
+              <p className="mb-3 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-muted-foreground">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                <span>{emptyOptionsHint}</span>
+              </p>
+            ) : null}
+            <div className="overflow-x-auto rounded-lg border border-border/60">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -118,6 +127,7 @@ function MappingTable({
                         <div className="flex items-center gap-2">
                           <Select
                             value={current}
+                            disabled={options.length === 0}
                             onValueChange={(value) => value && save(row, String(value))}
                           >
                             <SelectTrigger className="w-full" aria-label={`Pemetaan untuk ${row.externalName}`}>
@@ -152,7 +162,8 @@ function MappingTable({
                 })}
               </TableBody>
             </Table>
-          </div>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
@@ -272,6 +283,7 @@ export function ImportPanel({
             entityType="TEACHER"
             plan={data.mapping.teachers}
             options={master.teachers}
+            emptyOptionsHint="Belum ada guru yang memenuhi syarat modul Jadwal, sehingga tidak ada pilihan yang dapat ditampilkan. Syaratnya: akun aktif, tertaut Data Master Guru, dan memegang role dengan key “guru”. Akun yang hanya memegang role lama “legacy_guru” belum terhitung."
             onChanged={preview.reload}
           />
           <MappingTable
@@ -280,6 +292,7 @@ export function ImportPanel({
             entityType="CLASS"
             plan={data.mapping.classes}
             options={master.classes}
+            emptyOptionsHint="Data Master Kelas masih kosong, sehingga tidak ada pilihan yang dapat ditampilkan. Tambahkan kelas terlebih dahulu di Data Master."
             onChanged={preview.reload}
           />
           <MappingTable
@@ -288,6 +301,7 @@ export function ImportPanel({
             entityType="SUBJECT"
             plan={data.mapping.subjects}
             options={master.subjects}
+            emptyOptionsHint="Data Master Mata Pelajaran masih kosong, sehingga tidak ada pilihan yang dapat ditampilkan. Tambahkan mata pelajaran terlebih dahulu di Kurikulum."
             onChanged={preview.reload}
           />
 

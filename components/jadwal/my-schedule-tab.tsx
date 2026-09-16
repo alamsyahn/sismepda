@@ -49,7 +49,11 @@ export function MyScheduleTab({
       {canPickTeacher ? (
         <div className="flex flex-col gap-1.5 sm:max-w-sm">
           <Label htmlFor="jadwal-guru">Guru</Label>
-          <Select value={teacherId} onValueChange={(value) => value && setTeacherId(String(value))}>
+          <Select
+            value={teacherId}
+            disabled={teachers.length === 0}
+            onValueChange={(value) => value && setTeacherId(String(value))}
+          >
             <SelectTrigger id="jadwal-guru" className="w-full">
               <SelectValue placeholder="Pilih guru">
                 {(value: string) => teachers.find((item) => item.id === value)?.name ?? "Pilih guru"}
@@ -66,7 +70,13 @@ export function MyScheduleTab({
         </div>
       ) : null}
 
-      {!teacherId ? (
+      {canPickTeacher && teachers.length === 0 ? (
+        <p className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-muted-foreground">
+          Belum ada guru yang memenuhi syarat modul Jadwal. Syaratnya: akun aktif, tertaut Data Master
+          Guru, dan memegang role dengan key “guru”. Akun yang hanya memegang role lama “legacy_guru”
+          belum terhitung.
+        </p>
+      ) : !teacherId ? (
         <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
           {canPickTeacher
             ? "Pilih guru untuk melihat jadwal mingguannya."
