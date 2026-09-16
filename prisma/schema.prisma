@@ -877,6 +877,12 @@ enum WhatsAppSendTrigger {
 }
 
 enum WhatsAppSendStatus {
+  /// Occurrence sudah DIKLAIM tetapi transport belum menjawab. Ditulis SEBELUM
+  /// pesan dikirim: klaim inilah yang menghentikan duplikat, bukan pencatatan
+  /// sesudahnya. Baris yang tertinggal di status ini berarti proses mati di
+  /// tengah pengiriman — dan memang tidak boleh dikirim ulang otomatis, karena
+  /// pesan pertama mungkin sudah sampai.
+  PROCESSING
   SENT
   FAILED
   /// Tidak dikirim karena keputusan sadar (hari libur, toggle nonaktif, slot
@@ -939,6 +945,11 @@ model WhatsAppConfiguration {
   /// dipakai memilih tujuan.
   targetGroupName String?
   targetResolvedAt DateTime?
+  /// Jam pengiriman `HH:mm` dalam zona waktu sekolah, menaik dan tanpa kembar.
+  /// Dahulu jam ini hidup sebagai konstanta di source code; memindahkannya ke
+  /// sini membuat admin dapat mengubah jadwal tanpa rilis baru. Nilainya ikut
+  /// menyusun idempotency key, jadi ia kontrak, bukan preferensi tampilan.
+  slots String[]
   /// Waktu pesan jenis ini terakhir BERHASIL terkirim, lewat jalur mana pun.
   lastSentAt DateTime?
   updatedAt DateTime @updatedAt

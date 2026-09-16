@@ -167,9 +167,12 @@ test("siswa ganda dalam satu kelas hanya dihitung sekali", () => {
 
 // --- jadwal & idempotensi ---------------------------------------------------
 
-test("jadwal kanonik: 08.00 dan 10.00 untuk kelas belum mengisi, 12.00 untuk rekap", () => {
-  assert.deepEqual(scheduleFor("ATTENDANCE_MISSING").slots, ["08:00", "10:00"])
-  assert.deepEqual(scheduleFor("ATTENDANCE_ABSENT").slots, ["12:00"])
+test("jam bawaan hanya benih migrasi: 08.00 dan 10.00 untuk kelas belum mengisi, 12.00 untuk rekap", () => {
+  // Ini BUKAN jadwal yang dipakai runtime. Scheduler membaca jam dari
+  // konfigurasi database; nilai di sini hanya mengisi baris yang belum pernah
+  // diatur admin, sehingga sekolah yang sudah berjalan tidak kehilangan jadwal.
+  assert.deepEqual(scheduleFor("ATTENDANCE_MISSING").defaultSlots, ["08:00", "10:00"])
+  assert.deepEqual(scheduleFor("ATTENDANCE_ABSENT").defaultSlots, ["12:00"])
   assert.deepEqual(WHATSAPP_MESSAGE_TYPES, ["ATTENDANCE_MISSING", "ATTENDANCE_ABSENT"])
 })
 
@@ -199,12 +202,12 @@ test("slot berbeda pada hari sama menghasilkan kunci berbeda", () => {
   assert.notEqual(eight, ten)
 })
 
-test("setiap jenis pesan punya label, deskripsi, dan minimal satu slot", () => {
+test("setiap jenis pesan punya label, deskripsi, dan minimal satu jam bawaan", () => {
   for (const definition of WHATSAPP_SCHEDULE) {
     assert.ok(definition.label.trim().length > 0)
     assert.ok(definition.description.trim().length > 0)
-    assert.ok(definition.slots.length > 0)
-    for (const slot of definition.slots) {
+    assert.ok(definition.defaultSlots.length > 0)
+    for (const slot of definition.defaultSlots) {
       assert.match(slot, /^\d{2}:\d{2}$/, `slot tidak berformat HH:mm: ${slot}`)
     }
   }

@@ -14,16 +14,27 @@ is itself a release candidate and a caret would silently pull a breaking RC.
 
 ## Schedule
 
-| Slot | Time (school timezone) | Message |
-|---|---|---|
-| 08:00 | 08:00 | Classes that have not submitted attendance |
-| 10:00 | 10:00 | Classes that have not submitted attendance |
-| 12:00 | 12:00 | Student attendance recap for the day |
+Times are operator configuration, stored per message type in
+`WhatsAppConfiguration.slots` and edited from the WhatsApp page. School hours
+move — exam weeks, Ramadan, a new start time — and requiring a release for each
+shift made the on-screen schedule slowly drift from what was actually sent.
 
-Times live in code (`lib/whatsapp-schedule.ts`), not in the database. They are a
-school rule, not operator configuration; the database stores only what an
-operator owns — the per-message-type toggle and the target group. The school
-timezone comes from settings (`readSchoolTimeZone()`), never a hardcoded offset.
+`WHATSAPP_SCHEDULE[].defaultSlots` in `lib/whatsapp-schedule.ts` is **only** a
+migration seed for rows never configured by an operator:
+
+| Message | Seeded slots |
+|---|---|
+| Classes that have not submitted attendance | 08:00, 10:00 |
+| Student attendance recap for the day | 12:00 |
+
+The scheduler re-reads the configured slots on every tick, so an edit takes
+effect without restarting the worker. Slots are validated by `normalizeSlots()`
+(`lib/whatsapp-slot-config.ts`) on both the client and the server: `HH:mm`,
+no duplicates, sorted ascending. An empty list is legal and means the type is
+simply not scheduled.
+
+The school timezone comes from settings (`readSchoolTimeZone()`), never a
+hardcoded offset.
 
 Sending is skipped entirely on holidays and non-school days, as decided by
 `resolveHoliday()` — the same rule the rest of the application uses.
@@ -40,10 +51,11 @@ handlers are not. It therefore runs as a separate persistent process.
 
 | Module | Responsibility | Imports Baileys |
 |---|---|---|
-| `lib/whatsapp-schedule.ts` | Slot times, idempotency key format | no |
+| `lib/whatsapp-schedule.ts` | Message type definitions, seed slots, idempotency key format | no |
+| `lib/whatsapp-slot-config.ts` | Slot validation, dedupe, sorting (pure) | no |
 | `lib/whatsapp-messages.ts` | Message text (pure) | no |
 | `lib/whatsapp-transport.ts` | Transport contract, status labels, reconnect backoff | no |
-| `lib/whatsapp-slots.ts` | Which slots are due now (pure) | no |
+| `lib/whatsapp-slots.ts` | Which configured slots are due now (pure) | no |
 | `lib/whatsapp-target.ts` | Destination resolution: default/override, JID validation, display labels (pure) | no |
 | `lib/whatsapp-session-root.ts` | Environment → session path (pure) | no |
 | `lib/whatsapp-session-store.ts` | Session presence check and credential wipe | no |
@@ -157,20 +169,20 @@ import graph transitively and fails if `auth.ts`, `rbac-access.ts` or any
 | `GET /api/whatsapp/qr` | `whatsapp.connection.manage` | QR as a PNG data URL; never persisted, never logged |
 | `POST /api/whatsapp/connection` | `whatsapp.connection.manage` | `connect` / `reconnect` / `relogin` / `logout` |
 | `GET /api/whatsapp/configuration` | `whatsapp.read` | Config plus group list when connected |
-| `PATCH /api/whatsapp/configuration` | `whatsapp.connection.manage` | Toggle, destination mode, per-type group |
+| `PATCH /api/whatsapp/configuration` | `whatsapp.connection.manage` | Toggle, destination mode, per-type group, schedule slots |
 | `PUT /api/whatsapp/configuration` | `whatsapp.connection.manage` | Default destination group |
 | `POST /api/whatsapp/send` | `whatsapp.send` | Manual send |
 
-Schedule times are not writable through the API. They are a school rule in
-`lib/whatsapp-schedule.ts`; making them editable would give code and database two
-competing truths.
+Schedule times are writable through `PATCH`, and the server re-runs
+`normalizeSlots()` on whatever arrives. The client is not a guard: a request can
+reach the route without passing through the screen.
 
 The destination is chosen by JID, never by name. A duplicate group name used to
 return `409`; that error class no longer exists, because the operator picks from
 a list and the client submits the JID. See "Destination groups" below.
 
 Manual sends pass a `MANUAL` slot marker instead of borrowing a scheduled hour.
-`ATTENDANCE_MISSING` has two slots (08:00 and 10:00); borrowing one would make a
+`ATTENDANCE_MISSING` normally has several slots; borrowing one would make a
 manual send look like a scheduled one in both the schedule card and the history.
 The worker fixes `trigger: "MANUAL"` itself rather than reading it from the
 request body, so a caller cannot impersonate a scheduled send and write an
@@ -431,6 +443,24 @@ visible.
 `WhatsAppSendLog.idempotencyKey` is unique and derived from date, slot and
 message type. A scheduled send that already happened cannot be repeated, even if
 the worker restarts mid-loop.
+
+**The claim is written before the message is sent.** This ordering is the whole
+mechanism, not a detail. Previously the message went out first and the row was
+written afterwards, so the unique constraint rejected only the *record* — the
+message had already been delivered. Because the scheduler ticks every minute and
+a slot stays due for a 20-minute grace window, the same occurrence was re-sent
+every minute until the window closed.
+
+Now a `PROCESSING` row is inserted first. A second writer — a concurrent tick, a
+second worker, or the same worker after a restart — is rejected by PostgreSQL
+before the transport is touched, and the send is skipped. The claim is then
+resolved to `SENT` or `FAILED`.
+
+A failed claim stays `FAILED` and is **not** deleted. It still owns the
+occurrence, so a transport failure is not retried every minute for the rest of
+the grace window. The status chips read these rows directly, which is why
+"Terkirim" means a delivery actually succeeded rather than that the clock passed
+the slot.
 
 Manual sends store `NULL` in that column. PostgreSQL treats each `NULL` as
 distinct in a unique index, so an operator can resend deliberately while the

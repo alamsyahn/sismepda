@@ -87,3 +87,16 @@ test("selector responsif di layar kecil", () => {
   // Lebar penuh di mobile, terbatas di layar lebar.
   assert.equal(source.split('className="w-full sm:w-72"').length - 1, 2)
 })
+
+test("SelectValue tujuan per laporan tidak pernah dibiarkan kosong", () => {
+  // `<SelectValue />` tanpa anak menampilkan value mentahnya, dan value di
+  // selector ini adalah JID. Itulah sebabnya admin sempat melihat
+  // "120363...@g.us" alih-alih nama grupnya.
+  assert.doesNotMatch(source, /<SelectValue\s*\/>/)
+})
+
+test("daftar jam disunting lewat input waktu, bukan konstanta di kode", () => {
+  assert.match(source, /type="time"/)
+  assert.match(source, /Tambah waktu/)
+  assert.match(source, /saveSlots/)
+})

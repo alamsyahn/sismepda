@@ -158,13 +158,13 @@ test("nama grup ambigu tidak mungkin terjadi: tujuan dipilih dengan JID", () => 
   )
 })
 
-test("jam jadwal tidak dapat diubah lewat API", () => {
+test("jam jadwal yang masuk lewat API selalu dinormalisasi ulang di server", () => {
   const source = codeOnly(read(CONFIG_ROUTE))
 
-  // Jam adalah aturan sekolah yang hidup di lib/whatsapp-schedule.ts. Begitu
-  // ia bisa digeser dari layar, kode dan database punya dua kebenaran.
-  assert.ok(
-    !/slots?\s*:/.test(source),
-    "slot jadwal tidak boleh menjadi field yang bisa disimpan",
-  )
+  // Jam kini memang dapat disunting admin — dahulu tes ini melarangnya, karena
+  // jadwal hidup sebagai konstanta di kode. Yang tersisa untuk dijaga adalah
+  // batasnya: klien bukan penjaga. Permintaan dapat datang tanpa melewati
+  // layar, jadi format, duplikat, dan urutan diperiksa ulang di sini.
+  assert.ok(source.includes("normalizeSlots("), "server wajib menormalisasi jam")
+  assert.ok(source.includes("slotsErrorMessage("), "penolakan harus dapat dibaca admin")
 })

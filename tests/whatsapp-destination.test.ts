@@ -115,8 +115,10 @@ test("JID tersimpan hilang dari daftar: ditandai, tidak diganti diam-diam", () =
   assert.equal(display.kind, "STALE")
   // Yang ditampilkan tetap grup tersimpan — bukan WALI, satu-satunya grup yang
   // tersedia. Mengganti otomatis akan memindahkan tujuan tanpa sepengetahuan
-  // siapa pun.
-  assert.equal(display.label, GURU.name)
+  // siapa pun. Namanya kini diberi keterangan agar admin tahu grup itu tidak
+  // lagi ada, tanpa kehilangan jejak grup mana yang dahulu dipilih.
+  assert.match(display.label, new RegExp(GURU.name))
+  assert.match(display.label, /tidak ditemukan/)
   assert.match(STALE_DESTINATION_MESSAGE, /tidak ditemukan/)
 })
 

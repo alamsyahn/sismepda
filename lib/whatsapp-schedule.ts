@@ -18,11 +18,15 @@ export type WhatsAppScheduleDefinition = {
   label: string
   description: string
   /**
-   * Slot `HH:mm` dalam zona waktu sekolah. Urutan menaik dan tetap: slot ikut
-   * menyusun idempotency key, jadi nilainya adalah kontrak, bukan preferensi
-   * tampilan.
+   * Jam bawaan saat jenis ini pertama kali dibuat.
+   *
+   * BUKAN jadwal yang berlaku. Jadwal sesungguhnya tersimpan di
+   * `WhatsAppConfiguration.slots` dan dapat disunting admin; nilai di sini
+   * hanya dipakai sebagai benih baris baru dan oleh migrasi. Membacanya saat
+   * runtime akan mengembalikan bug yang justru dihapus: UI dan scheduler
+   * mengikuti angka di kode, bukan pengaturan yang dilihat admin.
    */
-  slots: readonly string[]
+  defaultSlots: readonly string[]
 }
 
 export const WHATSAPP_SCHEDULE: readonly WhatsAppScheduleDefinition[] = [
@@ -31,14 +35,14 @@ export const WHATSAPP_SCHEDULE: readonly WhatsAppScheduleDefinition[] = [
     label: "Kelas belum mengisi absensi",
     description:
       "Daftar kelas yang sampai jam tersebut belum mengisi atau belum melengkapi absensi hari itu.",
-    slots: ["08:00", "10:00"],
+    defaultSlots: ["08:00", "10:00"],
   },
   {
     type: "ATTENDANCE_ABSENT",
     label: "Rekap siswa tidak hadir",
     description:
       "Rekap siswa berstatus Sakit, Izin, Alfa, atau Dispensasi pada hari itu.",
-    slots: ["12:00"],
+    defaultSlots: ["12:00"],
   },
 ] as const
 

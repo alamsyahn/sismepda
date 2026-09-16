@@ -5,7 +5,15 @@
  * Tidak membaca jam sistem, tidak menyentuh database — sehingga perilaku pada
  * batas tengah malam WIB maupun setelah worker mati dapat diuji secara pasti.
  */
-import { WHATSAPP_SCHEDULE, type WhatsAppMessageType } from "@/lib/whatsapp-schedule"
+import type { WhatsAppMessageType } from "@/lib/whatsapp-schedule"
+
+/**
+ * Jadwal yang sedang berlaku, sebagaimana tersimpan di database.
+ *
+ * Diterima sebagai argumen, tidak dibaca dari konstanta: jam dapat disunting
+ * admin, dan modul ini harus menjawab menurut pengaturan yang berlaku saat itu.
+ */
+export type ConfiguredSchedule = { type: WhatsAppMessageType; slots: readonly string[] }
 
 /**
  * Seberapa lama setelah jamnya sebuah slot masih pantas dikirim.
@@ -54,11 +62,12 @@ export function slotDecision(
  * kalender sekolah, karena itulah satu-satunya sumber kebenaran hari aktif.
  */
 export function dueSlots(
+  schedule: readonly ConfiguredSchedule[],
   nowMinutes: number,
   graceMinutes: number = SLOT_GRACE_MINUTES,
 ): { type: WhatsAppMessageType; slot: string }[] {
   const due: { type: WhatsAppMessageType; slot: string }[] = []
-  for (const definition of WHATSAPP_SCHEDULE) {
+  for (const definition of schedule) {
     for (const slot of definition.slots) {
       if (slotDecision(slot, nowMinutes, graceMinutes).due) {
         due.push({ type: definition.type, slot })
@@ -70,11 +79,12 @@ export function dueSlots(
 
 /** Slot yang sudah terlewat hari ini — untuk pemantauan, bukan untuk dikirim. */
 export function missedSlots(
+  schedule: readonly ConfiguredSchedule[],
   nowMinutes: number,
   graceMinutes: number = SLOT_GRACE_MINUTES,
 ): { type: WhatsAppMessageType; slot: string }[] {
   const missed: { type: WhatsAppMessageType; slot: string }[] = []
-  for (const definition of WHATSAPP_SCHEDULE) {
+  for (const definition of schedule) {
     for (const slot of definition.slots) {
       if (slotDecision(slot, nowMinutes, graceMinutes).reason === "EXPIRED") {
         missed.push({ type: definition.type, slot })

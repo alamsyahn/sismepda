@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
@@ -36,6 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { normalizeSlots, slotsErrorMessage } from "@/lib/whatsapp-slot-config"
 // Modul murni tanpa Prisma/pg, jadi aman diimpor komponen klien. Label tujuan
 // dihitung fungsi bersama agar layar dan server tidak pernah berbeda pendapat
 // tentang tujuan mana yang sedang berlaku.
@@ -99,6 +101,7 @@ type ConfigurationRow = {
   destinationMode: DestinationMode
   targetGroupJid: string | null
   targetGroupName: string | null
+  slots: string[]
 }
 
 type DefaultDestinationPayload = {
@@ -127,6 +130,7 @@ const STATE_VARIANT: Record<WhatsAppConnectionState, "default" | "secondary" | "
 }
 
 const SEND_STATUS_LABELS: Record<string, string> = {
+  PROCESSING: "Sedang dikirim",
   SENT: "Terkirim",
   FAILED: "Gagal",
   SKIPPED: "Dilewati",
@@ -370,6 +374,39 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
     }
   }
 
+  /**
+   * Simpan jadwal satu jenis laporan.
+   *
+   * Normalisasi (urut, buang duplikat, tolak format salah) dilakukan fungsi
+   * murni yang sama dengan yang dipakai server, sehingga yang terlihat di layar
+   * setelah menyimpan sama dengan yang benar-benar tersimpan.
+   */
+  const saveSlots = async (type: WhatsAppMessageType, slots: string[]) => {
+    const normalized = normalizeSlots(slots)
+    if (!normalized.ok) {
+      toast.error(slotsErrorMessage(normalized.error))
+      return
+    }
+
+    setBusy(`slots:${type}`)
+    try {
+      const response = await fetch("/api/whatsapp/configuration", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, slots: normalized.slots }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        toast.error(data.message ?? "Jadwal gagal disimpan.")
+        return
+      }
+      toast.success("Jadwal disimpan.")
+      await refresh()
+    } finally {
+      setBusy(null)
+    }
+  }
+
   if (loading) {
     return <p className="text-muted-foreground text-sm">Memuat status WhatsApp…</p>
   }
@@ -566,6 +603,8 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
             // dimatikan lebih dulu — lebih jujur daripada membiarkan admin
             // menekan tombol yang sudah pasti gagal.
             const destinationReady = display.kind !== "MISSING"
+            // Jadwal berasal dari database, bukan dari konstanta di kode.
+            const configuredSlots = configuration?.slots ?? []
 
             return (
               <div key={definition.type} className="space-y-3 rounded-md border p-4">
@@ -574,7 +613,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                     <p className="font-medium">{definition.label}</p>
                     <p className="text-muted-foreground text-sm">{definition.description}</p>
                     <p className="text-muted-foreground mt-1 text-xs">
-                      {formatSlots(definition.slots)} · Grup:{" "}
+                      {configuredSlots.length > 0 ? formatSlots(configuredSlots) : "Jadwal belum diatur"} · Grup:{" "}
                       {display.kind === "DEFAULT"
                         ? `Gunakan grup default (${display.label})`
                         : display.label}
@@ -627,7 +666,17 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                       }
                     >
                       <SelectTrigger className="w-full sm:w-72">
-                        <SelectValue />
+                        {/*
+                          Label WAJIB ditulis sebagai anak SelectValue. Tanpa
+                          anak, komponen menampilkan value mentahnya — dan value
+                          di sini adalah JID, yang tidak berarti apa pun bagi
+                          admin. JID tetap menjadi identitas yang disimpan.
+                        */}
+                        <SelectValue>
+                          {reportDestination.mode === "OVERRIDE"
+                            ? display.label
+                            : "Gunakan grup default"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value={USE_DEFAULT}>Gunakan grup default</SelectItem>
@@ -640,6 +689,55 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                     </Select>
                     {display.kind === "STALE" ? (
                       <p className="text-destructive text-xs">{STALE_DESTINATION_MESSAGE}</p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {canManageConnection ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Jadwal</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {configuredSlots.map((slot, index) => (
+                        <div key={`${slot}-${index}`} className="flex items-center gap-1">
+                          <Input
+                            type="time"
+                            value={slot}
+                            className="w-28"
+                            disabled={busy !== null}
+                            onChange={(event) => {
+                              const next = [...configuredSlots]
+                              next[index] = event.target.value
+                              void saveSlots(definition.type, next)
+                            }}
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={busy !== null}
+                            onClick={() =>
+                              void saveSlots(
+                                definition.type,
+                                configuredSlots.filter((_, position) => position !== index),
+                              )
+                            }
+                          >
+                            Hapus
+                          </Button>
+                        </div>
+                      ))}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy !== null}
+                        onClick={() => void saveSlots(definition.type, [...configuredSlots, "07:00"])}
+                      >
+                        + Tambah waktu
+                      </Button>
+                    </div>
+                    {configuredSlots.length === 0 ? (
+                      <p className="text-muted-foreground text-xs">
+                        Tanpa jadwal, pengiriman otomatis tidak akan berjalan untuk laporan ini.
+                      </p>
                     ) : null}
                   </div>
                 ) : null}

@@ -47,6 +47,7 @@ export type WhatsAppConfigurationRow = {
   targetGroupJid: string | null
   targetGroupName: string | null
   targetResolvedAt: Date | null
+  slots: string[]
   lastSentAt: Date | null
   updatedAt: Date
 }
@@ -130,7 +131,9 @@ export async function readConfigurations(): Promise<WhatsAppConfigurationRow[]> 
 
   if (missing.length > 0) {
     await prisma.whatsAppConfiguration.createMany({
-      data: missing.map((type) => ({ type })),
+      // Baris baru dibenihi jam bawaan jenisnya. Tanpa ini, jenis pesan baru
+      // lahir tanpa jadwal dan diam-diam tidak pernah terkirim.
+      data: missing.map((type) => ({ type, slots: [...scheduleFor(type).defaultSlots] })),
       skipDuplicates: true,
     })
     return prisma.whatsAppConfiguration.findMany()
@@ -150,9 +153,9 @@ export async function readConfiguration(
 /**
  * Ubah konfigurasi satu jenis pesan.
  *
- * Hanya dua hal yang boleh diubah operator: aktif/nonaktif, dan grup tujuan.
- * Jam jadwal sengaja TIDAK termasuk — itu aturan sekolah yang hidup di
- * `lib/whatsapp-schedule.ts`, bukan pengaturan yang bisa digeser dari layar.
+ * Termasuk jam jadwal: jam sekolah bergeser (ujian, bulan puasa, jam masuk
+ * baru), dan menuntut rilis untuk setiap pergeseran membuat jadwal di layar
+ * perlahan berbohong tentang apa yang benar-benar dikirim.
  */
 export async function updateConfiguration(
   type: WhatsAppMessageType,
@@ -161,6 +164,7 @@ export async function updateConfiguration(
     destinationMode?: DestinationMode
     targetGroupJid?: string | null
     targetGroupName?: string | null
+    slots?: string[]
   },
 ): Promise<WhatsAppConfigurationRow> {
   await readConfigurations()
@@ -175,6 +179,7 @@ export async function updateConfiguration(
     // nama grup benar-benar dicocokkan dengan JID yang hidup.
     data.targetResolvedAt = changes.targetGroupJid ? new Date() : null
   }
+  if (changes.slots !== undefined) data.slots = changes.slots
 
   return prisma.whatsAppConfiguration.update({ where: { type }, data })
 }
@@ -185,6 +190,7 @@ export type SkipReason =
   | "ALREADY_SENT"
   | "NO_TARGET"
   | "INVALID_TARGET"
+  | "NO_SLOT"
 
 export type SendOutcome =
   | { status: "SENT"; logId: string }
@@ -278,11 +284,53 @@ export async function sendWhatsAppMessage(
     }
   }
 
-  const slot = request.slot ?? scheduleFor(request.type).slots[0]
-  const idempotencyKey =
-    request.trigger === "SCHEDULED" ? idempotencyKeyFor(request.type, date, slot) : null
+  const slot = request.slot ?? configuration.slots[0]
+  if (!slot) {
+    return {
+      status: "SKIPPED",
+      reason: "NO_SLOT",
+      detail: "Jadwal pengiriman belum diatur untuk jenis laporan ini.",
+    }
+  }
 
   const messageText = await composeMessage(request.type, date, slot)
+
+  // KLAIM DULU, BARU KIRIM.
+  //
+  // Inilah inti perbaikan duplikat-per-menit. Sebelumnya pesan dikirim lebih
+  // dulu dan barisnya baru ditulis sesudahnya, sehingga constraint UNIQUE hanya
+  // menolak CATATANNYA — pesannya sendiri sudah terlanjur sampai. Scheduler
+  // yang berdetak tiap menit dengan grace 20 menit karena itu mengirim occurrence
+  // yang sama berulang kali; tick berikutnya tidak pernah menemukan baris
+  // penanda, karena baris itu ditulis setelah kerusakan terjadi.
+  //
+  // Sekarang baris PROCESSING ditulis lebih dahulu. Penulis kedua ditolak
+  // database sebelum transport disentuh, sehingga yang dijaga adalah
+  // PENGIRIMAN, bukan pencatatan.
+  let claim: { id: string | null; duplicate: boolean }
+  if (request.trigger === "SCHEDULED") {
+    claim = await recordLog({
+      request,
+      slot,
+      date,
+      idempotencyKey: idempotencyKeyFor(request.type, date, slot),
+      target,
+      messageText,
+      status: "PROCESSING",
+    })
+    if (claim.duplicate || !claim.id) {
+      return {
+        status: "SKIPPED",
+        reason: "ALREADY_SENT",
+        detail: "Pesan untuk jadwal ini sudah pernah diproses hari ini.",
+      }
+    }
+  } else {
+    // Kiriman manual sengaja boleh diulang: admin yang menekannya tahu persis
+    // apa yang ia minta. Ia tidak pernah mengklaim occurrence terjadwal, jadi
+    // jadwal hari itu tidak ikut terkunci olehnya.
+    claim = { id: null, duplicate: false }
+  }
 
   let sendResult: { providerMessageId: string | null }
   try {
@@ -290,47 +338,40 @@ export async function sendWhatsAppMessage(
   } catch (error) {
     const code = error instanceof WhatsAppSendError ? error.code : "UNKNOWN"
     const message = error instanceof WhatsAppSendError ? error.message : "Pengiriman gagal."
-    const failure = await recordLog({
-      request,
-      slot,
-      date,
-      idempotencyKey,
-      target,
-      messageText,
-      status: "FAILED",
-      errorCode: code,
-      errorMessage: message,
-    })
-    if (failure.duplicate) {
-      return {
-        status: "SKIPPED",
-        reason: "ALREADY_SENT",
-        detail: "Pesan untuk jadwal ini sudah pernah dikirim hari ini.",
-      }
-    }
+    // Klaim yang gagal dikirim ditandai FAILED, bukan dihapus. Occurrence-nya
+    // tetap terpakai sehingga tick menit berikutnya tidak mencoba lagi — kalau
+    // dihapus, slot yang gagal akan diulang tiap menit sepanjang masa grace.
+    const failure = claim.id
+      ? await markLog(claim.id, { status: "FAILED", errorCode: code, errorMessage: message })
+      : await recordLog({
+          request,
+          slot,
+          date,
+          idempotencyKey: null,
+          target,
+          messageText,
+          status: "FAILED",
+          errorCode: code,
+          errorMessage: message,
+        })
     return { status: "FAILED", code, message, logId: failure.id }
   }
 
-  const success = await recordLog({
-    request,
-    slot,
-    date,
-    idempotencyKey,
-    target,
-    messageText,
-    status: "SENT",
-    providerMessageId: sendResult.providerMessageId,
-  })
-
-  // Kunci UNIQUE ditolak SETELAH pesan terkirim berarti slot ini sudah pernah
-  // dikirim oleh worker lain. Dicatat apa adanya; baris pertamalah yang sah.
-  if (success.duplicate) {
-    return {
-      status: "SKIPPED",
-      reason: "ALREADY_SENT",
-      detail: "Pesan untuk jadwal ini sudah pernah dikirim hari ini.",
-    }
-  }
+  const success = claim.id
+    ? await markLog(claim.id, {
+        status: "SENT",
+        providerMessageId: sendResult.providerMessageId,
+      })
+    : await recordLog({
+        request,
+        slot,
+        date,
+        idempotencyKey: null,
+        target,
+        messageText,
+        status: "SENT",
+        providerMessageId: sendResult.providerMessageId,
+      })
 
   await prisma.whatsAppConfiguration.update({
     where: { type: request.type },
@@ -340,6 +381,30 @@ export async function sendWhatsAppMessage(
   return { status: "SENT", logId: success.id! }
 }
 
+/** Selesaikan klaim yang sudah ditulis: PROCESSING → SENT/FAILED. */
+async function markLog(
+  id: string,
+  outcome: {
+    status: "SENT" | "FAILED"
+    providerMessageId?: string | null
+    errorCode?: string
+    errorMessage?: string
+  },
+): Promise<{ id: string | null; duplicate: boolean }> {
+  const log = await prisma.whatsAppSendLog.update({
+    where: { id },
+    data: {
+      status: outcome.status,
+      providerMessageId: outcome.providerMessageId ?? null,
+      errorCode: outcome.errorCode ?? null,
+      errorMessage: outcome.errorMessage ?? null,
+      sentAt: outcome.status === "SENT" ? new Date() : null,
+    },
+    select: { id: true },
+  })
+  return { id: log.id, duplicate: false }
+}
+
 type LogInput = {
   request: SendRequest
   slot: string
@@ -347,7 +412,7 @@ type LogInput = {
   idempotencyKey: string | null
   target: { jid: string; name: string }
   messageText: string
-  status: "SENT" | "FAILED" | "SKIPPED"
+  status: "PROCESSING" | "SENT" | "FAILED" | "SKIPPED"
   providerMessageId?: string | null
   errorCode?: string
   errorMessage?: string
@@ -408,21 +473,31 @@ export type ScheduleSlotStatus = {
   type: WhatsAppMessageType
   label: string
   slot: string
-  status: "SENT" | "FAILED" | "SKIPPED" | "NOT_YET"
+  status: "PROCESSING" | "SENT" | "FAILED" | "SKIPPED" | "NOT_YET"
   sentAt: Date | null
   errorMessage: string | null
 }
 
-/** Status setiap slot untuk satu hari sekolah — sumber kartu jadwal di UI. */
+/**
+ * Status setiap slot untuk satu hari sekolah — sumber kartu jadwal di UI.
+ *
+ * Status berasal dari catatan pengiriman yang benar-benar ada, bukan dari
+ * perbandingan jam. "Terkirim" harus berarti pesannya memang sampai; menebak
+ * dari `sekarang >= jadwal` akan menyatakan sukses untuk slot yang justru gagal.
+ */
 export async function readScheduleStatus(date: SchoolDate): Promise<ScheduleSlotStatus[]> {
-  const logs = await prisma.whatsAppSendLog.findMany({
-    where: { schoolDate: toPrismaDate(date), trigger: "SCHEDULED" },
-    orderBy: { attemptedAt: "desc" },
-  })
+  const [logs, configurations] = await Promise.all([
+    prisma.whatsAppSendLog.findMany({
+      where: { schoolDate: toPrismaDate(date), trigger: "SCHEDULED" },
+      orderBy: { attemptedAt: "desc" },
+    }),
+    readConfigurations(),
+  ])
 
   const statuses: ScheduleSlotStatus[] = []
   for (const definition of WHATSAPP_SCHEDULE) {
-    for (const slot of definition.slots) {
+    const configuration = configurations.find((row) => row.type === definition.type)
+    for (const slot of configuration?.slots ?? []) {
       const log = logs.find((entry) => entry.type === definition.type && entry.scheduledSlot === slot)
       statuses.push({
         type: definition.type,

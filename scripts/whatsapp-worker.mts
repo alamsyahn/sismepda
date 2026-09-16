@@ -29,7 +29,7 @@ import { readHolidayRules } from "../lib/server-holidays.js"
 import { readSchoolTimeZone } from "../lib/server-school-time-zone.js"
 import { schoolMinutesOfDay, todayInSchoolTimeZone } from "../lib/school-date.js"
 import { BaileysWhatsAppTransport } from "../lib/whatsapp-baileys.mjs"
-import { sendWhatsAppMessage } from "../lib/server-whatsapp.js"
+import { readConfigurations, sendWhatsAppMessage } from "../lib/server-whatsapp.js"
 import {
   LOCK_HEARTBEAT_MS,
   acquireSessionLock,
@@ -72,7 +72,12 @@ async function tick(): Promise<void> {
     const rules = await readHolidayRules()
     if (resolveHoliday(date, rules).isHoliday) return
 
-    for (const { type, slot } of dueSlots(schoolMinutesOfDay(now, timeZone))) {
+    // Jadwal dibaca ulang setiap putaran: admin dapat menyunting jamnya kapan
+    // saja, dan perubahan itu harus berlaku tanpa me-restart worker.
+    const configurations = await readConfigurations()
+    const schedule = configurations.map((row) => ({ type: row.type, slots: row.slots }))
+
+    for (const { type, slot } of dueSlots(schedule, schoolMinutesOfDay(now, timeZone))) {
       const outcome = await sendWhatsAppMessage(transport, { type, slot, trigger: "SCHEDULED" })
       if (outcome.status === "FAILED") {
         console.error(`[whatsapp] ${type} ${slot} gagal: ${outcome.code}`)

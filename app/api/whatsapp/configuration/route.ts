@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
+import { normalizeSlots, slotsErrorMessage } from "@/lib/whatsapp-slot-config"
 
 import { authFailureResponse } from "@/lib/api-errors"
 import { recordAuditLog } from "@/lib/audit-log"
@@ -42,6 +43,7 @@ const patchSchema = z.object({
   enabled: z.boolean().optional(),
   destinationMode: z.enum(["DEFAULT", "OVERRIDE"]).optional(),
   destination: destinationSchema.nullable().optional(),
+  slots: z.array(z.string()).optional(),
 })
 
 const defaultSchema = z.object({
@@ -177,11 +179,23 @@ export async function PATCH(request: Request) {
       }
     }
 
+    // Normalisasi dijalankan ulang di server memakai fungsi yang sama dengan
+    // UI. Klien bukan penjaga: permintaan bisa datang tanpa melewati layar.
+    let slots: string[] | undefined
+    if (parsed.data.slots !== undefined) {
+      const normalized = normalizeSlots(parsed.data.slots)
+      if (!normalized.ok) {
+        return NextResponse.json({ message: slotsErrorMessage(normalized.error) }, { status: 400 })
+      }
+      slots = normalized.slots
+    }
+
     const after = await updateConfiguration(type, {
       enabled: parsed.data.enabled,
       destinationMode: parsed.data.destinationMode,
       targetGroupJid,
       targetGroupName,
+      slots,
     })
 
     await recordAuditLog({
@@ -194,11 +208,13 @@ export async function PATCH(request: Request) {
         enabled: before.enabled,
         destinationMode: before.destinationMode,
         targetGroupName: before.targetGroupName,
+        slots: before.slots,
       },
       after: {
         enabled: after.enabled,
         destinationMode: after.destinationMode,
         targetGroupName: after.targetGroupName,
+        slots: after.slots,
       },
     })
 

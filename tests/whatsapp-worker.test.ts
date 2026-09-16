@@ -571,8 +571,15 @@ test("idempotensi dijaga database, bukan variabel memori", () => {
 
 test("hanya pengiriman terjadwal yang memakai idempotency key", () => {
   const server = codeOnly(read("lib/server-whatsapp.ts"))
+
+  // Kunci occurrence hanya ditulis pada jalur terjadwal. Kiriman manual tidak
+  // pernah mengklaim apa pun, sehingga admin dapat menekan "Kirim sekarang"
+  // berulang kali — juga setelah occurrence otomatis hari itu terkirim.
+  const claim = server.slice(server.indexOf("let claim"), server.indexOf("transport.sendMessage("))
+  assert.ok(claim.includes('request.trigger === "SCHEDULED"'), "klaim hanya untuk jadwal")
+  assert.ok(claim.includes("idempotencyKeyFor("), "occurrence terjadwal wajib berkunci")
   assert.ok(
-    server.includes('request.trigger === "SCHEDULED" ? idempotencyKeyFor'),
+    claim.includes("claim = { id: null, duplicate: false }"),
     "kirim manual harus tetap bisa diulang operator",
   )
 })

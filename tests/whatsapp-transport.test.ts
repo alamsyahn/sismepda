@@ -153,16 +153,23 @@ test("slot masih jatuh tempo dalam tenggang", () => {
   assert.equal(slotDecision("08:00", 8 * 60 + SLOT_GRACE_MINUTES).due, true)
 })
 
+// Jadwal yang dahulu berupa konstanta kini datang dari konfigurasi admin.
+// Tes ini memakai jam lama agar perilaku jatuh-tempo tetap terjaga.
+const SCHEDULE = [
+  { type: "ATTENDANCE_MISSING" as const, slots: ["08:00", "10:00"] },
+  { type: "ATTENDANCE_ABSENT" as const, slots: ["12:00"] },
+]
+
 test("slot yang lewat jauh TIDAK dikirim belakangan", () => {
   // Worker mati 07.50, hidup 11.30: slot 08.00 dan 10.00 sudah kedaluwarsa.
   const at1130 = 11 * 60 + 30
   assert.deepEqual(slotDecision("08:00", at1130), { due: false, reason: "EXPIRED" })
   assert.deepEqual(slotDecision("10:00", at1130), { due: false, reason: "EXPIRED" })
-  assert.deepEqual(dueSlots(at1130), [])
+  assert.deepEqual(dueSlots(SCHEDULE, at1130), [])
 })
 
 test("slot terlewat tetap dapat dilaporkan untuk pemantauan", () => {
-  const missed = missedSlots(11 * 60 + 30)
+  const missed = missedSlots(SCHEDULE, 11 * 60 + 30)
   assert.deepEqual(
     missed.map((entry) => entry.slot),
     ["08:00", "10:00"],
@@ -170,19 +177,19 @@ test("slot terlewat tetap dapat dilaporkan untuk pemantauan", () => {
 })
 
 test("pada 08.00 hanya slot 08.00 yang jatuh tempo", () => {
-  const due = dueSlots(8 * 60)
+  const due = dueSlots(SCHEDULE, 8 * 60)
   assert.deepEqual(due, [{ type: "ATTENDANCE_MISSING", slot: "08:00" }])
 })
 
 test("pada 12.00 hanya rekap siswa tidak hadir yang jatuh tempo", () => {
-  const due = dueSlots(12 * 60)
+  const due = dueSlots(SCHEDULE, 12 * 60)
   assert.deepEqual(due, [{ type: "ATTENDANCE_ABSENT", slot: "12:00" }])
 })
 
 test("tengah malam dan dini hari tidak menjatuhtempokan slot apa pun", () => {
-  assert.deepEqual(dueSlots(0), [])
-  assert.deepEqual(dueSlots(5 * 60), [])
-  assert.deepEqual(dueSlots(23 * 60 + 59), [])
+  assert.deepEqual(dueSlots(SCHEDULE, 0), [])
+  assert.deepEqual(dueSlots(SCHEDULE, 5 * 60), [])
+  assert.deepEqual(dueSlots(SCHEDULE, 23 * 60 + 59), [])
 })
 
 test("slot berformat salah gagal keras", () => {

@@ -158,7 +158,16 @@ export function destinationDisplay(
   // TIDAK diganti diam-diam ke grup lain; admin diberi tahu agar bisa memilih
   // ulang secara sadar.
   if (groups && !live) {
-    return { kind: "STALE", label: target.name }
+    // Nama snapshot bisa kosong (mis. tujuan lama yang disimpan sebelum nama
+    // ikut dicatat). Menampilkan string kosong akan terlihat seperti "tidak ada
+    // tujuan", padahal JID-nya tersimpan — karena itu JID yang ditampilkan
+    // sebagai petunjuk terakhir, bukan sebagai label utama.
+    return {
+      kind: "STALE",
+      label: target.name
+        ? `${target.name} (tidak ditemukan)`
+        : `Grup tidak ditemukan (${target.jid})`,
+    }
   }
 
   // Nama grup dapat berubah. Yang tampil adalah nama terbaru; tujuannya tetap
