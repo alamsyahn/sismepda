@@ -28,7 +28,12 @@ import {
   scheduleFor,
   type WhatsAppMessageType,
 } from "@/lib/whatsapp-schedule"
-import { targetStateOf } from "@/lib/whatsapp-target"
+import {
+  resolveDestination,
+  type DefaultDestination,
+  type DestinationMode,
+  type ReportDestination,
+} from "@/lib/whatsapp-target"
 import {
   WhatsAppSendError,
   type WhatsAppErrorCode,
@@ -38,11 +43,77 @@ import {
 export type WhatsAppConfigurationRow = {
   type: WhatsAppMessageType
   enabled: boolean
+  destinationMode: DestinationMode
   targetGroupJid: string | null
   targetGroupName: string | null
   targetResolvedAt: Date | null
   lastSentAt: Date | null
   updatedAt: Date
+}
+
+export type WhatsAppSettingRow = {
+  defaultGroupJid: string | null
+  defaultGroupName: string | null
+  defaultGroupResolvedAt: Date | null
+}
+
+/** Baris setelan tunggal, dibuat saat pertama dibutuhkan. */
+export async function readWhatsAppSetting(): Promise<WhatsAppSettingRow> {
+  const row = await prisma.whatsAppSetting.upsert({
+    where: { id: "default" },
+    update: {},
+    create: { id: "default" },
+  })
+  return {
+    defaultGroupJid: row.defaultGroupJid,
+    defaultGroupName: row.defaultGroupName,
+    defaultGroupResolvedAt: row.defaultGroupResolvedAt,
+  }
+}
+
+/**
+ * Ubah grup tujuan default.
+ *
+ * JID adalah identitas; nama hanya ikut sebagai snapshot tampilan. Keduanya
+ * ditulis bersama supaya nama tersimpan tidak pernah menjadi milik JID lain.
+ */
+export async function updateDefaultDestination(changes: {
+  jid: string | null
+  name: string | null
+}): Promise<WhatsAppSettingRow> {
+  const row = await prisma.whatsAppSetting.upsert({
+    where: { id: "default" },
+    update: {
+      defaultGroupJid: changes.jid,
+      defaultGroupName: changes.jid ? changes.name : null,
+      defaultGroupResolvedAt: changes.jid ? new Date() : null,
+    },
+    create: {
+      id: "default",
+      defaultGroupJid: changes.jid,
+      defaultGroupName: changes.jid ? changes.name : null,
+      defaultGroupResolvedAt: changes.jid ? new Date() : null,
+    },
+  })
+  return {
+    defaultGroupJid: row.defaultGroupJid,
+    defaultGroupName: row.defaultGroupName,
+    defaultGroupResolvedAt: row.defaultGroupResolvedAt,
+  }
+}
+
+/** Bentuk yang dimengerti resolver, dari satu baris konfigurasi. */
+export function destinationOf(row: WhatsAppConfigurationRow): ReportDestination {
+  return {
+    mode: row.destinationMode,
+    jid: row.targetGroupJid,
+    name: row.targetGroupName,
+  }
+}
+
+/** Bentuk yang dimengerti resolver, dari baris setelan. */
+export function defaultDestinationOf(row: WhatsAppSettingRow): DefaultDestination {
+  return { jid: row.defaultGroupJid, name: row.defaultGroupName }
 }
 
 /**
@@ -87,6 +158,7 @@ export async function updateConfiguration(
   type: WhatsAppMessageType,
   changes: {
     enabled?: boolean
+    destinationMode?: DestinationMode
     targetGroupJid?: string | null
     targetGroupName?: string | null
   },
@@ -95,6 +167,7 @@ export async function updateConfiguration(
 
   const data: Record<string, unknown> = {}
   if (changes.enabled !== undefined) data.enabled = changes.enabled
+  if (changes.destinationMode !== undefined) data.destinationMode = changes.destinationMode
   if (changes.targetGroupJid !== undefined) {
     data.targetGroupJid = changes.targetGroupJid
     data.targetGroupName = changes.targetGroupName ?? null
@@ -190,7 +263,10 @@ export async function sendWhatsAppMessage(
     }
   }
 
-  const target = targetStateOf(configuration.targetGroupJid, configuration.targetGroupName)
+  const target = resolveDestination(
+    destinationOf(configuration),
+    defaultDestinationOf(await readWhatsAppSetting()),
+  )
   if (target.status === "NOT_RESOLVED") {
     return { status: "SKIPPED", reason: "NO_TARGET", detail: "Grup tujuan belum dipilih." }
   }

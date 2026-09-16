@@ -144,10 +144,18 @@ test("worker memaksa trigger MANUAL, tidak mempercayai body", () => {
   )
 })
 
-test("nama grup ambigu ditolak, bukan dipilih diam-diam", () => {
+test("nama grup ambigu tidak mungkin terjadi: tujuan dipilih dengan JID", () => {
   const source = codeOnly(read(CONFIG_ROUTE))
-  assert.match(source, /AMBIGUOUS/)
-  assert.match(source, /409/)
+
+  // Dahulu tujuan diisi dengan MENGETIK nama grup, sehingga route harus
+  // menolak nama kembar (409 AMBIGUOUS). Sekarang admin memilih dari daftar
+  // dan yang dikirim adalah JID, jadi kelas kesalahan itu hilang di sumbernya
+  // — bukan ditangani, melainkan tidak dapat terjadi.
+  assert.match(source, /refine\(isGroupJid/)
+  assert.ok(
+    !/AMBIGUOUS/.test(source),
+    "penyelesaian nama grup seharusnya sudah tidak ada di route konfigurasi",
+  )
 })
 
 test("jam jadwal tidak dapat diubah lewat API", () => {

@@ -29,6 +29,22 @@ import {
   formatSlots,
   type WhatsAppMessageType,
 } from "@/lib/whatsapp-schedule"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+// Modul murni tanpa Prisma/pg, jadi aman diimpor komponen klien. Label tujuan
+// dihitung fungsi bersama agar layar dan server tidak pernah berbeda pendapat
+// tentang tujuan mana yang sedang berlaku.
+import {
+  STALE_DESTINATION_MESSAGE,
+  destinationDisplay,
+  type DestinationMode,
+} from "@/lib/whatsapp-target"
+import type { WhatsAppGroup } from "@/lib/whatsapp-transport"
 
 /**
  * Panel WhatsApp Otomatis.
@@ -80,8 +96,18 @@ type HistoryRow = {
 type ConfigurationRow = {
   type: WhatsAppMessageType
   enabled: boolean
+  destinationMode: DestinationMode
+  targetGroupJid: string | null
   targetGroupName: string | null
 }
+
+type DefaultDestinationPayload = {
+  jid: string | null
+  name: string | null
+}
+
+/** Nilai sentinel pilihan "ikut grup default" di dalam Select. */
+const USE_DEFAULT = "__default__"
 
 export type WhatsAppPanelProps = {
   canManageConnection: boolean
@@ -127,6 +153,14 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
   const [schedule, setSchedule] = useState<ScheduleRow[]>([])
   const [history, setHistory] = useState<HistoryRow[]>([])
   const [configurations, setConfigurations] = useState<ConfigurationRow[]>([])
+  // `null` = daftar grup tidak diketahui (belum terhubung / fetch gagal).
+  // Dibedakan dari `[]` yang berarti benar-benar tidak ada grup.
+  const [groups, setGroups] = useState<WhatsAppGroup[] | null>(null)
+  const [defaultDestination, setDefaultDestination] = useState<DefaultDestinationPayload>({
+    jid: null,
+    name: null,
+  })
+  const [refreshingGroups, setRefreshingGroups] = useState(false)
   const [qr, setQr] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -146,6 +180,11 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
       if (configResponse.ok) {
         const data = await configResponse.json()
         setConfigurations(data.configurations ?? [])
+        setDefaultDestination(data.defaultDestination ?? { jid: null, name: null })
+        // Daftar grup hanya ditimpa bila server benar-benar mengirim daftar.
+        // Pengambilan yang gagal mengirim `null`, dan menimpakannya akan
+        // mengosongkan pilihan yang sedang dilihat admin.
+        if (data.groups) setGroups(data.groups)
       }
     } finally {
       setLoading(false)
@@ -249,6 +288,88 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
     }
   }
 
+  /** Ambil ulang daftar grup dari koneksi aktif. */
+  const refreshGroups = async () => {
+    setRefreshingGroups(true)
+    try {
+      const response = await fetch("/api/whatsapp/configuration", { cache: "no-store" })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        toast.error(data.message ?? "Daftar grup gagal dimuat.")
+        return
+      }
+      // Kegagalan pengambilan TIDAK menghapus pilihan tersimpan: `groups`
+      // dibiarkan seperti semula agar konfigurasi yang sudah benar tidak
+      // terlihat rusak hanya karena WhatsApp sedang tidak dapat ditanya.
+      if (!data.groups) {
+        toast.error("Daftar grup belum dapat dimuat. Pastikan WhatsApp terhubung.")
+        return
+      }
+      setGroups(data.groups)
+      toast.success(`Daftar grup diperbarui (${data.groups.length} grup).`)
+    } finally {
+      setRefreshingGroups(false)
+    }
+  }
+
+  /** Simpan grup tujuan default. */
+  const saveDefaultDestination = async (jid: string | null) => {
+    const group = groups?.find((row) => row.jid === jid) ?? null
+    setBusy("default-destination")
+    try {
+      const response = await fetch("/api/whatsapp/configuration", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: "default",
+          destination: jid ? { jid, name: group?.name } : null,
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        toast.error(data.message ?? "Grup tujuan gagal disimpan.")
+        return
+      }
+      toast.success("Grup tujuan default disimpan.")
+      await refresh()
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  /**
+   * Simpan tujuan satu jenis laporan.
+   *
+   * Memilih "Gunakan grup default" hanya mengubah MODE; JID override yang
+   * pernah dipilih sengaja dibiarkan tersimpan, sehingga admin yang kembali ke
+   * override tidak perlu memilih ulang dari awal.
+   */
+  const saveReportDestination = async (type: WhatsAppMessageType, value: string) => {
+    const useDefault = value === USE_DEFAULT
+    const group = groups?.find((row) => row.jid === value) ?? null
+    setBusy(`destination:${type}`)
+    try {
+      const response = await fetch("/api/whatsapp/configuration", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type,
+          destinationMode: useDefault ? "DEFAULT" : "OVERRIDE",
+          ...(useDefault ? {} : { destination: { jid: value, name: group?.name } }),
+        }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        toast.error(data.message ?? "Grup tujuan gagal disimpan.")
+        return
+      }
+      toast.success("Grup tujuan disimpan.")
+      await refresh()
+    } finally {
+      setBusy(null)
+    }
+  }
+
   if (loading) {
     return <p className="text-muted-foreground text-sm">Memuat status WhatsApp…</p>
   }
@@ -259,6 +380,18 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
   // pernah muncul bersamaan: keduanya berarti hal berbeda, dan menampilkan
   // keduanya memaksa admin menebak mana yang benar.
   const actions = connectionActionsFor(state, status?.sessionExists ?? false)
+
+  // Grup hanya dapat dibaca dari sesi yang hidup, jadi selector mengikuti
+  // keadaan koneksi, bukan sekadar ada-tidaknya daftar di memori.
+  const connected = state === "CONNECTED"
+  const defaultGroupLive = groups?.find((group) => group.jid === defaultDestination.jid) ?? null
+  const defaultDestinationLabel = defaultDestination.jid
+    ? // Nama terbaru menang atas snapshot: nama grup dapat berubah, dan yang
+      // ingin dilihat admin adalah nama grup hari ini.
+      (defaultGroupLive?.name ?? defaultDestination.name ?? "Grup tersimpan")
+    : "Belum dipilih"
+  const defaultDestinationStale =
+    defaultDestination.jid !== null && groups !== null && defaultGroupLive === null
 
   return (
     <div className="space-y-6">
@@ -372,9 +505,67 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
           <CardTitle>Jadwal pengiriman</CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Grup tujuan default</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select
+                value={defaultDestination.jid ?? ""}
+                disabled={!canManageConnection || !connected || busy !== null}
+                onValueChange={(value) => void saveDefaultDestination(String(value))}
+              >
+                <SelectTrigger className="w-full sm:w-72">
+                  <SelectValue placeholder="Pilih grup WhatsApp">
+                    {defaultDestinationLabel}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {(groups ?? []).map((group) => (
+                    <SelectItem key={group.jid} value={group.jid}>
+                      {group.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {canManageConnection ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!connected || refreshingGroups}
+                  onClick={() => void refreshGroups()}
+                >
+                  {refreshingGroups ? "Memuat…" : "Muat ulang grup"}
+                </Button>
+              ) : null}
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {connected
+                ? "Digunakan oleh jadwal yang tidak memiliki grup khusus."
+                : "Hubungkan WhatsApp terlebih dahulu untuk memilih grup."}
+            </p>
+            {defaultDestinationStale ? (
+              <p className="text-destructive text-xs">{STALE_DESTINATION_MESSAGE}</p>
+            ) : null}
+          </div>
+
+          <Separator />
+
           {WHATSAPP_SCHEDULE.map((definition) => {
             const configuration = configurations.find((row) => row.type === definition.type)
             const slots = schedule.filter((row) => row.type === definition.type)
+            const reportDestination = {
+              mode: configuration?.destinationMode ?? "DEFAULT",
+              jid: configuration?.targetGroupJid ?? null,
+              name: configuration?.targetGroupName ?? null,
+            }
+            const display = destinationDisplay(
+              reportDestination,
+              { jid: defaultDestination.jid, name: defaultDestination.name },
+              groups,
+            )
+            // Tujuan yang belum sah membuat pengiriman mustahil, jadi tombolnya
+            // dimatikan lebih dulu — lebih jujur daripada membiarkan admin
+            // menekan tombol yang sudah pasti gagal.
+            const destinationReady = display.kind !== "MISSING"
 
             return (
               <div key={definition.type} className="space-y-3 rounded-md border p-4">
@@ -384,7 +575,9 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                     <p className="text-muted-foreground text-sm">{definition.description}</p>
                     <p className="text-muted-foreground mt-1 text-xs">
                       {formatSlots(definition.slots)} · Grup:{" "}
-                      {configuration?.targetGroupName ?? "belum dipilih"}
+                      {display.kind === "DEFAULT"
+                        ? `Gunakan grup default (${display.label})`
+                        : display.label}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
@@ -392,7 +585,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                       <label className="flex items-center gap-2 text-sm">
                         <Switch
                           checked={configuration?.enabled ?? false}
-                          disabled={busy !== null}
+                          disabled={busy !== null || (!destinationReady && !configuration?.enabled)}
                           onCheckedChange={(checked) =>
                             void toggleSchedule(definition.type, checked === true)
                           }
@@ -408,7 +601,10 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={busy !== null}
+                        disabled={busy !== null || !destinationReady}
+                        title={
+                          destinationReady ? undefined : "Pilih grup tujuan terlebih dahulu."
+                        }
                         onClick={() => void sendNow(definition.type)}
                       >
                         {busy === `send:${definition.type}` ? "Mengirim…" : "Kirim sekarang"}
@@ -416,6 +612,37 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                     ) : null}
                   </div>
                 </div>
+
+                {canManageConnection ? (
+                  <div className="space-y-1">
+                    <Select
+                      value={
+                        reportDestination.mode === "OVERRIDE" && reportDestination.jid
+                          ? reportDestination.jid
+                          : USE_DEFAULT
+                      }
+                      disabled={!connected || busy !== null}
+                      onValueChange={(value) =>
+                        void saveReportDestination(definition.type, String(value))
+                      }
+                    >
+                      <SelectTrigger className="w-full sm:w-72">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={USE_DEFAULT}>Gunakan grup default</SelectItem>
+                        {(groups ?? []).map((group) => (
+                          <SelectItem key={group.jid} value={group.jid}>
+                            {group.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {display.kind === "STALE" ? (
+                      <p className="text-destructive text-xs">{STALE_DESTINATION_MESSAGE}</p>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 <div className="flex flex-wrap gap-2">
                   {slots.map((slot) => (

@@ -44,7 +44,7 @@ handlers are not. It therefore runs as a separate persistent process.
 | `lib/whatsapp-messages.ts` | Message text (pure) | no |
 | `lib/whatsapp-transport.ts` | Transport contract, status labels, reconnect backoff | no |
 | `lib/whatsapp-slots.ts` | Which slots are due now (pure) | no |
-| `lib/whatsapp-target.ts` | Group name → JID resolution (pure) | no |
+| `lib/whatsapp-target.ts` | Destination resolution: default/override, JID validation, display labels (pure) | no |
 | `lib/whatsapp-session-root.ts` | Environment → session path (pure) | no |
 | `lib/whatsapp-session-store.ts` | Session presence check and credential wipe | no |
 | `lib/whatsapp-session-lock.ts` | Cross-process single-owner lock | no |
@@ -157,16 +157,17 @@ import graph transitively and fails if `auth.ts`, `rbac-access.ts` or any
 | `GET /api/whatsapp/qr` | `whatsapp.connection.manage` | QR as a PNG data URL; never persisted, never logged |
 | `POST /api/whatsapp/connection` | `whatsapp.connection.manage` | `connect` / `reconnect` / `relogin` / `logout` |
 | `GET /api/whatsapp/configuration` | `whatsapp.read` | Config plus group list when connected |
-| `PATCH /api/whatsapp/configuration` | `whatsapp.connection.manage` | Toggle and target group |
+| `PATCH /api/whatsapp/configuration` | `whatsapp.connection.manage` | Toggle, destination mode, per-type group |
+| `PUT /api/whatsapp/configuration` | `whatsapp.connection.manage` | Default destination group |
 | `POST /api/whatsapp/send` | `whatsapp.send` | Manual send |
 
 Schedule times are not writable through the API. They are a school rule in
 `lib/whatsapp-schedule.ts`; making them editable would give code and database two
 competing truths.
 
-A duplicate target group name returns `409` rather than silently picking the
-first match — choosing wrongly would send the student attendance recap to the
-wrong group with nobody noticing.
+The destination is chosen by JID, never by name. A duplicate group name used to
+return `409`; that error class no longer exists, because the operator picks from
+a list and the client submits the JID. See "Destination groups" below.
 
 Manual sends pass a `MANUAL` slot marker instead of borrowing a scheduled hour.
 `ATTENDANCE_MISSING` has two slots (08:00 and 10:00); borrowing one would make a
@@ -383,6 +384,37 @@ never connects.
 After a successful wipe the state is `UNPAIRED`, not `LOGGED_OUT`: with no
 credentials left, "not yet linked" is the honest description, and it offers the
 right button.
+
+### Destination groups
+
+Every message type sends to a group, and the group is identified by **JID**
+(`120363…@g.us`). Group names change; a name is a label, never an address.
+
+Two levels, both stored in PostgreSQL:
+
+- `WhatsAppSetting` (singleton row, id `default`) holds the default destination:
+  `defaultGroupJid` plus `defaultGroupName` as a display snapshot.
+- `WhatsAppConfiguration.destinationMode` is `DEFAULT` or `OVERRIDE`. Under
+  `OVERRIDE` the row's own `targetGroupJid` wins.
+
+`resolveDestination()` in `lib/whatsapp-target.ts` is the only place that
+decides where a message goes, and `sendWhatsAppMessage()` is its only caller —
+so scheduled sends and "Kirim sekarang" cannot drift apart. `OVERRIDE` with an
+empty JID resolves to `NOT_RESOLVED`, never to the default: an operator who
+chose "different group" has stated this report must *not* follow the default,
+and guessing would send to the group they were avoiding.
+
+Unresolved destinations are recorded as `SKIPPED` (`NO_TARGET` /
+`INVALID_TARGET`). The scheduler keeps running; it never picks a fallback group.
+
+`automaticBlockFor()` guards the automatic toggle, enforced in the API route and
+not only in the UI. History stores the JID and name snapshot that were used at
+send time, so renaming a group later does not rewrite where past messages went.
+
+If a saved JID is missing from the current group list, the UI says so and leaves
+the configuration untouched. Silently reassigning the destination would move the
+recap to another group with nobody noticing — and an empty list usually means the
+session is merely down, not that the group is gone.
 
 ### Group listing requires a live session
 

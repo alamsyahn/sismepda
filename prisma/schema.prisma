@@ -878,6 +878,37 @@ enum WhatsAppSendStatus {
   SKIPPED
 }
 
+/// Dari mana sebuah jenis pesan mengambil grup tujuannya.
+///
+/// Sengaja enum dua nilai, bukan "JID kosong berarti default": tujuan yang
+/// belum dipilih dan tujuan yang sengaja mengikuti default adalah dua keadaan
+/// berbeda, dan hanya yang pertama boleh menghalangi pengaktifan otomatis.
+enum WhatsAppDestinationMode {
+  /// Ikut "Grup tujuan default". Berubahnya default ikut mengubah tujuan ini.
+  DEFAULT
+  /// Memakai grup sendiri, terlepas dari default.
+  OVERRIDE
+}
+
+/// Setelan WhatsApp yang berlaku lintas jenis pesan. Satu baris (mirip
+/// SchoolSetting/BosSetting).
+///
+/// Grup default tinggal di sini, bukan diduplikasi ke setiap baris
+/// WhatsAppConfiguration: menyalinnya per jenis berarti mengubah default harus
+/// menyentuh N baris, dan satu baris yang terlewat mengirim rekap sekolah ke
+/// grup yang salah tanpa ada yang menyadarinya.
+model WhatsAppSetting {
+  id String @id @default("default")
+  /// JID grup (`...@g.us`) tujuan default — identifier kanonik.
+  defaultGroupJid String?
+  /// Nama grup saat terakhir dilihat. Display saja; nama grup bisa berubah
+  /// sewaktu-waktu dan tidak pernah dipakai memilih tujuan.
+  defaultGroupName String?
+  defaultGroupResolvedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 /// Konfigurasi per jenis pesan otomatis. Satu baris per `type`.
 ///
 /// Jam jadwal TIDAK disimpan di sini: ia tinggal di satu tempat di kode
@@ -890,6 +921,10 @@ model WhatsAppConfiguration {
   /// Toggle pengiriman OTOMATIS. Tidak pernah menghalangi "Kirim sekarang":
   /// kiriman manual adalah tindakan eksplisit admin.
   enabled Boolean @default(false)
+  /// Apakah jenis ini mengikuti grup default atau memakai grupnya sendiri.
+  /// Default `DEFAULT` agar jenis pesan baru otomatis ikut grup default dan
+  /// tidak diam-diam menjadi "belum punya tujuan".
+  destinationMode WhatsAppDestinationMode @default(DEFAULT)
   /// JID grup tujuan (`...@g.us`) — identifier kanonik. Nama grup bisa berubah
   /// atau ganda, jadi pengiriman SELALU memakai JID ini, tidak pernah mencari
   /// ulang berdasarkan nama pada setiap kiriman.
