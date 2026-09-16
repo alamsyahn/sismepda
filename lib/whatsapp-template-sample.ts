@@ -1,0 +1,48 @@
+/**
+ * Data contoh untuk pratinjau template.
+ *
+ * MENGAPA DATA CONTOH, BUKAN DATA HARI INI
+ *
+ * Pratinjau harus memperlihatkan BENTUK pesan, terutama bagaimana daftar
+ * tersusun. Data hari ini sering tidak cocok untuk itu: pada jam admin menyunting
+ * template, daftar kelas belum rekap bisa saja kosong, sehingga admin menyangka
+ * formatnya salah padahal datanya memang belum ada. Data contoh selalu memuat
+ * beberapa baris, sehingga pemisah antar-item dan penomoran benar-benar terlihat.
+ *
+ * Layar WAJIB menandai hasilnya sebagai data contoh; lihat komponen editor.
+ *
+ * MURNI dan CLIENT-SAFE: pratinjau dirender di layar tanpa memanggil server,
+ * sehingga tidak ada jalur apa pun dari pratinjau menuju pengiriman WhatsApp.
+ */
+import type { TemplateContext } from "@/lib/whatsapp-template"
+
+export const SAMPLE_CONTEXT: TemplateContext = {
+  scalars: {
+    tanggal: "Senin, 16 September 2026",
+    waktu: "08.00",
+    nama_sekolah: "SMP Negeri 1 Contoh",
+    jumlah_kelas: "27",
+    jumlah_kelas_sudah_rekap: "24",
+    jumlah_kelas_belum_rekap: "3",
+    jumlah_siswa: "840",
+    jumlah_tidak_hadir: "4",
+    jumlah_sakit: "2",
+    jumlah_izin: "1",
+    jumlah_dispensasi: "0",
+    jumlah_alfa: "1",
+  },
+  collections: {
+    daftar_kelas_belum_rekap: [
+      { nama_kelas: "7A", wali_kelas: "Bu Ani", jumlah_siswa_belum_diisi: "28" },
+      { nama_kelas: "7B", wali_kelas: "Pak Budi", jumlah_siswa_belum_diisi: "5" },
+      { nama_kelas: "8A", wali_kelas: "Bu Sari", jumlah_siswa_belum_diisi: "30" },
+    ],
+    // Urutannya mengikuti pengelompokan nyata: SAKIT → IZIN → ALFA.
+    daftar_siswa_tidak_hadir: [
+      { nama_siswa: "Ahmad", nama_kelas: "7A", status: "SAKIT", keterangan: "Demam" },
+      { nama_siswa: "Citra", nama_kelas: "8B", status: "SAKIT", keterangan: "-" },
+      { nama_siswa: "Budi", nama_kelas: "7B", status: "IZIN", keterangan: "Acara keluarga" },
+      { nama_siswa: "Dewi", nama_kelas: "9A", status: "ALFA", keterangan: "-" },
+    ],
+  },
+}

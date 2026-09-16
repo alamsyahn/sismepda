@@ -12,7 +12,19 @@ import {
   readWhatsAppSetting,
   updateConfiguration,
   updateDefaultDestination,
+  updateMessageTemplates,
 } from "@/lib/server-whatsapp"
+import {
+  TEMPLATE_KEYS,
+  templateErrorMessage,
+  validateTemplate,
+  type WhatsAppTemplate,
+} from "@/lib/whatsapp-template"
+import {
+  customizedKeys,
+  serializeTemplates,
+  type StoredTemplates,
+} from "@/lib/whatsapp-template-store"
 import { workerGroups } from "@/lib/server-whatsapp-worker-client"
 import { WHATSAPP_MESSAGE_TYPES, scheduleFor } from "@/lib/whatsapp-schedule"
 import { WhatsAppSendError, type WhatsAppGroup } from "@/lib/whatsapp-transport"
@@ -49,6 +61,35 @@ const patchSchema = z.object({
 const defaultSchema = z.object({
   scope: z.literal("default"),
   destination: destinationSchema.nullable(),
+})
+
+/**
+ * Penyuntingan template pesan.
+ *
+ * `templates: null` berarti "kembalikan seluruh template jenis ini ke bawaan".
+ * Dibedakan dari objek kosong supaya reset menjadi tindakan eksplisit, bukan
+ * efek samping dari mengirim badan kosong.
+ */
+const templatesSchema = z.object({
+  scope: z.literal("templates"),
+  type: z.enum(WHATSAPP_MESSAGE_TYPES as unknown as [string, ...string[]]),
+  templates: z
+    .record(
+      z.string(),
+      z.object({
+        body: z.string(),
+        items: z
+          .record(
+            z.string(),
+            z.object({
+              format: z.string(),
+              separator: z.enum(["NEWLINE", "BLANK_LINE"]),
+            }),
+          )
+          .default({}),
+      }),
+    )
+    .nullable(),
 })
 
 /** Konfigurasi tiap jenis pesan, setelan default, plus daftar grup. */
@@ -134,6 +175,52 @@ export async function PATCH(request: Request) {
             resolvedAt: after.defaultGroupResolvedAt,
           },
         },
+        { headers: { "Cache-Control": "private, no-store" } },
+      )
+    }
+
+    // Template pesan. Divalidasi di server juga, bukan hanya di layar: layar
+    // dapat dilewati, dan template dengan variabel salah ketik akan mengirim
+    // teks rusak ke grup sekolah setiap hari sampai ada yang menyadarinya.
+    const asTemplates = templatesSchema.safeParse(body)
+    if (asTemplates.success) {
+      const type = asTemplates.data.type as (typeof WHATSAPP_MESSAGE_TYPES)[number]
+
+      let stored: StoredTemplates | null = null
+      if (asTemplates.data.templates !== null) {
+        const candidate: StoredTemplates = {}
+        for (const key of TEMPLATE_KEYS) {
+          const template = asTemplates.data.templates[key]
+          if (!template) continue
+          const errors = validateTemplate(key, template as WhatsAppTemplate)
+          if (errors.length > 0) {
+            return NextResponse.json(
+              { message: templateErrorMessage(errors[0]) },
+              { status: 400 },
+            )
+          }
+          candidate[key] = template as WhatsAppTemplate
+        }
+        stored = serializeTemplates(candidate)
+      }
+
+      const after = await updateMessageTemplates(type, stored)
+
+      await recordAuditLog({
+        actorId: context.user.id,
+        action: "WHATSAPP_SCHEDULE_TOGGLED",
+        entity: "WhatsAppConnection",
+        entityId: type,
+        summary:
+          stored === null
+            ? "Template pesan dikembalikan ke bawaan"
+            : "Template pesan diubah",
+        before: null,
+        after: { customized: stored === null ? [] : customizedKeys(stored) },
+      })
+
+      return NextResponse.json(
+        { configuration: after },
         { headers: { "Cache-Control": "private, no-store" } },
       )
     }

@@ -1,0 +1,23 @@
+-- Template pesan WhatsApp yang dapat disunting admin.
+--
+-- MENGAPA MIGRASI INI ADA
+--
+-- Bentuk pesan otomatis sebelumnya hidup sebagai string literal di
+-- `lib/whatsapp-messages.ts`, sehingga sekolah yang ingin mengubah satu kata
+-- pun harus menunggu rilis baru. Kolom ini memindahkan bentuk pesan menjadi
+-- data.
+--
+-- MENGAPA NULLABLE DAN TANPA BACKFILL
+--
+-- NULL berarti "belum pernah disunting", dan jenis pesan itu memakai template
+-- bawaan di `lib/whatsapp-template-defaults.ts` — yang isinya sengaja menyalin
+-- teks lama persis. Karena itu instalasi yang sudah berjalan tidak berubah
+-- perilakunya sama sekali setelah migrasi ini, dan tidak ada risiko pesan
+-- otomatis menjadi kosong.
+--
+-- Mengisi kolom ini dengan salinan template bawaan justru akan MERUGIKAN:
+-- baris yang terlanjur tersalin tidak akan pernah ikut ketika teks bawaan
+-- diperbaiki pada rilis berikutnya.
+--
+-- Aditif sepenuhnya: tidak ada kolom yang dibuang, tidak ada data yang diubah.
+ALTER TABLE "WhatsAppConfiguration" ADD COLUMN IF NOT EXISTS "messageTemplates" JSONB;

@@ -950,6 +950,21 @@ model WhatsAppConfiguration {
   /// sini membuat admin dapat mengubah jadwal tanpa rilis baru. Nilainya ikut
   /// menyusun idempotency key, jadi ia kontrak, bukan preferensi tampilan.
   slots String[]
+  /// Template pesan yang disunting admin, per KONDISI (lihat
+  /// `WhatsAppTemplateKey`). NULL berarti "belum pernah disunting" dan jenis
+  /// ini memakai template bawaan di `lib/whatsapp-template-defaults.ts`.
+  ///
+  /// MENGAPA JSON, BUKAN TABEL SENDIRI
+  ///
+  /// Isinya selalu dibaca dan ditulis sekaligus sebagai satu kesatuan milik
+  /// satu jenis pesan, tidak pernah di-query per kondisi. Tabel terpisah hanya
+  /// menambah join tanpa menambah kemampuan. Bentuknya divalidasi zod pada
+  /// setiap pembacaan, sehingga baris lama maupun baris rusak tidak pernah
+  /// sampai ke penyusun pesan.
+  ///
+  /// NULL adalah keadaan yang sah dan permanen: instalasi yang tidak pernah
+  /// menyentuh template harus tetap mengirim pesan seperti sebelumnya.
+  messageTemplates Json?
   /// Waktu pesan jenis ini terakhir BERHASIL terkirim, lewat jalur mana pun.
   lastSentAt DateTime?
   updatedAt DateTime @updatedAt

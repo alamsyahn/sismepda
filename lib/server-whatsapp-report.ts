@@ -35,6 +35,9 @@ export async function readWhatsAppReportClasses(date: Date): Promise<WhatsAppRep
       id: true,
       name: true,
       grade: true,
+      // Nama wali kelas dipakai placeholder `{{wali_kelas}}` pada template
+      // pesan. Diambil di sini agar tidak ada query tambahan per kelas.
+      homeroomUser: { select: { name: true } },
       students: {
         where: { active: true },
         select: { id: true, name: true },
@@ -45,7 +48,8 @@ export async function readWhatsAppReportClasses(date: Date): Promise<WhatsAppRep
         take: 1,
         select: {
           attendances: {
-            select: { studentId: true, status: true },
+            // `note` dipakai placeholder `{{keterangan}}`.
+            select: { studentId: true, status: true, note: true },
           },
         },
       },
@@ -56,12 +60,19 @@ export async function readWhatsAppReportClasses(date: Date): Promise<WhatsAppRep
   return sortClasses(rows).map((schoolClass) => {
     const day = schoolClass.attendanceDays[0]
     const attendanceByStudent = new Map(
-      day?.attendances.map((attendance) => [attendance.studentId, attendance.status]) ?? [],
+      day?.attendances.map((attendance) => [attendance.studentId, attendance]) ?? [],
     )
     const students: WhatsAppReportStudent[] = schoolClass.students.flatMap((student) => {
-      const status = attendanceByStudent.get(student.id)
-      if (status === "HADIR") return []
-      return [{ id: student.id, name: student.name, status: status ?? null }]
+      const attendance = attendanceByStudent.get(student.id)
+      if (attendance?.status === "HADIR") return []
+      return [
+        {
+          id: student.id,
+          name: student.name,
+          status: attendance?.status ?? null,
+          note: attendance?.note ?? null,
+        },
+      ]
     })
 
     return {
@@ -69,6 +80,8 @@ export async function readWhatsAppReportClasses(date: Date): Promise<WhatsAppRep
       name: schoolClass.name,
       grade: schoolClass.grade,
       submitted: Boolean(day),
+      homeroomName: schoolClass.homeroomUser?.name ?? null,
+      studentCount: schoolClass.students.length,
       students,
     }
   })

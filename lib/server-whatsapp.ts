@@ -5,6 +5,7 @@
  * diterima sebagai argumen. Akibatnya seluruh aturan pengiriman, termasuk
  * idempotensi, dapat diuji dengan transport palsu.
  */
+import { Prisma } from "@/app/generated/prisma/client"
 import { resolveHoliday } from "@/lib/holiday-rules"
 import { prisma } from "@/lib/prisma"
 import {
@@ -17,10 +18,16 @@ import {
 import { readHolidayRules } from "@/lib/server-holidays"
 import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import { readWhatsAppReportClasses } from "@/lib/server-whatsapp-report"
+import { renderTemplate } from "@/lib/whatsapp-template"
 import {
-  buildAbsentStudentsMessage,
-  buildMissingAttendanceMessage,
-} from "@/lib/whatsapp-messages"
+  buildTemplateContext,
+  templateKeyFor,
+} from "@/lib/whatsapp-template-context"
+import {
+  effectiveTemplate,
+  parseStoredTemplates,
+  type StoredTemplates,
+} from "@/lib/whatsapp-template-store"
 import {
   WHATSAPP_MESSAGE_TYPES,
   WHATSAPP_SCHEDULE,
@@ -48,6 +55,8 @@ export type WhatsAppConfigurationRow = {
   targetGroupName: string | null
   targetResolvedAt: Date | null
   slots: string[]
+  /** JSON mentah; SELALU lewat `parseStoredTemplates` sebelum dipakai. */
+  messageTemplates: unknown
   lastSentAt: Date | null
   updatedAt: Date
 }
@@ -101,6 +110,39 @@ export async function updateDefaultDestination(changes: {
     defaultGroupName: row.defaultGroupName,
     defaultGroupResolvedAt: row.defaultGroupResolvedAt,
   }
+}
+
+/**
+ * Nama sekolah untuk placeholder `{{nama_sekolah}}`.
+ *
+ * Dibaca dari `SchoolSetting` yang sudah dipakai seluruh aplikasi, bukan
+ * konstanta baru, supaya nama di pesan WhatsApp tidak pernah berbeda dari nama
+ * yang terlihat di layar.
+ */
+export async function readSchoolName(): Promise<string> {
+  const setting = await prisma.schoolSetting.findUnique({
+    where: { id: "default" },
+    select: { schoolName: true },
+  })
+  return setting?.schoolName ?? ""
+}
+
+/**
+ * Ubah template satu jenis pesan.
+ *
+ * Menerima set yang SUDAH divalidasi pemanggil (route). Nilai `null` berarti
+ * kembali ke bawaan sepenuhnya: barisnya dikosongkan, bukan diisi salinan
+ * template bawaan — lihat alasannya di `serializeTemplates`.
+ */
+export async function updateMessageTemplates(
+  type: WhatsAppMessageType,
+  templates: StoredTemplates | null,
+): Promise<WhatsAppConfigurationRow> {
+  await readConfigurations()
+  return prisma.whatsAppConfiguration.update({
+    where: { type },
+    data: { messageTemplates: templates === null ? Prisma.DbNull : templates },
+  })
 }
 
 /** Bentuk yang dimengerti resolver, dari satu baris konfigurasi. */
@@ -216,16 +258,25 @@ export async function composeMessage(
   // SchoolDate sudah bebas zona waktu dan tidak boleh diproyeksikan ulang.
   const dateLabel = formatSchoolDate(date)
 
-  switch (type) {
-    case "ATTENDANCE_MISSING":
-      return buildMissingAttendanceMessage(dateLabel, slot, classes)
-    case "ATTENDANCE_ABSENT":
-      return buildAbsentStudentsMessage(dateLabel, slot, classes)
-    default: {
-      const exhaustive: never = type
-      throw new Error(`Jenis pesan tidak dikenal: ${String(exhaustive)}`)
-    }
-  }
+  // KONDISI DITENTUKAN SISTEM, BUKAN ADMIN.
+  //
+  // Template tidak mengenal percabangan; yang memilih antara "masih ada yang
+  // belum rekap" dan "semua sudah" adalah data, di satu tempat, sehingga
+  // template yang dipilih tidak pernah bertentangan dengan angka di dalamnya.
+  const templateKey = templateKeyFor(type, classes)
+  const configuration = await readConfiguration(type)
+  const stored = parseStoredTemplates(configuration.messageTemplates)
+
+  return renderTemplate(
+    templateKey,
+    effectiveTemplate(templateKey, stored),
+    buildTemplateContext({
+      dateLabel,
+      slot,
+      schoolName: await readSchoolName(),
+      classes,
+    }),
+  )
 }
 
 export type SendRequest = {

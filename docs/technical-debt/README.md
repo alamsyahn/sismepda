@@ -171,3 +171,13 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Reason:** Penghapusan berkas atas dasar pemindaian referensi berisiko menghapus berkas yang baru saja ditulis tetapi referensinya belum tersimpan. Menunda lebih murah daripada kehilangan media.
 - **Direction:** Pemindaian referensi yang aman di seluruh sumber media, ditambah masa tenggang berdasarkan mtime berkas, dengan dry-run sebagai default. Jangan dijalankan bersamaan dengan migrasi media legacy.
 - **Exit criteria:** Garbage collection berjalan terjadwal dengan dry-run default, dan jumlah berkas volume sama dengan jumlah kunci yang direferensikan ditambah hanya berkas dalam masa tenggang.
+
+## TD-021 — Penyusun pesan WhatsApp lama tinggal sebagai kode yatim
+
+- **Area / severity:** WhatsApp automation — **Low**
+- **Current condition:** Sejak teks pesan otomatis disusun dari template, `buildMissingAttendanceMessage()` dan `buildAbsentStudentsMessage()` di `lib/whatsapp-messages.ts` tidak lagi dipanggil kode produksi mana pun; yang masih terpakai dari berkas itu hanya `incompleteClasses()` dan `slotLabel()`. Kedua fungsi tersebut kini hanya dipanggil oleh tesnya sendiri.
+- **Evidence:** `grep buildMissingAttendanceMessage|buildAbsentStudentsMessage` hanya menemukan definisinya di `lib/whatsapp-messages.ts` dan pemakaian di `tests/whatsapp-messages.test.ts`; jalur produksi memakai `renderTemplate()` lewat `composeMessage()` di `lib/server-whatsapp.ts`.
+- **Impact:** Kecil dan tidak merusak. Risikonya adalah menyesatkan: pembaca berikutnya dapat mengira kedua fungsi itu yang menentukan bunyi pesan, lalu menyuntingnya tanpa efek apa pun. Tesnya yang hijau memperkuat salah paham itu.
+- **Reason:** Sengaja dibiarkan pada tugas ini. Teks keduanya adalah rujukan yang dipakai menyusun template bawaan, dan menghapusnya bersamaan dengan perubahan perilaku akan mencampur dua hal di satu diff.
+- **Direction:** Hapus kedua fungsi beserta tesnya setelah template bawaan terbukti benar di produksi, dan pertahankan `incompleteClasses()`/`slotLabel()` yang masih dipakai.
+- **Exit criteria:** `lib/whatsapp-messages.ts` hanya berisi pembantu yang benar-benar dipanggil kode produksi, dan tidak ada tes yang menjaga teks pesan yang sudah tidak pernah dikirim.

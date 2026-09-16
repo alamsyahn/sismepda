@@ -37,12 +37,93 @@ The school timezone comes from settings (`readSchoolTimeZone()`), never a
 hardcoded offset.
 
 Sending is skipped entirely on holidays and non-school days, as decided by
-`resolveHoliday()` — the same rule the rest of the application uses.
+`resolveHoliday()` — the same rule the rest of the application uses. The guard
+sits in `sendWhatsAppMessage()` before the report is read, before the template
+is chosen, and before the occurrence is claimed, so a holiday cancels all four
+message conditions at once rather than each one separately. It applies to
+scheduled sends only: a manual send stays available, because the operator
+pressing the button knows what day it is. The outcome is `SKIPPED`/`HOLIDAY`,
+not `FAILED` — not sending on a holiday is correct behaviour, not a fault.
 
 A slot is only sent within a 20-minute grace window. A worker that was down at
 08:00 and started at 11:30 reports the 08:00 slot as missed rather than sending
 it: by then the classes have submitted, so the message would be both late and
 factually wrong.
+
+## Message templates
+
+The text of every automatic message is editable by an admin on the WhatsApp page
+and stored in `WhatsAppConfiguration.messageTemplates` (`Json?`). Templates are
+data, not code: there is no expression language, no conditionals and no
+evaluation — only placeholder substitution against an explicit registry.
+
+### Four conditions, chosen by the system
+
+The admin never writes a condition. `templateKeyFor()` picks one of four:
+
+| Key | Chosen when |
+|---|---|
+| `MISSING_PENDING` | Reminder, and at least one class has not submitted |
+| `MISSING_COMPLETE` | Reminder, and every class has submitted |
+| `ABSENT_PRESENT` | Attendance report, and at least one student is absent |
+| `ABSENT_NONE` | Attendance report, and nobody is absent (NIHIL) |
+
+`ABSENT_NONE` is a separate template rather than `ABSENT_PRESENT` with an empty
+list, because the NIHIL message has a different shape, not merely less content.
+
+### Placeholders
+
+Scalars available to every template: `tanggal`, `waktu`, `nama_sekolah`,
+`jumlah_kelas`, `jumlah_kelas_sudah_rekap`, `jumlah_kelas_belum_rekap`,
+`jumlah_siswa`, `jumlah_hadir`, `jumlah_tidak_hadir`, `jumlah_sakit`,
+`jumlah_izin`, `jumlah_dispensasi`, `jumlah_alfa`.
+
+Collection placeholders are restricted to the templates where they mean
+something: `daftar_kelas_belum_rekap` only on `MISSING_PENDING`, and
+`daftar_siswa_tidak_hadir` only on `ABSENT_PRESENT`. Each has its own item
+format and separator (one newline or a blank line), with its own placeholders:
+
+| Collection | Item placeholders |
+|---|---|
+| `daftar_kelas_belum_rekap` | `no`, `nama_kelas`, `tingkat`, `wali_kelas`, `jumlah_siswa_belum_diisi` |
+| `daftar_siswa_tidak_hadir` | `no`, `nama_siswa`, `nama_kelas`, `tingkat`, `status`, `keterangan` |
+
+`wali_kelas` comes from `SchoolClass.homeroomUser` and `keterangan` from
+`Attendance.note`; both are real columns, and both fall back to `-` when empty.
+Absent rows are ordered SAKIT → IZIN → ALFA → DISPENSASI, which reproduces the
+grouping of the original message without needing conditionals in the template.
+
+### Validation
+
+`validateTemplate()` runs on the client and again in the route handler, because
+the screen can be bypassed and a mistyped variable would otherwise send broken
+text to the school group every day. An unknown placeholder is reported by name
+(`Variabel tidak dikenal: {{jumlah_sakitt}}`) and blocks saving; empty bodies and
+over-long bodies are rejected too. Substitution is single-pass, so data that
+happens to contain `{{...}}` is printed literally and never re-interpreted.
+Multiline text, emoji and WhatsApp's own `*bold*` / `_italic_` / `~strike~` pass
+through untouched.
+
+### Fallback
+
+Fallback is per condition, not per row. Any condition that has no valid stored
+template uses the built-in text from `lib/whatsapp-template-defaults.ts`, which
+reproduces the message SISMEPDA sent before templates existed. A row whose JSON
+is corrupt or partially invalid therefore still sends the remaining three
+conditions normally, and an installation that never opens the editor sees no
+change at all. "Restore defaults" writes `NULL` rather than a copy of the
+built-in text, so later improvements to the defaults still reach that row.
+
+Two deliberate differences from the old text: the "Catatan: N kelas belum
+mengisi absensi" line on the attendance report and the per-status counts now
+always appear, because a template cannot know a condition. Both read `0` when
+they do not apply.
+
+### Preview
+
+The preview renders in the browser from labelled sample data in
+`lib/whatsapp-template-sample.ts`. It is not an endpoint and has no path to the
+transport, so it cannot send anything.
 
 ## Architecture
 
@@ -53,7 +134,12 @@ handlers are not. It therefore runs as a separate persistent process.
 |---|---|---|
 | `lib/whatsapp-schedule.ts` | Message type definitions, seed slots, idempotency key format | no |
 | `lib/whatsapp-slot-config.ts` | Slot validation, dedupe, sorting (pure) | no |
-| `lib/whatsapp-messages.ts` | Message text (pure) | no |
+| `lib/whatsapp-messages.ts` | Shared report helpers: class/slot labels, incomplete-class filter (pure) | no |
+| `lib/whatsapp-template.ts` | Placeholder registry, validation, rendering (pure) | no |
+| `lib/whatsapp-template-defaults.ts` | Built-in text for the four conditions (pure) | no |
+| `lib/whatsapp-template-context.ts` | Report data → placeholder values, condition selection (pure) | no |
+| `lib/whatsapp-template-store.ts` | Parsing stored JSON, per-condition fallback (pure) | no |
+| `lib/whatsapp-template-sample.ts` | Sample data for the preview (pure) | no |
 | `lib/whatsapp-transport.ts` | Transport contract, status labels, reconnect backoff | no |
 | `lib/whatsapp-slots.ts` | Which configured slots are due now (pure) | no |
 | `lib/whatsapp-target.ts` | Destination resolution: default/override, JID validation, display labels (pure) | no |
@@ -169,13 +255,17 @@ import graph transitively and fails if `auth.ts`, `rbac-access.ts` or any
 | `GET /api/whatsapp/qr` | `whatsapp.connection.manage` | QR as a PNG data URL; never persisted, never logged |
 | `POST /api/whatsapp/connection` | `whatsapp.connection.manage` | `connect` / `reconnect` / `relogin` / `logout` |
 | `GET /api/whatsapp/configuration` | `whatsapp.read` | Config plus group list when connected |
-| `PATCH /api/whatsapp/configuration` | `whatsapp.connection.manage` | Toggle, destination mode, per-type group, schedule slots |
+| `PATCH /api/whatsapp/configuration` | `whatsapp.connection.manage` | Toggle, destination mode, per-type group, schedule slots, message templates |
 | `PUT /api/whatsapp/configuration` | `whatsapp.connection.manage` | Default destination group |
 | `POST /api/whatsapp/send` | `whatsapp.send` | Manual send |
 
 Schedule times are writable through `PATCH`, and the server re-runs
 `normalizeSlots()` on whatever arrives. The client is not a guard: a request can
 reach the route without passing through the screen.
+
+Message templates use the same `PATCH` with `scope: "templates"`. The server
+re-validates every placeholder and rejects an unknown one with `400`. Sending
+`templates: null` restores the built-in text for that message type.
 
 The destination is chosen by JID, never by name. A duplicate group name used to
 return `409`; that error class no longer exists, because the operator picks from
@@ -216,6 +306,10 @@ The panel shows:
 - the QR code as a scannable image, polled every 5 s and **only** while the
   state is `WAITING_QR` and the viewer may manage the connection;
 - per-schedule toggle, per-slot delivery state, and "Kirim sekarang";
+- a collapsed "Format Pesan Otomatis" section per message type, holding the
+  template editor for that type's conditions, the list of available variables,
+  the per-item format for collections, a sample-data preview and "Kembalikan ke
+  template bawaan"; shown only to `whatsapp.connection.manage`;
 - delivery history separating manual from scheduled sends, naming the operator
   who triggered a manual send.
 

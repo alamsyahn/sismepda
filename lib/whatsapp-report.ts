@@ -4,6 +4,11 @@ export type WhatsAppReportStudent = {
   id: string
   name: string
   status: Exclude<AttendanceStatus, "HADIR"> | null
+  /**
+   * Keterangan dari wali kelas (`Attendance.note`). Dipakai placeholder
+   * `{{keterangan}}` pada template pesan; `null` bila tidak diisi.
+   */
+  note: string | null
 }
 
 export type WhatsAppReportClass = {
@@ -11,6 +16,16 @@ export type WhatsAppReportClass = {
   name: string
   grade: string
   submitted: boolean
+  /**
+   * Nama wali kelas, untuk placeholder `{{wali_kelas}}`. `null` bila kelas
+   * belum punya wali.
+   */
+  homeroomName: string | null
+  /**
+   * Banyak siswa AKTIF di kelas ini. Tidak dapat disimpulkan dari `students`,
+   * karena daftar itu sengaja hanya memuat siswa yang bukan hadir.
+   */
+  studentCount: number
   students: WhatsAppReportStudent[]
 }
 

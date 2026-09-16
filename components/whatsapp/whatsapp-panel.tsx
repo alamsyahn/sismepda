@@ -38,6 +38,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { normalizeSlots, slotsErrorMessage } from "@/lib/whatsapp-slot-config"
+import { WhatsAppTemplateEditor } from "@/components/whatsapp/whatsapp-template-editor"
+import {
+  customizedKeys,
+  effectiveTemplateSet,
+  parseStoredTemplates,
+} from "@/lib/whatsapp-template-store"
 // Modul murni tanpa Prisma/pg, jadi aman diimpor komponen klien. Label tujuan
 // dihitung fungsi bersama agar layar dan server tidak pernah berbeda pendapat
 // tentang tujuan mana yang sedang berlaku.
@@ -102,6 +108,8 @@ type ConfigurationRow = {
   targetGroupJid: string | null
   targetGroupName: string | null
   slots: string[]
+  /** JSON mentah dari server; selalu lewat `parseStoredTemplates`. */
+  messageTemplates?: unknown
 }
 
 type DefaultDestinationPayload = {
@@ -760,6 +768,30 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                     </Badge>
                   ))}
                 </div>
+
+                {canManageConnection ? (
+                  <details className="rounded-md border p-3">
+                    {/* Ditutup secara bawaan: editor template cukup panjang, dan
+                        halaman ini terutama dipakai untuk memantau pengiriman,
+                        bukan menyunting teks setiap hari. */}
+                    <summary className="cursor-pointer text-sm font-medium">
+                      Format Pesan Otomatis
+                    </summary>
+                    <div className="pt-3">
+                      <WhatsAppTemplateEditor
+                        type={definition.type}
+                        templates={effectiveTemplateSet(
+                          parseStoredTemplates(configuration?.messageTemplates),
+                        )}
+                        customized={customizedKeys(
+                          parseStoredTemplates(configuration?.messageTemplates),
+                        )}
+                        disabled={busy !== null}
+                        onSaved={() => void refresh()}
+                      />
+                    </div>
+                  </details>
+                ) : null}
               </div>
             )
           })}

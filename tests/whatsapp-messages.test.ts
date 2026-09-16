@@ -22,7 +22,12 @@ import {
 } from "@/lib/whatsapp-schedule"
 import type { WhatsAppReportClass } from "@/lib/whatsapp-report"
 
-type StudentSpec = { id: string; name: string; status: WhatsAppReportClass["students"][number]["status"] }
+type StudentSpec = {
+  id: string
+  name: string
+  status: WhatsAppReportClass["students"][number]["status"]
+  note?: string | null
+}
 
 function classOf(
   name: string,
@@ -30,7 +35,15 @@ function classOf(
   students: StudentSpec[],
   grade = "VII",
 ): WhatsAppReportClass {
-  return { id: `c-${name}`, name, grade, submitted, students }
+  return {
+    id: `c-${name}`,
+    name,
+    grade,
+    submitted,
+    homeroomName: null,
+    studentCount: students.length,
+    students: students.map((student) => ({ ...student, note: student.note ?? null })),
+  }
 }
 
 const DATE_LABEL = "15 September 2026"
@@ -129,7 +142,15 @@ test("NIHIL penuh hanya diklaim saat seluruh kelas sudah merekap", () => {
   // Kelas lengkap (envelope ada, tidak ada siswa berstatus null) dan seluruh
   // siswanya hadir — sehingga tidak ada satu pun baris ketidakhadiran.
   const message = buildAbsentStudentsMessage(DATE_LABEL, "12:00", [
-    { id: "c-VII A", name: "VII A", grade: "VII", submitted: true, students: [] },
+    {
+      id: "c-VII A",
+      name: "VII A",
+      grade: "VII",
+      submitted: true,
+      homeroomName: null,
+      studentCount: 0,
+      students: [],
+    },
   ])
   assert.match(message, /Seluruh siswa yang telah direkap tercatat hadir\./)
 })
