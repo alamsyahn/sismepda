@@ -7,13 +7,15 @@ import {
   workerConnect,
   workerLogout,
   workerReconnect,
+  workerRelogin,
   workerStatus,
   withoutQr,
 } from "@/lib/server-whatsapp-worker-client"
 import { requireWhatsAppConnectionManager } from "@/lib/whatsapp-access"
+import type { WhatsAppConnectionAction } from "@/lib/whatsapp-transport"
 
 const bodySchema = z.object({
-  action: z.enum(["connect", "reconnect", "logout"]),
+  action: z.enum(["connect", "reconnect", "relogin", "logout"]),
 })
 
 /**
@@ -22,16 +24,27 @@ const bodySchema = z.object({
  * sampai ada yang memindai QR kembali, jadi harus selalu jelas siapa yang
  * melakukannya.
  */
-const AUDIT_ACTIONS: Record<string, AuditAction> = {
+const AUDIT_ACTIONS: Record<WhatsAppConnectionAction, AuditAction> = {
   connect: "WHATSAPP_CONNECTION_STARTED",
   reconnect: "WHATSAPP_CONNECTION_RECONNECTED",
+  // Login ulang membuang kredensial lama sebelum meminta QR baru; secara
+  // akibat ia sedestruktif logout dan dicatat dengan aksi yang sama.
+  relogin: "WHATSAPP_LOGGED_OUT",
   logout: "WHATSAPP_LOGGED_OUT",
 }
 
-const SUMMARIES: Record<string, string> = {
+const SUMMARIES: Record<WhatsAppConnectionAction, string> = {
   connect: "Memulai koneksi WhatsApp",
   reconnect: "Menyambung ulang koneksi WhatsApp",
+  relogin: "Menghapus sesi lama dan meminta QR baru",
   logout: "Keluar dari akun WhatsApp dan menghapus sesi",
+}
+
+const RUNNERS: Record<WhatsAppConnectionAction, () => ReturnType<typeof workerStatus>> = {
+  connect: workerConnect,
+  reconnect: workerReconnect,
+  relogin: workerRelogin,
+  logout: workerLogout,
 }
 
 export async function POST(request: Request) {
@@ -49,12 +62,7 @@ export async function POST(request: Request) {
     const { action } = parsed.data
     const before = await workerStatus().catch(() => null)
 
-    const status =
-      action === "connect"
-        ? await workerConnect()
-        : action === "reconnect"
-          ? await workerReconnect()
-          : await workerLogout()
+    const status = await RUNNERS[action]()
 
     await recordAuditLog({
       actorId: context.user.id,

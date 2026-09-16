@@ -36,6 +36,7 @@ export async function GET() {
           connectedSince: null,
           lastDisconnectedAt: null,
           lastDisconnectReason: null,
+          lastDisconnectCategory: null,
           lastError: {
             code: "WORKER_UNREACHABLE",
             message: errorMessageFor("WORKER_UNREACHABLE"),

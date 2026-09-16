@@ -135,5 +135,15 @@ test("adapter membungkam logger Baileys agar isi pesan tidak masuk log container
 
 test("logout menghapus sesi dari disk, bukan sekadar menutup soket", () => {
   const adapter = codeOnly(read(ADAPTER_PATH))
-  assert.ok(adapter.includes("rm(this.sessionDir"), "reset sesi tidak benar-benar mereset")
+
+  // Mekanisme penghapusannya kini di `whatsapp-session-store` — bebas Baileys
+  // sehingga dapat diuji langsung (lihat tests/whatsapp-logout.test.ts).
+  // Yang dijaga di sini: adapter benar-benar memanggilnya saat logout.
+  assert.ok(adapter.includes("discardSessionCredentials"), "reset sesi tidak benar-benar mereset")
+
+  const logout = adapter.slice(adapter.indexOf("async logout()"))
+  assert.ok(
+    logout.slice(0, logout.indexOf("\n  }")).includes("discardCredentials"),
+    "logout harus membuang kredensial, bukan hanya menutup soket",
+  )
 })

@@ -30,6 +30,7 @@ function statusWith(lastError: WhatsAppStatus["lastError"]): StatusPayload {
     connectedSince: null,
     lastDisconnectedAt: null,
     lastDisconnectReason: null,
+    lastDisconnectCategory: null,
     lastError,
     sessionExists: false,
     lastHeartbeatAt: null,

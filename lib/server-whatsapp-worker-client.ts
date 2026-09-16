@@ -60,6 +60,17 @@ export function workerLogout(): Promise<WhatsAppStatus> {
   return call<WhatsAppStatus>("/logout", { method: "POST" })
 }
 
+/**
+ * Buang sesi tidak sah lalu minta QR baru dalam satu langkah.
+ *
+ * Sesi yang sudah logged out tidak dapat disambung ulang; satu-satunya jalan
+ * keluar adalah penautan baru, dan itu menuntut kredensial lama hilang lebih
+ * dulu.
+ */
+export function workerRelogin(): Promise<WhatsAppStatus> {
+  return call<WhatsAppStatus>("/relogin", { method: "POST" })
+}
+
 export async function workerGroups(): Promise<{ groups: WhatsAppGroup[] }> {
   // Daftar grup hanya berarti setelah sesi terbentuk. Bertanya lebih awal
   // menghasilkan kegagalan yang dapat diprediksi dan membanjiri log worker,

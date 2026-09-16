@@ -46,6 +46,8 @@ handlers are not. It therefore runs as a separate persistent process.
 | `lib/whatsapp-slots.ts` | Which slots are due now (pure) | no |
 | `lib/whatsapp-target.ts` | Group name → JID resolution (pure) | no |
 | `lib/whatsapp-session-root.ts` | Environment → session path (pure) | no |
+| `lib/whatsapp-session-store.ts` | Session presence check and credential wipe | no |
+| `lib/whatsapp-session-lock.ts` | Cross-process single-owner lock | no |
 | `lib/whatsapp-baileys.mts` | The adapter | **yes — the only one** |
 | `lib/server-whatsapp.ts` | Configuration, history, send with idempotency | no |
 | `lib/server-whatsapp-worker-client.ts` | Next.js → worker HTTP client | no |
@@ -80,7 +82,8 @@ small control API on `127.0.0.1` for the Next.js app.
 |---|---|
 | `GET /status` | Connection state, phone number, display name, connected-since, last disconnect time and translated reason, last error, QR when pairing |
 | `POST /connect` | Start connecting / request a QR |
-| `POST /reconnect` | Drop and re-establish the connection |
+| `POST /reconnect` | Drop and re-establish the connection, reusing credentials |
+| `POST /relogin` | Discard the old session and request a fresh QR |
 | `POST /logout` | Log out and delete the session |
 | `GET /groups` | Group list; `409 NOT_CONNECTED` unless the session is live |
 | `POST /resolve-target` | Group name → JID; `409 NOT_CONNECTED` unless the session is live |
@@ -152,7 +155,7 @@ import graph transitively and fails if `auth.ts`, `rbac-access.ts` or any
 |---|---|---|
 | `GET /api/whatsapp` | `whatsapp.read` | Status, today's schedule, history. A dead worker is reported as a readable error state, not a 500 — an offline worker is a normal operational condition that must be visible on screen |
 | `GET /api/whatsapp/qr` | `whatsapp.connection.manage` | QR as a PNG data URL; never persisted, never logged |
-| `POST /api/whatsapp/connection` | `whatsapp.connection.manage` | `connect` / `reconnect` / `logout` |
+| `POST /api/whatsapp/connection` | `whatsapp.connection.manage` | `connect` / `reconnect` / `relogin` / `logout` |
 | `GET /api/whatsapp/configuration` | `whatsapp.read` | Config plus group list when connected |
 | `PATCH /api/whatsapp/configuration` | `whatsapp.connection.manage` | Toggle and target group |
 | `POST /api/whatsapp/send` | `whatsapp.send` | Manual send |
@@ -189,9 +192,14 @@ a value from `lib/server-*` would pull `pg` into the browser bundle and break
 
 The panel shows:
 
-- connection state, phone number, profile name, connected-since, last
-  disconnect time and a translated reason;
-- connect / reconnect / logout, for `whatsapp.connection.manage` only;
+- the connection state in plain language ("Perlu login ulang"), never the
+  internal enum as the primary information; the raw state, disconnect category,
+  error code and last heartbeat live in a collapsed "Detail teknis" section for
+  admins who need to trace an incident;
+- phone number, profile name, connected-since, last disconnect time and a
+  translated reason;
+- exactly the connection actions that make sense for the current state, for
+  `whatsapp.connection.manage` only;
 - the QR code as a scannable image, polled every 5 s and **only** while the
   state is `WAITING_QR` and the viewer may manage the connection;
 - per-schedule toggle, per-slot delivery state, and "Kirim sekarang";
@@ -301,9 +309,80 @@ auth state, QR payloads, tokens and message content are never logged.
 | 503 | WhatsApp unavailable |
 | 515 | Restart requested |
 
+Each status maps to one policy object (`classifyDisconnect`) carrying the
+category, the next state, whether to reconnect, and whether a new login is
+required. The rule that matters: **a policy that requires a new login never asks
+for a reconnect.** Retrying with revoked credentials never succeeds; it only
+repeats until WhatsApp rate-limits the school's number. `shouldReconnect` is the
+single home for that decision and the adapter defers to it.
+
+### Connection states
+
+| State | Meaning | Offered action |
+|---|---|---|
+| `UNPAIRED` | No credentials on disk | Hubungkan WhatsApp |
+| `CONNECTING` | Socket opening | disabled button |
+| `WAITING_QR` | QR issued, waiting for a scan | Batalkan penautan |
+| `CONNECTED` | Live session | Keluar & hapus sesi |
+| `DISCONNECTED` | Temporary drop, credentials still valid | Sambungkan ulang |
+| `LOGGED_OUT` | Session invalid, credentials revoked | Login ulang (new QR) |
+| `ERROR` | Account refused | Coba sambungkan lagi |
+
+`connectionActionsFor(state, sessionExists)` derives the buttons; the panel only
+renders what it returns. "Hubungkan" and "Sambungkan ulang" can never appear
+together, because they mean different things and showing both forces the admin to
+guess. A `DISCONNECTED` state with no credentials on disk offers pairing rather
+than a reconnect that has nothing to reconnect to.
+
 `sessionExists` is read from `creds.json` on disk, not inferred from the
 connection state, so a stored pairing still reports as present while the socket
 is down — the difference between "never paired" and "paired but disconnected".
+
+### One socket per session
+
+Baileys credentials identify **one linked device**. Two sockets loading the same
+session directory present the same identity; WhatsApp takes the session over
+(440) and then unlinks it (401) minutes after a successful pairing. That is the
+"paired, then logged out a few minutes later" symptom.
+
+Two guards, because there are two ways to get a second socket:
+
+- **Within the process** — each socket open bumps a `generation` counter, and
+  `connection.update` events from an older generation are ignored. Baileys does
+  not detach listeners when a socket ends, so a dead socket can still emit and
+  overwrite correct state. `connect()` is idempotent: calling it while a socket
+  is already live is logged and ignored, so a double-clicked button cannot open a
+  second socket.
+- **Across processes** — `lib/whatsapp-session-lock.ts` keeps an `owner.lock`
+  file inside the session directory holding a random owner id and a heartbeat.
+  A worker that finds a fresh lock owned by someone else exits instead of
+  starting. A stale lock (no heartbeat within `LOCK_STALE_MS`) is taken over, so
+  a container killed with `SIGKILL` does not lock the session forever. The check
+  is time-based, not PID-based: every container has a PID 1, so PIDs mean nothing
+  across containers. The lock file holds no credentials.
+
+This is what a deploy that leaves the old worker running, a local worker pointed
+at the production volume, or a second replica would otherwise cost.
+
+### Logout is idempotent
+
+"Keluar & hapus sesi" promises a clean state, and a clean state must not depend
+on WhatsApp being reachable. Remote logout is attempted first so the device
+really leaves the linked-devices list, but its failure — which is certain when
+the session is already invalid, since there is no socket to ask — never aborts
+the operation. Local cleanup runs outside that `try`.
+
+The order matters: stop reconnecting, close the socket, then wipe credentials. A
+live socket would rewrite `creds.json` after deletion and leave the session
+half-populated. `discardSessionCredentials` removes the directory, and falls back
+to emptying its contents when the directory itself cannot be unlinked — in
+production it is a volume mount point. Partial credentials are worse than none:
+Baileys loads them, WhatsApp rejects them, and the panel shows a pairing that
+never connects.
+
+After a successful wipe the state is `UNPAIRED`, not `LOGGED_OUT`: with no
+credentials left, "not yet linked" is the honest description, and it offers the
+right button.
 
 ### Group listing requires a live session
 
@@ -404,9 +483,11 @@ session path. Otherwise the first log lines name the cause:
 | `Can't reach database server` | `DATABASE_URL` wrong, or worker not on the `database` network |
 | `sesi: /app/whatsapp-session (configured)` then repeated QR | Session volume not mounted |
 | `gagal menyambung saat start` | Baileys/WhatsApp connectivity, session intact |
-| `koneksi tertutup: status=428 ... qr_pernah_terbit=tidak` | Handshake refused before pairing — check the WA Web version line and that the browser tuple is still web |
-| `koneksi tertutup: status=408 ... qr_pernah_terbit=tidak` | Handshake timed out before a QR was issued; not a network fault |
-| `koneksi tertutup: status=401` | Logged out — a human must scan a new QR |
+| `koneksi_tertutup ... status=428 ... qr_pernah_terbit=tidak` | Handshake refused before pairing — check the WA Web version line and that the browser tuple is still web |
+| `koneksi_tertutup ... status=408 ... qr_pernah_terbit=tidak` | Handshake timed out before a QR was issued; not a network fault |
+| `koneksi_tertutup ... status=401` | Logged out — a human must scan a new QR |
+| `koneksi_tertutup ... status=440` | Session taken over — another socket used the same credentials; see "One socket per session" |
+| `sesi ... sedang dipegang worker lain` then exit | A second worker found a live lock and refused to start — this is the guard working |
 | `EAI_AGAIN` for any hostname | Worker has no egress — check it is on `sismepda_whatsapp_egress`, see "Networking" |
 | `versi WA Web ... (terbaru: tidak)` | Version fetch failed and fell back; usually the same egress fault |
 | No `versi WA Web ...` line at all | Version fetch failed; Baileys fell back to its built-in version |

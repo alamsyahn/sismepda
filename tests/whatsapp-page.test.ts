@@ -12,7 +12,9 @@ import { test } from "node:test"
 import { mainNav } from "../lib/nav"
 import { isKnownPermission } from "../lib/rbac-permissions"
 import {
+  CONNECTION_STATE_DESCRIPTIONS,
   CONNECTION_STATE_LABELS,
+  classifyDisconnect,
   errorMessageFor,
   type WhatsAppStatus,
 } from "../lib/whatsapp-transport"
@@ -26,6 +28,31 @@ function read(path: string): string {
 /** Buang komentar agar assertion memeriksa kode, bukan prosa penjelas. */
 function codeOnly(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+}
+
+/**
+ * Argumen setiap pemanggilan console.*, dipotong dengan menghitung kurung.
+ *
+ * Versi regex non-greedy sebelumnya berhenti pada `\n)` PERTAMA, yang untuk
+ * pemanggilan multi-baris menelan sisa berkas menjadi satu "argumen" raksasa.
+ * Akibatnya pemeriksaan kebocoran di bawah ini lulus karena alasan yang salah
+ * dan tidak akan pernah menunjuk baris yang benar.
+ */
+function consoleCalls(source: string): string[] {
+  const calls: string[] = []
+  const opener = /console\.(?:log|error|warn)\(/g
+  while (opener.exec(source) !== null) {
+    let index = opener.lastIndex
+    let depth = 1
+    while (index < source.length && depth > 0) {
+      const char = source[index]
+      if (char === "(") depth += 1
+      else if (char === ")") depth -= 1
+      index += 1
+    }
+    calls.push(source.slice(opener.lastIndex, index - 1))
+  }
+  return calls
 }
 
 const PAGE = "app/whatsapp/page.tsx"
@@ -144,6 +171,7 @@ const ADAPTER = "lib/whatsapp-baileys.mts"
 const WORKER = "scripts/whatsapp-worker.mts"
 const QR_ROUTE = "app/api/whatsapp/qr/route.ts"
 const WORKER_CLIENT = "lib/server-whatsapp-worker-client.ts"
+const TRANSPORT = "lib/whatsapp-transport.ts"
 
 test("adapter memakai versi WA Web, bukan versi metadata Baileys", () => {
   const adapter = codeOnly(read(ADAPTER))
@@ -179,27 +207,38 @@ test("status putus tetap dapat didiagnosis dari log", () => {
 
   // Tanpa angka status mentah di log, 428/408/401 tidak dapat dibedakan dari
   // luar dan setiap kegagalan tampak sebagai gangguan jaringan.
-  assert.match(adapter, /status=\$\{statusCode/)
-  assert.match(adapter, /kategori=\$\{code\}/)
-  assert.match(adapter, /state_sebelumnya=\$\{previousState\}/)
+  // Field dicatat lewat `logEvent`, yang merangkai pasangan kunci=nilai dengan
+  // stempel waktu. Yang dikunci adalah kehadiran field-nya, bukan bentuk
+  // template literal tertentu.
+  assert.match(adapter, /logEvent\("koneksi_tertutup", \{/)
+  assert.match(adapter, /status: statusCode/)
+  assert.match(adapter, /kategori: policy\.category/)
+  assert.match(adapter, /state_sebelumnya: previousState/)
+  assert.match(adapter, /this\.now\(\)\.toISOString\(\)/, "log tanpa stempel waktu tidak dapat dipasangkan dengan keluhan")
 })
 
 test("408 sebelum QR tidak dilaporkan sebagai gangguan jaringan", () => {
-  const adapter = codeOnly(read(ADAPTER))
 
   // `connectionLost` dan `timedOut` SAMA-SAMA 408 di Baileys. Mencocokkan
   // lewat DisconnectReason membuat handshake yang gagal dilaporkan sebagai
   // masalah jaringan — persis keluhan yang memicu perbaikan ini.
-  assert.match(adapter, /function describeDisconnect\(statusCode: number \| undefined, hadQr: boolean\)/)
-  assert.match(adapter, /hadQr\s*$/m)
+  // Kebijakannya kini fungsi murni yang diekspor, jadi diuji dengan
+  // memanggilnya — bukan dengan mencocokkan bentuk sumbernya.
+  const sebelumQr = classifyDisconnect(408, false)
+  assert.equal(sebelumQr.category, "HANDSHAKE_FAILED", "408 sebelum QR adalah handshake gagal")
+
+  const setelahQr = classifyDisconnect(408, true)
+  assert.equal(setelahQr.category, "NETWORK", "408 setelah QR memang gangguan jaringan")
+
+  // 428 harus punya kategori sendiri, terpisah dari kalimat jaringan.
+  assert.equal(classifyDisconnect(428, false).category, "HANDSHAKE_FAILED")
+  assert.notEqual(sebelumQr.reason, setelahQr.reason, "dua sebab berbeda tidak boleh satu kalimat")
+
+  const transport = codeOnly(read(TRANSPORT))
   assert.ok(
-    !/case DisconnectReason\.connectionLost/.test(adapter),
+    !/case DisconnectReason\.connectionLost/.test(transport),
     "pemetaan harus atas angka mentah, karena nilai enum bertabrakan",
   )
-
-  // 428 harus punya kalimat sendiri, terpisah dari kalimat jaringan.
-  assert.match(adapter, /case 428:/)
-  assert.match(adapter, /HANDSHAKE_FAILED/)
 })
 
 test("QR dikirim sebagai gambar, bukan string mentah", () => {
@@ -243,12 +282,13 @@ test("tidak ada QR, kredensial, atau token yang masuk log", () => {
   const worker = read(WORKER)
 
   for (const [name, source] of [["adapter", adapter], ["worker", worker]] as const) {
-    const logged = [...source.matchAll(/console\.(log|error|warn)\(([\s\S]*?)\n\s*\)/g)]
-      .map((match) => match[2])
-      .join("\n")
-
-    assert.ok(!/\bqr\b(?!_pernah)/.test(logged), `${name} tidak boleh mencatat payload QR`)
-    assert.ok(!/creds|auth|TOKEN|token/.test(logged), `${name} tidak boleh mencatat kredensial`)
+    for (const call of consoleCalls(source)) {
+      assert.ok(!/\bqr\b(?!_pernah)/i.test(call), `${name} mencatat payload QR: ${call}`)
+      assert.ok(!/\bcreds\b|authState|\bkeys\b/.test(call), `${name} mencatat kredensial: ${call}`)
+      // Nama variabel token boleh disebut ("WHATSAPP_WORKER_TOKEN belum
+      // diatur"); yang terlarang adalah menginterpolasi NILAInya.
+      assert.ok(!/\$\{[^}]*(TOKEN|token)[^}]*\}/.test(call), `${name} mencatat nilai token: ${call}`)
+    }
   }
 })
 
@@ -289,9 +329,41 @@ test("panel merender field string dari lastError, bukan objectnya", () => {
   )
 })
 
-test("kode error boleh tampil sebagai penanda operator", () => {
+test("kode error tersedia bagi admin, tapi bukan informasi utama", () => {
   const panel = codeOnly(read(PANEL))
-  assert.match(panel, /status\.lastError\.code/)
+
+  // Kode tetap ada — tanpa itu keluhan tidak dapat ditelusuri — tetapi
+  // tempatnya di bagian detail teknis, bukan di kalimat utama.
+  assert.match(panel, /status\?\.lastError\?\.code/)
+  assert.match(panel, /<details/, "detail teknis harus dapat dilipat")
+  assert.match(panel, /Detail teknis/)
+})
+
+test("keadaan koneksi dijelaskan dengan bahasa manusia", () => {
+  const panel = codeOnly(read(PANEL))
+
+  // Enum internal seperti LOGGED_OUT tidak boleh menjadi yang dibaca admin
+  // lebih dulu; ia hanya boleh muncul di bagian detail teknis.
+  assert.match(panel, /CONNECTION_STATE_DESCRIPTIONS\[state\]/)
+
+  for (const [state, description] of Object.entries(CONNECTION_STATE_DESCRIPTIONS)) {
+    assert.ok(description.trim().length > 0, `${state} tanpa penjelasan`)
+    assert.ok(!/[A-Z_]{4,}/.test(description), `${state} membocorkan istilah internal: ${description}`)
+  }
+})
+
+test("tombol koneksi ditentukan kebijakan, bukan ternary di JSX", () => {
+  const panel = codeOnly(read(PANEL))
+
+  // Keluhan aslinya: Hubungkan, Sambung ulang, dan Keluar tampil bersamaan
+  // sehingga admin harus menebak. Daftar tombol kini berasal dari satu fungsi
+  // murni yang diuji terpisah.
+  assert.match(panel, /connectionActionsFor\(state, status\?\.sessionExists \?\? false\)/)
+  assert.match(panel, /actions\.map\(/)
+  assert.ok(
+    !/runConnectionAction\("connect"\)/.test(panel),
+    "tombol tidak boleh dipasang mati di JSX",
+  )
 })
 
 test("fallback worker tak terjangkau memakai kontrak lastError yang sama", () => {
@@ -336,6 +408,7 @@ test("setiap state status memakai bentuk lastError yang sama", () => {
       connectedSince: null,
       lastDisconnectedAt: null,
       lastDisconnectReason: null,
+      lastDisconnectCategory: null,
       lastError:
         state === "ERROR" ? { code: "HANDSHAKE_FAILED", message: errorMessageFor("HANDSHAKE_FAILED") } : null,
       sessionExists: false,

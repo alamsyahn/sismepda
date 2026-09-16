@@ -30,6 +30,12 @@ import { readSchoolTimeZone } from "../lib/server-school-time-zone.js"
 import { schoolMinutesOfDay, todayInSchoolTimeZone } from "../lib/school-date.js"
 import { BaileysWhatsAppTransport } from "../lib/whatsapp-baileys.mjs"
 import { sendWhatsAppMessage } from "../lib/server-whatsapp.js"
+import {
+  LOCK_HEARTBEAT_MS,
+  acquireSessionLock,
+  releaseSessionLock,
+  touchSessionLock,
+} from "../lib/whatsapp-session-lock.js"
 import { resolveSessionRoot } from "../lib/whatsapp-session-root.js"
 import { dueSlots } from "../lib/whatsapp-slots.js"
 import { resolveTargetGroup } from "../lib/whatsapp-target.js"
@@ -41,6 +47,7 @@ const TICK_MS = 60_000
 
 const sessionRoot = resolveSessionRoot(process.env)
 const transport = new BaileysWhatsAppTransport({ sessionDir: sessionRoot.path })
+const ownerId = `${process.pid}-${Date.now().toString(36)}`
 
 let ticking = false
 
@@ -129,6 +136,15 @@ const server = createServer((request, response) => {
           send(response, 200, await transport.getStatus())
           return
 
+        case "POST /relogin":
+          // Sesi lama dibuang lalu QR baru diminta dalam satu langkah. Tanpa
+          // endpoint ini, admin dengan sesi tidak sah harus menekan dua tombol
+          // berurutan dan yang pertama terlihat seperti tindakan destruktif
+          // tanpa hasil.
+          await transport.relogin()
+          send(response, 200, await transport.getStatus())
+          return
+
         case "POST /logout":
           await transport.logout()
           send(response, 200, await transport.getStatus())
@@ -203,6 +219,28 @@ server.listen(PORT, () => {
   console.log(`[whatsapp] sesi: ${sessionRoot.path} (${sessionRoot.source})`)
 })
 
+// SATU PEMILIK SESI, DIJAGA LINTAS PROSES.
+//
+// Kredensial Baileys hanya boleh dipakai satu soket. Worker kedua yang memuat
+// direktori sesi yang sama membuka soket kedua dengan identitas perangkat yang
+// sama; WhatsApp mengambil alih sesi lalu mengeluarkan perangkat dari daftar
+// tertaut beberapa menit kemudian. Adapter menjaga hal ini di dalam satu
+// proses; kunci ini menjaganya antar proses.
+const lock = acquireSessionLock(sessionRoot.path, { ownerId })
+if (lock.status === "HELD_BY_OTHER") {
+  console.error(
+    `[whatsapp] sesi ${sessionRoot.path} sedang dipegang worker lain ` +
+      `(detak ${Math.round(lock.ageMs / 1000)} detik lalu); worker ini berhenti agar tidak ada dua soket.`,
+  )
+  process.exit(1)
+}
+if (lock.status === "TAKEN_OVER") {
+  console.warn("[whatsapp] kunci sesi milik proses sebelumnya sudah basi dan diambil alih.")
+}
+
+const lockTimer = setInterval(() => touchSessionLock(sessionRoot.path, ownerId), LOCK_HEARTBEAT_MS)
+lockTimer.unref?.()
+
 // Menyambung saat start: inilah yang membuat worker pulih sendiri setelah
 // container restart atau VPS reboot, tanpa ada yang membuka SSH.
 void transport.connect().catch((error) => {
@@ -217,10 +255,13 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true
   console.log(`[whatsapp] menerima ${signal}, mematikan dengan rapi`)
   clearInterval(timer)
+  clearInterval(lockTimer)
   server.close()
   // Menutup soket TANPA logout: sesi harus bertahan agar restart berikutnya
   // tidak menuntut pemindaian QR ulang.
   await transport.shutdown()
+  // Kunci dilepas supaya pengganti tidak perlu menunggu kunci menjadi basi.
+  releaseSessionLock(sessionRoot.path, ownerId)
   process.exit(0)
 }
 

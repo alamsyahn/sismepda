@@ -75,8 +75,16 @@ test("jeda sambung ulang punya batas atas agar tidak menjadi loop membanjiri", (
 test("sesi yang sudah logged out tidak disambung ulang otomatis", () => {
   assert.equal(shouldReconnect("LOGGED_OUT"), false, "login ulang menuntut manusia memindai QR")
   assert.equal(shouldReconnect("CONNECTED"), false)
-  assert.equal(shouldReconnect("DISCONNECTED"), true)
-  assert.equal(shouldReconnect("ERROR"), true)
+  assert.equal(shouldReconnect("DISCONNECTED"), true, "putus sementara memang boleh pulih sendiri")
+
+  // Hanya putus SEMENTARA yang boleh pulih sendiri. ERROR dipakai untuk
+  // penolakan akun (403) yang tidak berubah dengan mencoba lagi, UNPAIRED
+  // belum punya apa pun untuk disambung, dan keadaan transisi bukan titik
+  // keputusan sambung-ulang.
+  assert.equal(shouldReconnect("ERROR"), false, "akun ditolak tidak pulih dengan mencoba lagi")
+  assert.equal(shouldReconnect("UNPAIRED"), false)
+  assert.equal(shouldReconnect("CONNECTING"), false)
+  assert.equal(shouldReconnect("WAITING_QR"), false)
 })
 
 // --- resolusi grup tujuan ---------------------------------------------------

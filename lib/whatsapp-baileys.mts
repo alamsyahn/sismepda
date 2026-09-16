@@ -9,11 +9,19 @@
  * Berkas ini HANYA berjalan di dalam proses worker, tidak pernah di dalam
  * Next.js: soket Baileys bersifat long-lived dan stateful, sedangkan route
  * handler bisa dijalankan ulang kapan saja oleh runtime.
+ *
+ * SATU PEMILIK SOKET
+ *
+ * Instance ini adalah pemilik tunggal soket. Setiap pembukaan soket baru
+ * menaikkan `generation`, dan event dari soket generasi lama diabaikan.
+ * Tanpa itu, dua soket dapat hidup berbarengan dengan kredensial yang SAMA —
+ * WhatsApp menanggapinya dengan mengambil alih sesi (440) lalu mengeluarkannya
+ * dari daftar perangkat tertaut (401) beberapa menit setelah penautan berhasil.
+ * Itu persis gejala yang membuat berkas ini ditulis ulang.
  */
 import { Boom } from "@hapi/boom"
 import makeWASocket, {
   Browsers,
-  DisconnectReason,
   fetchLatestWaWebVersion,
   // Dialias: ESLint memperlakukan setiap pengenal berawalan `use` sebagai React
   // Hook, dan memanggilnya di dalam kelas dianggap pelanggaran. Alias ini
@@ -22,80 +30,27 @@ import makeWASocket, {
   type WASocket,
 } from "@whiskeysockets/baileys"
 import { existsSync } from "node:fs"
-import { rm } from "node:fs/promises"
+import { mkdir, stat, writeFile, unlink } from "node:fs/promises"
 import { join } from "node:path"
 import P from "pino"
 
 import {
+  INTENTIONAL_DISCONNECT,
   WhatsAppSendError,
+  classifyDisconnect,
   errorMessageFor,
   reconnectDelayMs,
   shouldReconnect,
   type SendResult,
   type WhatsAppConnectionState,
+  type WhatsAppDisconnectCategory,
+  type WhatsAppDisconnectPolicy,
   type WhatsAppErrorCode,
   type WhatsAppGroup,
   type WhatsAppStatus,
   type WhatsAppTransport,
 } from "./whatsapp-transport.js"
-
-/**
- * Terjemahan alasan putus ke kalimat untuk admin.
- *
- * PERHATIAN pada tabrakan nilai: di Baileys `connectionLost` dan `timedOut`
- * SAMA-SAMA 408, dan `connectionClosed` adalah 428. Mencocokkan lewat
- * `DisconnectReason` membuat setiap 408 dilaporkan sebagai gangguan jaringan,
- * termasuk handshake yang kehabisan waktu sebelum QR terbit — persis kekeliruan
- * yang membuat kegagalan pairing terlihat seperti masalah jaringan.
- *
- * Karena itu pemetaan dilakukan atas angka mentah, dengan `hadQr` sebagai
- * pembeda: 408 sebelum QR pernah terbit berarti handshake gagal, bukan koneksi
- * yang terputus di tengah jalan.
- *
- * Angka status tidak pernah ditampilkan kepada admin; ia hanya masuk log.
- */
-function describeDisconnect(statusCode: number | undefined, hadQr: boolean): string {
-  switch (statusCode) {
-    case 401:
-      return "Sesi dikeluarkan dari perangkat tertaut WhatsApp. Diperlukan pemindaian QR ulang."
-    case 440:
-      return "Sesi diambil alih oleh perangkat lain yang memakai akun WhatsApp yang sama."
-    case 428:
-      return "WhatsApp menutup koneksi sebelum sesi terbentuk. Coba hubungkan kembali."
-    case 408:
-      return hadQr
-        ? "Koneksi ke WhatsApp terputus karena jaringan."
-        : "WhatsApp tidak merespons saat memulai sesi. Coba hubungkan kembali."
-    case 515:
-      return "WhatsApp meminta koneksi dimulai ulang."
-    case 500:
-      return "Berkas sesi rusak dan tidak dapat dipakai lagi."
-    case 411:
-      return "Versi multi-perangkat WhatsApp tidak cocok. Diperlukan pemindaian QR ulang."
-    case 403:
-      return "Akun WhatsApp ditolak oleh server WhatsApp."
-    case 503:
-      return "Layanan WhatsApp sedang tidak tersedia."
-    default:
-      return "Koneksi ke WhatsApp terputus."
-  }
-}
-
-/**
- * Kategori kegagalan koneksi, untuk log dan untuk `lastError`.
- *
- * Membedakan handshake gagal dari gangguan jaringan adalah inti diagnosis:
- * keduanya tampak sama di permukaan tetapi menuntut tindakan berbeda.
- */
-function classifyDisconnect(statusCode: number | undefined, hadQr: boolean): WhatsAppErrorCode {
-  if (statusCode === 401) return "LOGGED_OUT"
-  if (statusCode === 428) return "HANDSHAKE_FAILED"
-  if (statusCode === 408) return hadQr ? "NETWORK" : "HANDSHAKE_FAILED"
-  if (statusCode === 403) return "TARGET_NOT_MEMBER"
-  if (statusCode === 429) return "RATE_LIMITED"
-  if (statusCode === undefined) return "NETWORK"
-  return "UNKNOWN"
-}
+import { discardSessionCredentials, sessionExistsIn } from "./whatsapp-session-store.js"
 
 /** Nomor dari JID milik sendiri, tanpa membocorkan bentuk JID mentah. */
 function phoneFromJid(jid: string | undefined): string | null {
@@ -106,7 +61,7 @@ function phoneFromJid(jid: string | undefined): string | null {
 
 function classifySendError(error: unknown): WhatsAppErrorCode {
   const statusCode = error instanceof Boom ? error.output?.statusCode : undefined
-  if (statusCode === DisconnectReason.loggedOut) return "LOGGED_OUT"
+  if (statusCode === 401) return "LOGGED_OUT"
   if (statusCode === 429) return "RATE_LIMITED"
   if (statusCode === 403) return "TARGET_NOT_MEMBER"
   const message = error instanceof Error ? error.message.toLowerCase() : ""
@@ -115,23 +70,45 @@ function classifySendError(error: unknown): WhatsAppErrorCode {
   return "SEND_FAILED"
 }
 
+/**
+ * Nama error yang aman dicatat.
+ *
+ * Hanya NAMA kelas error, tidak pernah pesannya: pesan Baileys dapat memuat
+ * potongan payload protokol.
+ */
+function safeErrorName(error: unknown): string {
+  return error instanceof Error ? error.name : "tidak ada"
+}
+
 export type BaileysTransportOptions = {
   /** Direktori penyimpanan kredensial multi-file Baileys. */
   sessionDir: string
   /** Dipanggil setiap kali status berubah, untuk dicatat worker. */
   onStatusChange?: (status: WhatsAppStatus) => void
   logger?: P.Logger
+  /** Jam yang dapat diganti dalam test. */
+  now?: () => Date
 }
 
 export class BaileysWhatsAppTransport implements WhatsAppTransport {
   private socket: WASocket | null = null
-  private state: WhatsAppConnectionState = "DISCONNECTED"
+  /**
+   * Generasi soket yang sedang berlaku.
+   *
+   * Baileys tidak melepas listener saat soket berakhir, jadi soket lama masih
+   * dapat memancarkan `connection.update` setelah penggantinya dibuka. Tanpa
+   * pembanding generasi, event basi itu menimpa status yang benar dan memicu
+   * sambung ulang tambahan — cara tercepat mendapat dua soket sekaligus.
+   */
+  private generation = 0
+  private state: WhatsAppConnectionState = "UNPAIRED"
   private qr: string | null = null
   /** Apakah QR pernah terbit pada percobaan koneksi berjalan. Pembeda 408. */
   private sawQr = false
   private connectedSince: Date | null = null
   private lastDisconnectedAt: Date | null = null
   private lastDisconnectReason: string | null = null
+  private lastDisconnectCategory: WhatsAppDisconnectCategory | null = null
   private lastError: { code: WhatsAppErrorCode; message: string } | null = null
   private lastHeartbeatAt: Date | null = null
   private phoneNumber: string | null = null
@@ -139,22 +116,33 @@ export class BaileysWhatsAppTransport implements WhatsAppTransport {
   private reconnectAttempt = 0
   private reconnectTimer: NodeJS.Timeout | null = null
   private starting: Promise<void> | null = null
+  /** Menutup sengaja: event `close` yang menyusul bukan kegagalan. */
+  private closingDeliberately = false
   private stopped = false
 
   private readonly sessionDir: string
   private readonly onStatusChange?: (status: WhatsAppStatus) => void
   private readonly logger: P.Logger
+  private readonly now: () => Date
 
   constructor(options: BaileysTransportOptions) {
     this.sessionDir = options.sessionDir
     this.onStatusChange = options.onStatusChange
     this.logger = options.logger ?? P({ level: "warn" })
+    this.now = options.now ?? (() => new Date())
+    // Keadaan awal mengikuti disk: sesi tersimpan berarti "pernah ditautkan,
+    // sedang terputus", bukan "belum pernah ditautkan".
+    this.state = this.sessionOnDisk() ? "DISCONNECTED" : "UNPAIRED"
   }
 
   // --- status ---------------------------------------------------------------
 
   async getStatus(): Promise<WhatsAppStatus> {
     return this.snapshot()
+  }
+
+  private sessionOnDisk(): boolean {
+    return sessionExistsIn(this.sessionDir)
   }
 
   private snapshot(): WhatsAppStatus {
@@ -165,12 +153,13 @@ export class BaileysWhatsAppTransport implements WhatsAppTransport {
       connectedSince: this.connectedSince?.toISOString() ?? null,
       lastDisconnectedAt: this.lastDisconnectedAt?.toISOString() ?? null,
       lastDisconnectReason: this.lastDisconnectReason,
+      lastDisconnectCategory: this.lastDisconnectCategory,
       lastError: this.lastError,
       // Hanya KEBERADAAN sesi yang dilaporkan, tidak pernah isinya. Diperiksa
       // dari disk, bukan disimpulkan dari state: sesi tersimpan tetap ada
       // meskipun koneksi sedang putus, dan admin perlu tahu bedanya antara
       // "belum pernah pairing" dan "pernah pairing tetapi sedang terputus".
-      sessionExists: existsSync(join(this.sessionDir, "creds.json")),
+      sessionExists: this.sessionOnDisk(),
       qr: this.qr,
       lastHeartbeatAt: this.lastHeartbeatAt?.toISOString() ?? null,
     }
@@ -178,30 +167,79 @@ export class BaileysWhatsAppTransport implements WhatsAppTransport {
 
   private setState(state: WhatsAppConnectionState): void {
     this.state = state
-    this.lastHeartbeatAt = new Date()
+    this.lastHeartbeatAt = this.now()
     this.onStatusChange?.(this.snapshot())
+  }
+
+  /**
+   * Catat satu peristiwa koneksi dengan stempel waktu.
+   *
+   * Tanpa stempel waktu eksplisit, log container yang dibaca belakangan tidak
+   * dapat dipasangkan dengan keluhan "beberapa menit setelah tertaut". Yang
+   * dicatat hanya metadata: tidak ada kredensial, kunci, token, payload QR,
+   * maupun isi pesan.
+   */
+  private logEvent(event: string, fields: Record<string, string | number | boolean>): void {
+    const parts = Object.entries(fields).map(([key, value]) => `${key}=${value}`)
+    console.log(`[whatsapp] ${this.now().toISOString()} ${event} ${parts.join(" ")}`)
   }
 
   // --- siklus hidup ---------------------------------------------------------
 
+  /**
+   * Buka koneksi bila memang belum ada.
+   *
+   * Idempotent DENGAN SENGAJA. Panggilan kedua saat soket sudah hidup TIDAK
+   * boleh membuka soket kedua: dua soket dengan kredensial sama membuat
+   * WhatsApp mengambil alih sesi lalu mengeluarkannya. Tombol "Hubungkan" yang
+   * ditekan dua kali, atau dua replica app yang memanggil worker bersamaan,
+   * cukup untuk memicunya.
+   */
   async connect(): Promise<void> {
     this.stopped = false
     if (this.starting) return this.starting
+    if (this.socket && (this.state === "CONNECTED" || this.state === "CONNECTING" || this.state === "WAITING_QR")) {
+      this.logEvent("permintaan_connect_diabaikan", { state: this.state })
+      return
+    }
     this.starting = this.openSocket().finally(() => {
       this.starting = null
     })
     return this.starting
   }
 
+  /** Tutup soket berjalan lalu buka yang baru memakai sesi yang sama. */
   async reconnect(): Promise<void> {
+    this.stopped = false
     await this.closeSocket()
     this.reconnectAttempt = 0
     await this.connect()
   }
 
+  /**
+   * Login ulang: buang kredensial lama, lalu minta QR baru.
+   *
+   * Dipakai saat sesi sudah tidak sah. Menyambung ulang kredensial mati tidak
+   * pernah berhasil; yang dibutuhkan adalah penautan baru, dan itu menuntut
+   * kredensial lama benar-benar hilang lebih dulu.
+   */
+  async relogin(): Promise<void> {
+    await this.logout()
+    await this.connect()
+  }
+
   private async openSocket(): Promise<void> {
+    this.closingDeliberately = false
     this.setState("CONNECTING")
 
+    // Direktori dibuat eksplisit. `useMultiFileAuthState` membuatnya sendiri,
+    // tetapi kegagalannya (volume belum ter-mount, izin salah) baru terlihat
+    // saat kredensial gagal DISIMPAN — yaitu setelah pairing berhasil, yang
+    // membuat sesi hilang beberapa menit kemudian tanpa jejak.
+    await mkdir(this.sessionDir, { recursive: true })
+    await this.assertSessionWritable()
+
+    const generation = ++this.generation
     const { state, saveCreds } = await loadMultiFileAuthState(this.sessionDir)
     // `fetchLatestWaWebVersion` membaca versi yang BENAR-BENAR dilayani
     // web.whatsapp.com saat ini. `fetchLatestBaileysVersion` membaca metadata
@@ -210,9 +248,7 @@ export class BaileysWhatsAppTransport implements WhatsAppTransport {
     // dipatok keras: yang dipakai selalu hasil pengambilan, dan bila
     // pengambilan gagal Baileys memakai bawaannya sendiri.
     const { version, isLatest } = await fetchLatestWaWebVersion()
-    console.log(
-      `[whatsapp] versi WA Web ${version.join(".")} (terbaru: ${isLatest ? "ya" : "tidak"})`,
-    )
+    this.logEvent("versi_wa_web", { versi: version.join("."), terbaru: isLatest ? "ya" : "tidak" })
 
     const socket = makeWASocket({
       version,
@@ -229,9 +265,27 @@ export class BaileysWhatsAppTransport implements WhatsAppTransport {
       markOnlineOnConnect: false,
     })
     this.socket = socket
+    this.logEvent("soket_dibuka", { generasi: generation })
 
-    socket.ev.on("creds.update", saveCreds)
+    // Kredensial disimpan pada setiap perubahan. Kegagalan penyimpanan dicatat
+    // keras: sesi yang tidak tersimpan akan tampak hidup sekarang dan hilang
+    // setelah restart berikutnya.
+    socket.ev.on("creds.update", () => {
+      void saveCreds().catch((error: unknown) => {
+        this.logEvent("kredensial_gagal_disimpan", {
+          error: safeErrorName(error),
+          direktori_ada: existsSync(this.sessionDir) ? "ya" : "tidak",
+        })
+      })
+    })
+
     socket.ev.on("connection.update", (update) => {
+      // Event dari soket yang sudah digantikan tidak boleh menyentuh status.
+      if (generation !== this.generation) {
+        this.logEvent("event_soket_basi_diabaikan", { generasi: generation, berlaku: this.generation })
+        return
+      }
+
       const { connection, lastDisconnect, qr } = update
 
       if (qr) {
@@ -240,68 +294,107 @@ export class BaileysWhatsAppTransport implements WhatsAppTransport {
         this.qr = qr
         this.sawQr = true
         this.setState("WAITING_QR")
+        this.logEvent("qr_terbit", { generasi: generation })
       }
 
       if (connection === "open") {
         this.qr = null
         this.sawQr = false
         this.reconnectAttempt = 0
-        this.connectedSince = new Date()
+        this.connectedSince = this.now()
         this.lastError = null
+        this.lastDisconnectCategory = null
         this.phoneNumber = phoneFromJid(socket.user?.id)
         this.displayName = socket.user?.name ?? null
         this.setState("CONNECTED")
+        this.logEvent("terhubung", { generasi: generation })
         return
       }
 
       if (connection === "close") {
-        const previousState = this.state
-        const hadQr = this.sawQr
-        this.lastDisconnectedAt = new Date()
-
-        const error = lastDisconnect?.error
-        const statusCode = error instanceof Boom ? error.output?.statusCode : undefined
-        const code = classifyDisconnect(statusCode, hadQr)
-
-        // Diagnostik: tanpa angka status mentah, 428/408/401 tidak dapat
-        // dibedakan dari luar dan setiap kegagalan tampak sebagai "jaringan".
-        // Yang dicatat hanya metadata — tidak ada kredensial, auth state,
-        // payload QR, token, atau isi pesan.
-        console.error(
-          `[whatsapp] koneksi tertutup: status=${statusCode ?? "tidak ada"} kategori=${code} ` +
-            `state_sebelumnya=${previousState} qr_pernah_terbit=${hadQr ? "ya" : "tidak"} ` +
-            `error=${error instanceof Error ? error.name : "tidak ada"}`,
-        )
-
-        this.lastDisconnectReason = describeDisconnect(statusCode, hadQr)
-        this.lastError = { code, message: errorMessageFor(code) }
-        this.qr = null
-
-        if (statusCode === DisconnectReason.loggedOut) {
-          // Kredensial sudah tidak sah. Menyambung ulang tidak akan pernah
-          // berhasil; yang dibutuhkan adalah manusia memindai QR.
-          this.sawQr = false
-          this.setState("LOGGED_OUT")
-          return
-        }
-
-        this.setState("DISCONNECTED")
-        this.scheduleReconnect()
+        this.handleClose(generation, lastDisconnect?.error)
       }
     })
   }
 
-  private scheduleReconnect(): void {
+  /**
+   * Satu tempat keputusan untuk setiap penutupan koneksi.
+   *
+   * Kebijakannya murni dan diuji terpisah (`classifyDisconnect`); di sini hanya
+   * penerapannya. Memisahkan keduanya penting karena inilah bagian yang salah
+   * menentukan apakah sistem menyambung ulang kredensial mati sampai WhatsApp
+   * memblokir nomor sekolah.
+   */
+  private handleClose(generation: number, error: unknown): void {
+    const previousState = this.state
+    const hadQr = this.sawQr
+    this.lastDisconnectedAt = this.now()
+    this.socket = null
+
+    const statusCode = error instanceof Boom ? error.output?.statusCode : undefined
+    const policy: WhatsAppDisconnectPolicy = this.closingDeliberately
+      ? INTENTIONAL_DISCONNECT
+      : classifyDisconnect(statusCode, hadQr)
+
+    // Diagnostik: tanpa angka status mentah, 401/408/428/440/515 tidak dapat
+    // dibedakan dari luar dan setiap kegagalan tampak sebagai "jaringan".
+    // Yang dicatat hanya metadata — tidak ada kredensial, auth state,
+    // payload QR, token, atau isi pesan.
+    this.logEvent("koneksi_tertutup", {
+      generasi: generation,
+      status: statusCode ?? "tidak ada",
+      kategori: policy.category,
+      state_sebelumnya: previousState,
+      qr_pernah_terbit: hadQr ? "ya" : "tidak",
+      sambung_ulang: policy.reconnect ? "ya" : "tidak",
+      perlu_login_ulang: policy.requiresNewLogin ? "ya" : "tidak",
+      sesi_tersimpan: this.sessionOnDisk() ? "ya" : "tidak",
+      error: safeErrorName(error),
+    })
+
+    this.lastDisconnectReason = policy.reason
+    this.lastDisconnectCategory = policy.category
+    this.lastError =
+      policy.category === "INTENTIONAL"
+        ? null
+        : { code: policy.errorCode, message: errorMessageFor(policy.errorCode) }
+    this.qr = null
+    this.sawQr = false
+    this.connectedSince = null
+
+    if (policy.requiresNewLogin) {
+      // Kredensial sudah tidak sah. Membiarkannya di disk membuat setiap
+      // start berikutnya mencoba memakainya dan gagal lagi — sekaligus
+      // membuat `sessionExists` berbohong kepada UI.
+      void this.discardCredentials("sesi_tidak_sah")
+      this.setState("LOGGED_OUT")
+      return
+    }
+
+    this.setState(policy.nextState)
+    if (policy.reconnect) this.scheduleReconnect(policy.immediate)
+  }
+
+  private scheduleReconnect(immediate = false): void {
     if (this.stopped) return
+    // Aturannya dijaga satu tempat (`shouldReconnect`) dan diuji terpisah.
+    // Menyalin syaratnya ke sini berarti kebijakan sambung-ulang punya dua
+    // rumah yang bisa melenceng diam-diam.
     if (!shouldReconnect(this.state)) return
+    // Tanpa kredensial di disk tidak ada yang bisa disambung ulang; keadaan
+    // ini menuntut QR baru, bukan percobaan berulang.
+    if (!this.sessionOnDisk()) return
     if (this.reconnectTimer) return
 
-    const delay = reconnectDelayMs(this.reconnectAttempt)
-    this.reconnectAttempt += 1
+    const delay = immediate ? 0 : reconnectDelayMs(this.reconnectAttempt)
+    if (!immediate) this.reconnectAttempt += 1
+    this.logEvent("sambung_ulang_dijadwalkan", { jeda_ms: delay, percobaan: this.reconnectAttempt })
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null
-      void this.connect().catch((error) => {
-        this.lastError = { code: "NETWORK", message: String(error) }
+      void this.connect().catch((error: unknown) => {
+        this.lastError = { code: "NETWORK", message: errorMessageFor("NETWORK") }
+        this.logEvent("sambung_ulang_gagal", { error: safeErrorName(error) })
+        this.setState("DISCONNECTED")
         this.scheduleReconnect()
       })
     }, delay)
@@ -314,36 +407,110 @@ export class BaileysWhatsAppTransport implements WhatsAppTransport {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
+    const socket = this.socket
+    this.socket = null
+    if (!socket) return
+    this.closingDeliberately = true
+    // Generasi dinaikkan agar event `close` dari soket ini tidak lagi
+    // menyentuh status maupun menjadwalkan sambung ulang.
+    this.generation += 1
     try {
-      this.socket?.end(undefined)
+      socket.end(undefined)
     } catch {
       // Menutup soket yang sudah mati bukan kegagalan.
     }
-    this.socket = null
+  }
+
+  /**
+   * Hapus seluruh kredensial lokal.
+   *
+   * Dibuat idempotent dan TUNTAS: sesi separuh terhapus adalah keadaan
+   * terburuk dari ketiganya — Baileys memuatnya, WhatsApp menolaknya, dan
+   * admin melihat "tertaut" yang tidak pernah terhubung. Bila direktori tidak
+   * dapat dihapus (mis. titik mount volume), isinya yang dikosongkan.
+   */
+  private async discardCredentials(sebab: string): Promise<boolean> {
+    // Mekanismenya ada di `whatsapp-session-store`, yang bebas Baileys dan
+    // karenanya dapat diuji langsung. Di sini hanya pencatatannya.
+    const bersih = await discardSessionCredentials(this.sessionDir)
+    this.logEvent("kredensial_dihapus", { sebab, bersih: bersih ? "ya" : "tidak" })
+    return bersih
+  }
+
+  /**
+   * Pastikan direktori sesi benar-benar dapat ditulis.
+   *
+   * Kegagalan di sini adalah penjelasan paling sering untuk "tertaut lalu
+   * hilang": kredensial hanya ada di memori, sehingga proses berikutnya
+   * memulai dari nol. Lebih baik terlihat sebagai satu baris log saat start
+   * daripada sebagai sesi yang lenyap beberapa menit kemudian.
+   */
+  private async assertSessionWritable(): Promise<void> {
+    const probe = join(this.sessionDir, ".tulis-uji")
+    try {
+      await writeFile(probe, "ok")
+      await unlink(probe)
+      const info = await stat(this.sessionDir)
+      this.logEvent("sesi_persisten", {
+        dapat_ditulis: "ya",
+        sesi_tersimpan: this.sessionOnDisk() ? "ya" : "tidak",
+        direktori: info.isDirectory() ? "ya" : "tidak",
+      })
+    } catch (error) {
+      this.logEvent("sesi_tidak_dapat_ditulis", { error: safeErrorName(error) })
+      throw new WhatsAppSendError("UNKNOWN", error)
+    }
   }
 
   /** Hentikan tanpa menghapus sesi — dipakai saat shutdown graceful. */
   async shutdown(): Promise<void> {
     this.stopped = true
     await this.closeSocket()
-    this.setState("DISCONNECTED")
+    this.setState(this.sessionOnDisk() ? "DISCONNECTED" : "UNPAIRED")
   }
 
+  /**
+   * Keluar dan hapus sesi. IDEMPOTENT.
+   *
+   * Logout jarak jauh dicoba lebih dulu supaya perangkat benar-benar lepas
+   * dari daftar perangkat tertaut. Tetapi kegagalannya — yang PASTI terjadi
+   * saat sesi sudah LOGGED_OUT, karena tidak ada soket untuk memintanya —
+   * tidak boleh menggagalkan operasi: yang dijanjikan tombol ini adalah
+   * keadaan bersih, dan keadaan bersih tidak bergantung pada WhatsApp.
+   */
   async logout(): Promise<void> {
     this.stopped = true
-    try {
-      await this.socket?.logout()
-    } catch {
-      // Bila WhatsApp sudah memutus lebih dulu, sesi lokal tetap harus dibuang.
+    const punyaSoket = this.socket !== null
+    let remote: "berhasil" | "gagal" | "dilewati" = "dilewati"
+
+    if (punyaSoket && this.state === "CONNECTED") {
+      try {
+        await this.socket?.logout()
+        remote = "berhasil"
+      } catch (error) {
+        // Sesi sudah mati di sisi WhatsApp. Pembersihan lokal tetap jalan.
+        remote = "gagal"
+        this.logEvent("logout_jarak_jauh_gagal", { error: safeErrorName(error) })
+      }
     }
+
     await this.closeSocket()
-    // Sesi dihapus dari disk: inilah yang membuat "reset" benar-benar mereset.
-    await rm(this.sessionDir, { recursive: true, force: true })
+    const bersih = await this.discardCredentials("logout")
+
     this.connectedSince = null
     this.phoneNumber = null
     this.displayName = null
     this.qr = null
-    this.setState("LOGGED_OUT")
+    this.sawQr = false
+    this.reconnectAttempt = 0
+    this.lastDisconnectCategory = null
+    this.lastDisconnectReason = null
+    this.lastError = bersih ? null : { code: "UNKNOWN", message: errorMessageFor("UNKNOWN") }
+
+    this.logEvent("logout_selesai", { jarak_jauh: remote, kredensial_bersih: bersih ? "ya" : "tidak" })
+    // Tanpa kredensial, keadaan yang jujur adalah "belum ditautkan" — bukan
+    // "perlu login ulang", yang menyiratkan masih ada sesi untuk dipulihkan.
+    this.setState(bersih ? "UNPAIRED" : "ERROR")
   }
 
   // --- operasi --------------------------------------------------------------

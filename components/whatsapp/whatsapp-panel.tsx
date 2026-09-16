@@ -17,7 +17,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
+  CONNECTION_STATE_DESCRIPTIONS,
   CONNECTION_STATE_LABELS,
+  connectionActionsFor,
+  type WhatsAppConnectionAction,
   type WhatsAppConnectionState,
   type WhatsAppStatus,
 } from "@/lib/whatsapp-transport"
@@ -89,7 +92,10 @@ const STATE_VARIANT: Record<WhatsAppConnectionState, "default" | "secondary" | "
   CONNECTED: "default",
   CONNECTING: "secondary",
   WAITING_QR: "secondary",
-  DISCONNECTED: "destructive",
+  UNPAIRED: "secondary",
+  // Putus sementara masih memegang penautan yang sah, jadi ia bukan kegagalan
+  // semerah sesi yang benar-benar tidak sah lagi.
+  DISCONNECTED: "secondary",
   LOGGED_OUT: "destructive",
   ERROR: "destructive",
 }
@@ -99,6 +105,13 @@ const SEND_STATUS_LABELS: Record<string, string> = {
   FAILED: "Gagal",
   SKIPPED: "Dilewati",
   NOT_YET: "Belum waktunya",
+}
+
+const ACTION_SUCCESS: Record<WhatsAppConnectionAction, string> = {
+  connect: "Permintaan penautan dikirim. Kode QR akan muncul sebentar lagi.",
+  reconnect: "Permintaan sambung ulang dikirim.",
+  relogin: "Sesi lama dihapus. Kode QR baru akan muncul sebentar lagi.",
+  logout: "Sesi WhatsApp dihapus. Penautan ulang diperlukan.",
 }
 
 function formatDateTime(value: string | null): string {
@@ -174,7 +187,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
     }
   }, [canManageConnection, status?.state])
 
-  const runConnectionAction = async (action: "connect" | "reconnect" | "logout") => {
+  const runConnectionAction = async (action: WhatsAppConnectionAction) => {
     setBusy(action)
     try {
       const response = await fetch("/api/whatsapp/connection", {
@@ -187,11 +200,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
         toast.error(data.message ?? "Aksi koneksi gagal.")
         return
       }
-      toast.success(
-        action === "logout"
-          ? "Sesi WhatsApp dihapus. Pairing ulang diperlukan."
-          : "Permintaan koneksi dikirim.",
-      )
+      toast.success(ACTION_SUCCESS[action])
       await refresh()
     } finally {
       setBusy(null)
@@ -245,6 +254,11 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
   }
 
   const state = status?.state ?? "ERROR"
+  // Tombol ditentukan satu fungsi murni yang diuji terpisah, bukan oleh
+  // rangkaian ternary di dalam JSX. "Hubungkan" dan "Sambungkan ulang" tidak
+  // pernah muncul bersamaan: keduanya berarti hal berbeda, dan menampilkan
+  // keduanya memaksa admin menebak mana yang benar.
+  const actions = connectionActionsFor(state, status?.sessionExists ?? false)
 
   return (
     <div className="space-y-6">
@@ -254,6 +268,11 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
           <Badge variant={STATE_VARIANT[state]}>{CONNECTION_STATE_LABELS[state]}</Badge>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Kalimat tindakan lebih dulu, karena itulah yang dibutuhkan admin.
+              Enum internal seperti LOGGED_OUT tidak pernah menjadi informasi
+              utama; ia tersedia di bagian detail teknis di bawah. */}
+          <p className="text-sm">{CONNECTION_STATE_DESCRIPTIONS[state]}</p>
+
           <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-muted-foreground">Nomor terhubung</dt>
@@ -280,16 +299,23 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
           ) : null}
 
           {status?.lastError ? (
-            <p className="text-destructive text-sm">
-              {/* Kode dicetak halus sebagai penanda untuk operator; kalimatnya
-                  sudah aman karena berasal dari ERROR_MESSAGES, bukan dari
-                  pesan exception mentah. */}
-              <span className="text-muted-foreground font-mono text-xs">
-                {status.lastError.code}
-              </span>{" "}
-              · {status.lastError.message}
-            </p>
+            <p className="text-destructive text-sm">{status.lastError.message}</p>
           ) : null}
+
+          {/* Detail teknis dipisahkan dan tertutup secara bawaan. Admin
+              membutuhkan kalimat tindakan; penelusur masalah membutuhkan kode
+              persis, dan keduanya tidak boleh saling mengaburkan. Isinya hanya
+              metadata — tidak ada kredensial maupun payload QR. */}
+          <details className="text-muted-foreground text-xs">
+            <summary className="cursor-pointer select-none">Detail teknis</summary>
+            <dl className="mt-2 grid gap-1 font-mono">
+              <div>Status: {state}</div>
+              <div>Sesi tersimpan: {status?.sessionExists ? "ya" : "tidak"}</div>
+              <div>Kategori putus terakhir: {status?.lastDisconnectCategory ?? "—"}</div>
+              <div>Kode kesalahan: {status?.lastError?.code ?? "—"}</div>
+              <div>Detak terakhir: {formatDateTime(status?.lastHeartbeatAt ?? null)}</div>
+            </dl>
+          </details>
 
           {qr ? (
             <div className="rounded-md border p-4">
@@ -324,29 +350,17 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
             <>
               <Separator />
               <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  disabled={busy !== null}
-                  onClick={() => void runConnectionAction("connect")}
-                >
-                  {busy === "connect" ? "Menghubungkan…" : "Hubungkan"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy !== null}
-                  onClick={() => void runConnectionAction("reconnect")}
-                >
-                  {busy === "reconnect" ? "Menyambung ulang…" : "Sambung ulang"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  disabled={busy !== null}
-                  onClick={() => void runConnectionAction("logout")}
-                >
-                  {busy === "logout" ? "Keluar…" : "Keluar & hapus sesi"}
-                </Button>
+                {actions.map((descriptor) => (
+                  <Button
+                    key={descriptor.action}
+                    size="sm"
+                    variant={descriptor.variant}
+                    disabled={busy !== null || descriptor.disabled === true}
+                    onClick={() => void runConnectionAction(descriptor.action)}
+                  >
+                    {busy === descriptor.action ? descriptor.busyLabel : descriptor.label}
+                  </Button>
+                ))}
               </div>
             </>
           ) : null}
