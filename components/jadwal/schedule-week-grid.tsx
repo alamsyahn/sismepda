@@ -7,12 +7,12 @@ import { Card, CardContent } from "@/components/ui/card"
 import {
   SCHEDULE_DAY_LABELS,
   SCHEDULE_DAY_SHORT_LABELS,
-  SCHEDULE_DAYS,
   formatTimeRange,
+  scheduleDayLabel,
   type ScheduleDay,
 } from "@/lib/schedule-constants"
-import { orderedSlots } from "@/lib/schedule-time"
-import type { TimeSlot } from "@/lib/schedule-time"
+import { orderedDays, orderedSlots } from "@/lib/schedule-time"
+import type { ProfileDay, TimeSlot } from "@/lib/schedule-time"
 import type { ScheduleEntryView } from "@/lib/server-schedule"
 import { cn } from "@/lib/utils"
 
@@ -63,60 +63,85 @@ function SlotCell({
 /**
  * Jadwal satu pekan.
  *
- * Desktop memakai tabel Jam × Hari; mobile TIDAK memaksakan grid enam kolom —
- * hari menjadi chip dan slot menjadi daftar vertikal, karena tabel selebar itu
- * hanya bisa dibaca dengan menggeser layar ke samping.
+ * Setiap hari membawa STRUKTUR WAKTUNYA SENDIRI (`ProfileDay.slots`).
+ * Tampilan ini sengaja tidak lagi menerima satu daftar slot tunggal: struktur
+ * waktu Senin tidak berlaku untuk Jumat, dan memakai satu daftar untuk semua
+ * kolom membuat setiap hari tampak seperti Senin — termasuk upacara dan
+ * istirahat yang sebenarnya hanya ada pada hari tertentu.
+ *
+ * Kolom hari juga dibaca dari data, bukan dari daftar hari tetap, supaya profil
+ * yang menambah/mengurangi hari aktif tetap tampil apa adanya.
+ *
+ * Desktop memakai satu kolom per hari; mobile TIDAK memaksakan grid selebar itu
+ * — hari menjadi chip dan slot menjadi daftar vertikal.
  */
 export function ScheduleWeekGrid({
-  slots,
+  days,
   entries,
   highlightDay,
   showTeacher = false,
   showClass = true,
 }: {
-  slots: readonly TimeSlot[]
+  days: readonly ProfileDay[]
   entries: readonly ScheduleEntryView[]
   highlightDay: ScheduleDay | null
   showTeacher?: boolean
   showClass?: boolean
 }) {
-  const ordered = useMemo(() => orderedSlots([...slots]), [slots])
-  const [mobileDay, setMobileDay] = useState<ScheduleDay>(highlightDay ?? 1)
+  const ordered = useMemo(
+    () =>
+      orderedDays([...days]).map((item) => ({
+        ...item,
+        slots: orderedSlots([...item.slots]),
+      })),
+    [days],
+  )
 
-  if (ordered.length === 0) {
+  const configured = useMemo(() => ordered.filter((item) => item.slots.length > 0), [ordered])
+
+  const [mobileDay, setMobileDay] = useState<number>(
+    () =>
+      (highlightDay !== null && configured.some((item) => item.day === highlightDay)
+        ? highlightDay
+        : configured[0]?.day) ?? 1,
+  )
+
+  if (configured.length === 0) {
     return (
       <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-        Struktur waktu belum disusun. Buka tab “Waktu & Kegiatan” untuk menyusunnya.
+        Struktur waktu belum disusun. Buka tab “Waktu &amp; Kegiatan” untuk menyusunnya.
       </p>
     )
   }
+
+  const activeMobile = configured.find((item) => item.day === mobileDay) ?? configured[0]
 
   return (
     <div className="space-y-4">
       {/* Mobile: hari sebagai chip, hari ini aktif secara bawaan. */}
       <div className="flex flex-wrap gap-2 lg:hidden">
-        {SCHEDULE_DAYS.map((day) => (
+        {configured.map((item) => (
           <button
-            key={day}
+            key={item.day}
             type="button"
-            onClick={() => setMobileDay(day)}
-            aria-pressed={mobileDay === day}
+            onClick={() => setMobileDay(item.day)}
+            aria-pressed={activeMobile.day === item.day}
             className={cn(
               "min-h-9 rounded-full border px-3 text-sm transition-colors",
-              mobileDay === day
+              activeMobile.day === item.day
                 ? "border-primary bg-primary text-primary-foreground"
                 : "border-border bg-card text-muted-foreground hover:text-foreground",
             )}
           >
-            {SCHEDULE_DAY_SHORT_LABELS[day]}
-            {highlightDay === day ? <span className="ml-1 text-[10px]">•</span> : null}
+            {SCHEDULE_DAY_SHORT_LABELS[item.day as ScheduleDay] ?? scheduleDayLabel(item.day)}
+            {highlightDay === item.day ? <span className="ml-1 text-[10px]">•</span> : null}
           </button>
         ))}
       </div>
 
       <div className="space-y-2 lg:hidden">
-        {ordered.map((slot) => {
-          const entry = entryFor(entries, mobileDay, slot.ascPeriod)
+        {activeMobile.slots.map((slot) => {
+          const entry = entryFor(entries, activeMobile.day, slot.ascPeriod)
           if (slot.kind !== "PELAJARAN" && !entry) {
             return (
               <div key={slot.id} className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
@@ -141,63 +166,49 @@ export function ScheduleWeekGrid({
         })}
       </div>
 
-      {/* Desktop: satu pandangan penuh satu pekan. */}
-      <div className="hidden overflow-x-auto rounded-xl border border-border/60 lg:block">
-        <table className="w-full border-collapse text-sm">
-          <thead className="sticky top-0 z-10 bg-muted/60 backdrop-blur">
-            <tr>
-              <th className="w-44 border-b px-3 py-2 text-left font-semibold">Jam</th>
-              {SCHEDULE_DAYS.map((day) => (
-                <th
-                  key={day}
-                  className={cn(
-                    "border-b px-3 py-2 text-left font-semibold",
-                    highlightDay === day && "text-primary",
-                  )}
+      {/* Desktop: satu kolom per hari, masing-masing memakai jamnya sendiri. */}
+      <div
+        className="hidden gap-3 overflow-x-auto lg:grid"
+        style={{ gridTemplateColumns: `repeat(${configured.length}, minmax(0, 1fr))` }}
+      >
+        {configured.map((item) => (
+          <section
+            key={item.day}
+            className={cn(
+              "rounded-xl border border-border/60",
+              highlightDay === item.day && "border-primary/50 bg-primary/5",
+            )}
+          >
+            <header className="flex items-center gap-2 border-b bg-muted/60 px-3 py-2">
+              <h3 className={cn("text-sm font-semibold", highlightDay === item.day && "text-primary")}>
+                {SCHEDULE_DAY_LABELS[item.day as ScheduleDay] ?? scheduleDayLabel(item.day)}
+              </h3>
+              {highlightDay === item.day ? <Badge variant="secondary">Hari ini</Badge> : null}
+            </header>
+
+            <ul className="divide-y">
+              {item.slots.map((slot) => (
+                <li
+                  key={slot.id}
+                  className={cn("px-3 py-2", slot.kind !== "PELAJARAN" && "bg-muted/30")}
                 >
-                  {SCHEDULE_DAY_LABELS[day]}
-                  {highlightDay === day ? (
-                    <Badge variant="secondary" className="ml-2 align-middle">
-                      Hari ini
-                    </Badge>
-                  ) : null}
-                </th>
+                  <p className="text-xs text-muted-foreground">
+                    {slot.name} · {formatTimeRange(slot.startMinute, slot.endMinute)}
+                  </p>
+                  <div className="mt-1">
+                    <SlotCell
+                      slot={slot}
+                      entry={entryFor(entries, item.day, slot.ascPeriod)}
+                      emphasis={highlightDay === item.day}
+                      showTeacher={showTeacher}
+                      showClass={showClass}
+                    />
+                  </div>
+                </li>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {ordered.map((slot) => (
-              <tr key={slot.id} className={cn(slot.kind !== "PELAJARAN" && "bg-muted/30")}>
-                <th scope="row" className="border-b px-3 py-2 text-left align-top font-medium">
-                  <span className="block">{slot.name}</span>
-                  <span className="block text-xs font-normal text-muted-foreground">
-                    {formatTimeRange(slot.startMinute, slot.endMinute)}
-                  </span>
-                </th>
-                {slot.kind !== "PELAJARAN" ? (
-                  <td className="border-b px-3 py-2 text-xs text-muted-foreground" colSpan={SCHEDULE_DAYS.length}>
-                    {slot.name}
-                  </td>
-                ) : (
-                  SCHEDULE_DAYS.map((day) => (
-                    <td
-                      key={day}
-                      className={cn("border-b px-3 py-2 align-top", highlightDay === day && "bg-primary/5")}
-                    >
-                      <SlotCell
-                        slot={slot}
-                        entry={entryFor(entries, day, slot.ascPeriod)}
-                        emphasis={highlightDay === day}
-                        showTeacher={showTeacher}
-                        showClass={showClass}
-                      />
-                    </td>
-                  ))
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            </ul>
+          </section>
+        ))}
       </div>
     </div>
   )

@@ -129,7 +129,15 @@ export function TimeStructureTab({
   // Berpindah hari memuat ulang draft dari data hari itu. Draft yang belum
   // disimpan sengaja tidak dibawa pindah: membawanya akan membuat admin
   // menyimpan struktur Senin ke atas Jumat tanpa sadar.
-  const currentKey = current ? `${current.id}:${current.slots.length}` : "none"
+  // Kunci ikut memuat ISI baris, bukan hanya jumlahnya. Mengubah jam 07:00
+  // menjadi 07:15 tidak mengubah panjang daftar, sehingga kunci berbasis
+  // panjang membuat draft lama bertahan dan layar tampak belum tersimpan
+  // meski server sudah menyimpannya.
+  const currentKey = current
+    ? `${current.id}:${current.slots
+        .map((slot) => `${slot.position}|${slot.kind}|${slot.name}|${slot.startMinute}|${slot.endMinute}|${slot.ascPeriod ?? ""}`)
+        .join(";")}`
+    : "none"
   useEffect(() => {
     setDrafts(current ? current.slots.map(toDraft) : [])
     // eslint-disable-next-line react-hooks/exhaustive-deps

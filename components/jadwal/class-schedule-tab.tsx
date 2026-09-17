@@ -4,16 +4,17 @@ import { useState } from "react"
 import { Loader2 } from "lucide-react"
 
 import { Label } from "@/components/ui/label"
+import { Combobox } from "@/components/ui/combobox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useScheduleResource } from "@/components/jadwal/use-schedule-resource"
 import {
   SCHEDULE_DAY_LABELS,
-  SCHEDULE_DAYS,
   formatTimeRange,
+  scheduleDayLabel,
   type ScheduleDay,
 } from "@/lib/schedule-constants"
-import { orderedSlots, type TimeSlot } from "@/lib/schedule-time"
+import { orderedDays, orderedSlots, type ProfileDay, type TimeSlot } from "@/lib/schedule-time"
 import type { ScheduleEntryView, ScheduleNowContext } from "@/lib/server-schedule"
 
 type Payload = {
@@ -33,12 +34,19 @@ type Payload = {
  */
 export function ClassScheduleTab({
   classes,
+  days,
   todayDay,
 }: {
   classes: readonly { id: string; name: string; grade: string }[]
+  days: readonly ProfileDay[]
   todayDay: ScheduleDay | null
 }) {
-  const [day, setDay] = useState<ScheduleDay>(todayDay ?? 1)
+  const configured = orderedDays([...days]).filter((item) => item.slots.length > 0)
+  const initialDay =
+    (todayDay !== null && configured.some((item) => item.day === todayDay)
+      ? todayDay
+      : configured[0]?.day) ?? 1
+  const [day, setDay] = useState<ScheduleDay>(initialDay as ScheduleDay)
   const [classId, setClassId] = useState("")
 
   const url = classId ? `/api/jadwal/kelas?classId=${encodeURIComponent(classId)}&day=${day}` : null
@@ -58,9 +66,9 @@ export function ClassScheduleTab({
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {SCHEDULE_DAYS.map((item) => (
-                <SelectItem key={item} value={String(item)}>
-                  {SCHEDULE_DAY_LABELS[item]}
+              {configured.map((item) => (
+                <SelectItem key={item.day} value={String(item.day)}>
+                  {scheduleDayLabel(item.day)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -69,20 +77,14 @@ export function ClassScheduleTab({
 
         <div className="space-y-1.5">
           <Label htmlFor="jadwal-kelas-kelas">Kelas</Label>
-          <Select value={classId} onValueChange={(value) => value && setClassId(String(value))}>
-            <SelectTrigger id="jadwal-kelas-kelas" className="w-full">
-              <SelectValue placeholder="Pilih kelas">
-                {(value: string) => classes.find((item) => item.id === value)?.name ?? "Pilih kelas"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent className="max-h-72">
-              {classes.map((item) => (
-                <SelectItem key={item.id} value={item.id}>
-                  {item.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            id="jadwal-kelas-kelas"
+            options={classes.map((item) => ({ value: item.id, label: item.name, description: `Tingkat ${item.grade}` }))}
+            value={classId ? classId : null}
+            placeholder="Cari kelas"
+            emptyMessage="Kelas tidak ditemukan"
+            onValueChange={(value) => setClassId(value ?? "")}
+          />
         </div>
       </div>
 

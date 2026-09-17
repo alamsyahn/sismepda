@@ -223,6 +223,13 @@ export const mainNav: NavEntry[] = [
         description: "Tentukan wali kelas tiap kelas",
         permissions: ["homerooms.read"],
       },
+      {
+        title: "Mata Pelajaran",
+        href: "/mata-pelajaran",
+        icon: BookOpen,
+        description: "Kelola daftar mata pelajaran yang dipakai jadwal dan impor aSc",
+        permissions: ["subjects.read"],
+      },
     ],
   },
   {

@@ -189,3 +189,49 @@ export function buildMappingPlan(
   const mappedCount = rows.filter((row) => row.mappedId !== null).length
   return { rows, mappedCount, unmappedCount: rows.length - mappedCount }
 }
+
+/**
+ * ID kandidat yang boleh diterapkan untuk SATU baris, atau `null`.
+ *
+ * Aman diterapkan hanya bila baris itu BELUM dipetakan dan sistem punya
+ * kandidat yang tidak ambigu (`autoSelectId`). Baris yang sudah dipetakan
+ * selalu mengembalikan `null` supaya penerapan kandidat tidak pernah menimpa
+ * keputusan yang sudah diambil admin.
+ *
+ * Perhatikan bahwa `autoSelectId` hanya terisi untuk kecocokan PERSIS setelah
+ * normalisasi. Kemiripan fuzzy sengaja tidak pernah sampai ke sini — nama guru
+ * sering hanya berbeda satu kata, dan salah tautan memindahkan seluruh jadwal
+ * seseorang ke orang lain.
+ */
+export function applicableCandidateId(row: MappingPlanRow): string | null {
+  if (row.mappedId !== null) return null
+  return row.suggestion?.autoSelectId ?? null
+}
+
+/** Satu penerapan kandidat yang sudah dipastikan aman. */
+export type CandidateApplication = {
+  readonly externalId: string
+  readonly externalName: string
+  readonly internalId: string
+}
+
+/**
+ * Daftar penerapan untuk "Terapkan Semua Kandidat".
+ *
+ * Hanya memuat baris yang lolos `applicableCandidateId`, sehingga pemetaan
+ * manual yang sudah ada maupun baris yang kandidatnya meragukan tidak pernah
+ * ikut terbawa.
+ */
+export function bulkCandidateApplications(plan: MappingPlan): CandidateApplication[] {
+  const applications: CandidateApplication[] = []
+  for (const row of plan.rows) {
+    const internalId = applicableCandidateId(row)
+    if (internalId === null) continue
+    applications.push({
+      externalId: row.externalId,
+      externalName: row.externalName,
+      internalId,
+    })
+  }
+  return applications
+}

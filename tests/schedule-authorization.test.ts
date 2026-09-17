@@ -191,11 +191,13 @@ test("dropdown yang kehabisan pilihan tidak boleh diam: ada penjelasan dan trigg
   const importPanel = readFileSync(new URL("../components/jadwal/import-panel.tsx", import.meta.url), "utf8")
 
   // Populasi guru boleh kosong selama migrasi legacy_guru belum dijalankan admin.
-  // Yang tidak boleh: Select membuka daftar kosong tanpa memberi tahu sebabnya.
+  // Yang tidak boleh: pemilih membuka daftar kosong tanpa memberi tahu sebabnya.
+  // Pola dicocokkan atas MAKSUDNYA (dinonaktifkan saat daftar kosong), bukan atas
+  // teks persis, agar kondisi tambahan seperti "sedang menyimpan" tetap boleh ada.
   assert.match(
     importPanel,
-    /disabled=\{options\.length === 0\}/,
-    "Select pemetaan harus dinonaktifkan saat tidak ada pilihan",
+    /disabled=\{options\.length === 0(\s*\|\|[^}]*)?\}/,
+    "pemilih pemetaan harus dinonaktifkan saat tidak ada pilihan",
   )
   assert.match(
     importPanel,

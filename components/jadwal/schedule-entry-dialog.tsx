@@ -18,8 +18,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { scheduleFetch } from "@/components/jadwal/use-schedule-resource"
-import { SCHEDULE_DAY_LABELS, SCHEDULE_DAYS, type ScheduleDay } from "@/lib/schedule-constants"
-import { lessonSlots, type TimeSlot } from "@/lib/schedule-time"
+import { Combobox } from "@/components/ui/combobox"
+import { SCHEDULE_DAY_LABELS, scheduleDayLabel, type ScheduleDay } from "@/lib/schedule-constants"
+import { findProfileDay, lessonSlots, orderedDays, type ProfileDay } from "@/lib/schedule-time"
 import type { ScheduleEntryView, ScheduleMasterData } from "@/lib/server-schedule"
 
 export type EntryDraft = {
@@ -59,20 +60,25 @@ export function ScheduleEntryDialog({
   open,
   onOpenChange,
   draft,
-  slots,
+  days,
   master,
   onSaved,
 }: {
   open: boolean
   onOpenChange: (value: boolean) => void
   draft: EntryDraft
-  slots: readonly TimeSlot[]
+  days: readonly ProfileDay[]
   master: ScheduleMasterData
   onSaved: () => void
 }) {
   const [value, setValue] = useState<EntryDraft>(draft)
   const [saving, setSaving] = useState(false)
-  const lessons = lessonSlots([...slots])
+
+  const configured = orderedDays([...days]).filter((item) => item.slots.length > 0)
+  // Jam pelajaran yang ditawarkan adalah milik hari yang sedang dipilih di
+  // dialog ini. Jam ke-8 yang hanya ada pada Senin tidak boleh ikut tampil
+  // ketika harinya diganti menjadi Jumat.
+  const lessons = lessonSlots([...(findProfileDay(configured, value.day)?.slots ?? [])])
 
   // Dialog dipasang ulang tiap kali dibuka (lihat `key` di pemanggil), jadi
   // state awal cukup diambil sekali di sini.
@@ -126,7 +132,21 @@ export function ScheduleEntryDialog({
               <Label htmlFor="entry-day">Hari</Label>
               <Select
                 value={String(value.day)}
-                onValueChange={(next) => next && setValue((row) => ({ ...row, day: Number(next) }))}
+                onValueChange={(next) => {
+                  if (!next) return
+                  const nextDay = Number(next)
+                  const periods = lessonSlots([...(findProfileDay(configured, nextDay)?.slots ?? [])])
+                  setValue((row) => ({
+                    ...row,
+                    day: nextDay,
+                    // Nomor jam yang tidak dikenal hari baru tidak dibawa pindah:
+                    // server menolaknya, dan membiarkannya membuat dialog tampak
+                    // memilih jam yang sebenarnya tidak ada.
+                    period: periods.some((slot) => slot.ascPeriod === row.period)
+                      ? row.period
+                      : (periods[0]?.ascPeriod ?? row.period),
+                  }))
+                }}
               >
                 <SelectTrigger id="entry-day" className="w-full">
                   <SelectValue>
@@ -134,9 +154,9 @@ export function ScheduleEntryDialog({
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {SCHEDULE_DAYS.map((day) => (
-                    <SelectItem key={day} value={String(day)}>
-                      {SCHEDULE_DAY_LABELS[day]}
+                  {configured.map((item) => (
+                    <SelectItem key={item.day} value={String(item.day)}>
+                      {scheduleDayLabel(item.day)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -170,73 +190,44 @@ export function ScheduleEntryDialog({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="entry-class">Kelas</Label>
-              <Select
-                value={value.classId}
-                onValueChange={(next) => next && setValue((row) => ({ ...row, classId: String(next) }))}
-              >
-                <SelectTrigger id="entry-class" className="w-full">
-                  <SelectValue placeholder="Pilih kelas">
-                    {(current: string) =>
-                      master.classes.find((item) => item.id === current)?.name ?? "Pilih kelas"
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {master.classes.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                id="entry-class"
+                options={master.classes.map((item) => ({
+                  value: item.id,
+                  label: item.name,
+                  description: `Tingkat ${item.grade}`,
+                }))}
+                value={value.classId ? value.classId : null}
+                placeholder="Cari kelas"
+                emptyMessage="Kelas tidak ditemukan"
+                onValueChange={(next) => setValue((row) => ({ ...row, classId: next ?? "" }))}
+              />
             </div>
 
             <div className="space-y-1.5">
               <Label htmlFor="entry-subject">Mata pelajaran</Label>
-              <Select
-                value={value.subjectId}
-                onValueChange={(next) => next && setValue((row) => ({ ...row, subjectId: String(next) }))}
-              >
-                <SelectTrigger id="entry-subject" className="w-full">
-                  <SelectValue placeholder="Pilih mapel">
-                    {(current: string) =>
-                      master.subjects.find((item) => item.id === current)?.name ?? "Pilih mapel"
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {master.subjects.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                id="entry-subject"
+                options={master.subjects.map((item) => ({ value: item.id, label: item.name }))}
+                value={value.subjectId ? value.subjectId : null}
+                placeholder="Cari mata pelajaran"
+                emptyMessage="Mata pelajaran tidak ditemukan"
+                onValueChange={(next) => setValue((row) => ({ ...row, subjectId: next ?? "" }))}
+              />
             </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="entry-teacher">Guru</Label>
-              <Select
-                value={value.teacherId}
-                onValueChange={(next) => next && setValue((row) => ({ ...row, teacherId: String(next) }))}
-              >
-                <SelectTrigger id="entry-teacher" className="w-full">
-                  <SelectValue placeholder="Pilih guru">
-                    {(current: string) =>
-                      master.teachers.find((item) => item.id === current)?.name ?? "Pilih guru"
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {master.teachers.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                id="entry-teacher"
+                options={master.teachers.map((item) => ({ value: item.id, label: item.name }))}
+                value={value.teacherId ? value.teacherId : null}
+                placeholder="Cari guru"
+                emptyMessage="Guru tidak ditemukan"
+                onValueChange={(next) => setValue((row) => ({ ...row, teacherId: next ?? "" }))}
+              />
             </div>
 
             <div className="space-y-1.5">

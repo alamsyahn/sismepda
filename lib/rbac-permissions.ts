@@ -730,6 +730,46 @@ export const PERMISSIONS: readonly PermissionDefinition[] = [
     sensitive: true,
   }),
 
+  // --- subjects (Data Master Mata Pelajaran) ------------------------------
+  def({
+    key: "subjects.read",
+    resource: "subjects",
+    action: "read",
+    module: "schedule",
+    label: "Lihat Data Master Mata Pelajaran",
+    description:
+      "Membuka daftar mata pelajaran yang dikenal sistem. Daftar ini menjadi pilihan saat menyusun jadwal dan saat memetakan mata pelajaran dari berkas aSc.",
+  }),
+  def({
+    key: "subjects.create",
+    resource: "subjects",
+    action: "create",
+    module: "schedule",
+    label: "Tambah mata pelajaran",
+    dependsOn: ["subjects.read"],
+  }),
+  def({
+    key: "subjects.update",
+    resource: "subjects",
+    action: "update",
+    module: "schedule",
+    label: "Ubah nama mata pelajaran",
+    description:
+      "Mengganti nama satu mata pelajaran. Jadwal dan penugasan yang memakainya ikut menampilkan nama baru karena keduanya menunjuk ID yang sama.",
+    dependsOn: ["subjects.read"],
+  }),
+  def({
+    key: "subjects.delete",
+    resource: "subjects",
+    action: "delete",
+    module: "schedule",
+    label: "Hapus mata pelajaran",
+    description:
+      "Hanya mata pelajaran yang belum dipakai jadwal, penugasan mengajar, atau pemetaan impor yang dapat dihapus. Yang sudah terpakai ditolak, bukan dihapus beruntun.",
+    dependsOn: ["subjects.read"],
+    sensitive: true,
+  }),
+
   // --- development --------------------------------------------------------
   def({
     key: "development.read",

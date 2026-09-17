@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { AlertTriangle, CheckCircle2, Loader2, Upload } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Loader2, Upload, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
@@ -9,11 +9,16 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Combobox } from "@/components/ui/combobox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { scheduleFetch, useScheduleResource } from "@/components/jadwal/use-schedule-resource"
 import { SCHEDULE_DAY_LABELS, type ScheduleDay } from "@/lib/schedule-constants"
-import type { MappingPlan, MappingPlanRow } from "@/lib/asc-mapping"
+import {
+  applicableCandidateId,
+  bulkCandidateApplications,
+  type MappingPlan,
+  type MappingPlanRow,
+} from "@/lib/asc-mapping"
 import type { SchedulePreview, PreviewRow } from "@/lib/server-schedule-import"
 import type { ScheduleMasterData } from "@/lib/server-schedule"
 
@@ -49,26 +54,81 @@ function MappingTable({
   onChanged: () => void
 }) {
   const [savingId, setSavingId] = useState<string | null>(null)
+  const [bulkBusy, setBulkBusy] = useState(false)
+
+  /** Menyimpan SATU pemetaan. Yang dikirim selalu pasangan ID, bukan nama. */
+  async function persist(
+    target: { readonly externalId: string; readonly externalName: string },
+    internalId: string | null,
+  ) {
+    await scheduleFetch("/api/jadwal/mapping", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        entityType,
+        externalId: target.externalId,
+        externalName: target.externalName,
+        internalId,
+      }),
+    })
+  }
 
   async function save(row: MappingPlanRow, internalId: string | null) {
     setSavingId(row.externalId)
     try {
-      await scheduleFetch("/api/jadwal/mapping", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          entityType,
-          externalId: row.externalId,
-          externalName: row.externalName,
-          internalId,
-        }),
-      })
+      await persist(row, internalId)
       toast.success("Pemetaan disimpan")
       onChanged()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Pemetaan gagal disimpan")
     } finally {
       setSavingId(null)
+    }
+  }
+
+  // Baris yang kandidatnya aman diterapkan. Dihitung dari rencana pemetaan yang
+  // sama yang dipakai server, sehingga tombol tidak pernah menjanjikan sesuatu
+  // yang kemudian ditolak.
+  const applications = bulkCandidateApplications(plan)
+
+  /**
+   * "Terapkan Semua Kandidat".
+   *
+   * Hanya menyentuh baris yang belum dipetakan dan kandidatnya tidak ambigu;
+   * pemetaan yang sudah dibuat admin tidak pernah ditimpa. Kegagalan satu baris
+   * tidak membatalkan baris lain yang sudah tersimpan — hasil sebenarnya
+   * dilaporkan apa adanya, bukan diasumsikan berhasil semua.
+   */
+  async function applyAll() {
+    if (bulkBusy || applications.length === 0) return
+    setBulkBusy(true)
+    let applied = 0
+    let failed = 0
+    try {
+      for (const item of applications) {
+        try {
+          await persist(item, item.internalId)
+          applied += 1
+        } catch {
+          failed += 1
+        }
+      }
+
+      const remaining = plan.unmappedCount - applied
+      if (applied === 0) {
+        toast.error("Tidak ada kandidat yang berhasil diterapkan")
+      } else {
+        toast.success(`${applied} kandidat diterapkan`, {
+          description:
+            remaining > 0 ? `${remaining} item masih perlu dipetakan` : "Seluruh item sudah dipetakan",
+        })
+      }
+      if (failed > 0) toast.error(`${failed} kandidat gagal disimpan`)
+    } finally {
+      setBulkBusy(false)
+      // Penghitung di header berasal dari server; memuat ulang membuat angkanya
+      // langsung sesuai keadaan terbaru.
+      onChanged()
     }
   }
 
@@ -87,6 +147,14 @@ function MappingTable({
           ) : null}
         </CardTitle>
         <CardDescription>{description}</CardDescription>
+        {applications.length > 0 ? (
+          <div className="pt-1">
+            <Button size="sm" variant="outline" disabled={bulkBusy} onClick={applyAll}>
+              {bulkBusy ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
+              Terapkan Semua Kandidat ({applications.length})
+            </Button>
+          </div>
+        ) : null}
       </CardHeader>
       <CardContent>
         {plan.rows.length === 0 ? (
@@ -112,6 +180,10 @@ function MappingTable({
               <TableBody>
                 {plan.rows.map((row) => {
                   const current = row.mappedId ?? row.suggestion?.autoSelectId ?? ""
+                  // Tombol per-baris hanya muncul bila baris ini memang punya
+                  // kandidat aman DAN belum dipetakan; baris yang sudah
+                  // dipetakan diubah lewat combobox/"Lepas", bukan ditimpa diam-diam.
+                  const candidateId = applicableCandidateId(row)
                   return (
                     <TableRow key={row.externalId}>
                       <TableCell>
@@ -125,26 +197,30 @@ function MappingTable({
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Select
-                            value={current}
-                            disabled={options.length === 0}
-                            onValueChange={(value) => value && save(row, String(value))}
-                          >
-                            <SelectTrigger className="w-full" aria-label={`Pemetaan untuk ${row.externalName}`}>
-                              <SelectValue placeholder="Belum dipetakan">
-                                {(value: string) =>
-                                  options.find((item) => item.id === value)?.name ?? "Belum dipetakan"
-                                }
-                              </SelectValue>
-                            </SelectTrigger>
-                            <SelectContent className="max-h-72">
-                              {options.map((item) => (
-                                <SelectItem key={item.id} value={item.id}>
-                                  {item.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <Combobox
+                            options={options.map((item) => ({ value: item.id, label: item.name }))}
+                            value={current === "" ? null : current}
+                            disabled={options.length === 0 || savingId === row.externalId}
+                            placeholder="Belum dipetakan"
+                            emptyMessage="Tidak ada yang cocok"
+                            aria-label={`Pemetaan untuk ${row.externalName}`}
+                            onValueChange={(value) => value && save(row, value)}
+                          />
+                          {candidateId ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={savingId === row.externalId || bulkBusy}
+                              onClick={() => save(row, candidateId)}
+                            >
+                              {savingId === row.externalId ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <Wand2 className="size-4" />
+                              )}
+                              Terapkan kandidat
+                            </Button>
+                          ) : null}
                           {row.mappedId ? (
                             <Button
                               variant="ghost"
@@ -301,7 +377,7 @@ export function ImportPanel({
             entityType="SUBJECT"
             plan={data.mapping.subjects}
             options={master.subjects}
-            emptyOptionsHint="Data Master Mata Pelajaran masih kosong, sehingga tidak ada pilihan yang dapat ditampilkan. Tambahkan mata pelajaran terlebih dahulu di Kurikulum."
+            emptyOptionsHint="Data Master Mata Pelajaran masih kosong, sehingga tidak ada pilihan yang dapat ditampilkan. Tambahkan mata pelajaran terlebih dahulu di Data Master → Mata Pelajaran."
             onChanged={preview.reload}
           />
 

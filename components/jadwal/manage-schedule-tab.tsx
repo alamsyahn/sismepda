@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Combobox } from "@/components/ui/combobox"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -29,11 +30,11 @@ import {
 import { scheduleFetch, useScheduleResource } from "@/components/jadwal/use-schedule-resource"
 import {
   SCHEDULE_DAY_LABELS,
-  SCHEDULE_DAYS,
   formatTimeRange,
+  scheduleDayLabel,
   type ScheduleDay,
 } from "@/lib/schedule-constants"
-import { lessonSlots, slotByPeriod, type TimeSlot } from "@/lib/schedule-time"
+import { lessonSlots, orderedDays, slotByPeriod, type ProfileDay, type TimeSlot } from "@/lib/schedule-time"
 import type { ScheduleCapabilities } from "@/lib/schedule-authorization"
 import type {
   ScheduleEntryView,
@@ -66,15 +67,20 @@ const REVISION_SOURCE_LABELS: Record<ScheduleRevisionView["source"], string> = {
 export function ManageScheduleTab({
   capabilities,
   master,
-  slots,
+  days,
   todayDay,
 }: {
   capabilities: ScheduleCapabilities
   master: ScheduleMasterData
-  slots: readonly TimeSlot[]
+  days: readonly ProfileDay[]
   todayDay: ScheduleDay | null
 }) {
-  const [day, setDay] = useState<ScheduleDay>(todayDay ?? 1)
+  const configured = orderedDays([...days]).filter((item) => item.slots.length > 0)
+  const initialDay =
+    (todayDay !== null && configured.some((item) => item.day === todayDay)
+      ? todayDay
+      : configured[0]?.day) ?? 1
+  const [day, setDay] = useState<ScheduleDay>(initialDay as ScheduleDay)
   const [classId, setClassId] = useState("")
   const [draft, setDraft] = useState<EntryDraft | null>(null)
   const [deleting, setDeleting] = useState<ScheduleEntryView | null>(null)
@@ -87,8 +93,13 @@ export function ManageScheduleTab({
     capabilities.revisionsRead ? "/api/jadwal/revisi" : null,
   )
 
-  const lessons = lessonSlots([...slots])
-  const byPeriod = slotByPeriod([...slots])
+  // Baris editor mengikuti struktur waktu HARI YANG SEDANG DIBUKA, yang ikut
+  // dikirim balik oleh `/api/jadwal/kelas`. Memakai satu daftar slot generik
+  // membuat setiap hari menampilkan jam milik hari pertama.
+  const daySlots: readonly TimeSlot[] =
+    editor.data?.slots ?? configured.find((item) => item.day === day)?.slots ?? []
+  const lessons = lessonSlots([...daySlots])
+  const byPeriod = slotByPeriod([...daySlots])
 
   async function confirmDelete() {
     if (!deleting) return
@@ -163,9 +174,9 @@ export function ManageScheduleTab({
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {SCHEDULE_DAYS.map((item) => (
-                      <SelectItem key={item} value={String(item)}>
-                        {SCHEDULE_DAY_LABELS[item]}
+                    {configured.map((item) => (
+                      <SelectItem key={item.day} value={String(item.day)}>
+                        {scheduleDayLabel(item.day)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -173,20 +184,18 @@ export function ManageScheduleTab({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="kelola-kelas">Kelas</Label>
-                <Select value={classId} onValueChange={(value) => value && setClassId(String(value))}>
-                  <SelectTrigger id="kelola-kelas" className="w-full">
-                    <SelectValue placeholder="Pilih kelas">
-                      {(value: string) => master.classes.find((item) => item.id === value)?.name ?? "Pilih kelas"}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    {master.classes.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  id="kelola-kelas"
+                  options={master.classes.map((item) => ({
+                    value: item.id,
+                    label: item.name,
+                    description: `Tingkat ${item.grade}`,
+                  }))}
+                  value={classId ? classId : null}
+                  placeholder="Cari kelas"
+                  emptyMessage="Kelas tidak ditemukan"
+                  onValueChange={(value) => setClassId(value ?? "")}
+                />
               </div>
             </div>
 
@@ -345,7 +354,7 @@ export function ManageScheduleTab({
           open
           onOpenChange={(value) => !value && setDraft(null)}
           draft={draft}
-          slots={slots}
+          days={configured}
           master={master}
           onSaved={() => {
             setDraft(null)

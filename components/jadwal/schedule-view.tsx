@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ClassScheduleTab } from "@/components/jadwal/class-schedule-tab"
@@ -46,6 +47,8 @@ export function ScheduleView({
   now: ScheduleNowContext
   master: ScheduleMasterData
 }) {
+  const router = useRouter()
+  const [, startRefresh] = useTransition()
   const tabs = visibleScheduleTabs(capabilities)
   const [tab, setTab] = useState<ScheduleTab>(tabs[0] ?? "saya")
 
@@ -85,13 +88,13 @@ export function ScheduleView({
 
       {tabs.includes("kelas") ? (
         <TabsContent value="kelas">
-          <ClassScheduleTab classes={master.classes} todayDay={todayDay} />
+          <ClassScheduleTab classes={master.classes} days={profile.days} todayDay={todayDay} />
         </TabsContent>
       ) : null}
 
       {tabs.includes("jam-kosong") ? (
         <TabsContent value="jam-kosong">
-          <FreeTeachersTab slots={profile.slots} current={now.current} todayDay={todayDay} />
+          <FreeTeachersTab days={profile.days} current={now.current} todayDay={todayDay} />
         </TabsContent>
       ) : null}
 
@@ -100,7 +103,7 @@ export function ScheduleView({
           <ManageScheduleTab
             capabilities={capabilities}
             master={master}
-            slots={profile.slots}
+            days={profile.days}
             todayDay={todayDay}
           />
         </TabsContent>
@@ -112,6 +115,10 @@ export function ScheduleView({
             profile={profile}
             templates={templates}
             canManage={capabilities.timeManage}
+            // Struktur waktu dipakai hampir semua tab lain, jadi setiap mutasi
+            // harus memuat ulang server component induknya. Tanpa ini layar
+            // tetap menampilkan nilai lama sampai peramban di-refresh manual.
+            onSaved={() => startRefresh(() => router.refresh())}
           />
         </TabsContent>
       ) : null}

@@ -53,6 +53,12 @@ ScheduleTimeProfile (Reguler, Ramadan, …)  — tepat satu `active`
     └── ScheduleTimeSlot  position | kind | name | startMinute | endMinute | ascPeriod
 ```
 
+Setiap tampilan yang menyebut satu hari **wajib** membaca `ProfileDay` hari itu.
+Tidak ada daftar slot generik tingkat profil yang boleh dipakai untuk merender
+kolom hari: kolom berlabel Kamis yang menampilkan baris Senin adalah bug, bukan
+fallback. Hari yang belum dikonfigurasi menghasilkan `null` dan dirender sebagai
+keterangan kosong — tidak pernah meminjam struktur hari lain.
+
 Struktur waktu dimiliki **hari**, bukan profil. Hari disimpan sebagai baris,
 bukan enam kolom, sehingga menambah atau menghapus hari aktif tidak pernah
 membutuhkan migrasi. Profil baru dibuat dengan Senin–Sabtu (`DEFAULT_PROFILE_DAYS`)
@@ -227,6 +233,20 @@ resmi Data Master tidak pernah ditimpa nama dari XML.
 `INFORMATIKA` ↔ `Informatika` dan `PPKn` ↔ `Pendidikan Pancasila` ditangani
 dengan mekanisme yang sama.
 
+Kandidat dapat diterapkan **per baris** ("Terapkan kandidat") atau **massal**
+("Terapkan Semua Kandidat"). Keduanya memakai aturan yang sama dan ada di
+`lib/asc-mapping.ts` sebagai fungsi murni:
+
+- `applicableCandidateId(row)` — id kandidat yang boleh diterapkan untuk satu
+  baris, atau `null`. Menghasilkan `null` bila baris **sudah dipetakan** (apa
+  pun isinya), bila tidak ada kandidat, atau bila kandidat **ambigu**.
+- `bulkCandidateApplications(plan)` — daftar penerapan aman untuk seluruh
+  rencana; baris yang sudah dipetakan admin tidak pernah ikut.
+
+Penerapan massal karena itu tidak pernah menimpa keputusan manual dan tidak
+pernah menebak saat ada lebih dari satu kandidat. Yang disimpan tetap pasangan
+`externalId → internalId`; nama hanya keterangan di layar.
+
 ### Suntingan manual vs impor berikutnya
 
 Semantiknya sengaja dibuat dapat ditebak, bukan merge otomatis: **Apply
@@ -250,6 +270,8 @@ Modul `schedule` pada katalog RBAC (`lib/rbac-permissions.ts`):
 | `schedule.import` | Unggah, pratinjau, dan terapkan impor aSc |
 | `schedule.revisions.read` | Riwayat versi |
 | `schedule.revisions.rollback` | Kembalikan ke versi sebelumnya |
+| `subjects.read` | Membuka Data Master Mata Pelajaran |
+| `subjects.create` / `.update` / `.delete` | Mengelola Data Master Mata Pelajaran |
 
 Template role bawaan `guru` mendapat tiga permission melihat
 (`schedule.own.read`, `schedule.classes.read`, `schedule.free_teachers.read`).
@@ -274,6 +296,7 @@ profil guru sendiri.
 | `/api/jadwal/impor` | `GET` daftar, `POST` unggah + pratinjau |
 | `/api/jadwal/impor/[importId]` | `GET` pratinjau, `POST` terapkan, `DELETE` batal |
 | `/api/jadwal/mapping` | `GET`/`PUT` pemetaan external ID |
+| `/api/mata-pelajaran` | `GET`/`POST`/`PUT`/`DELETE` Data Master Mata Pelajaran |
 
 Setiap route memanggil `requireSchedulePermission()` di server; tombol yang
 disembunyikan di peramban bukan pengaman. `lib/route-policy.ts` bersifat
@@ -287,6 +310,23 @@ tab) dengan `my-schedule-tab`, `class-schedule-tab`, `free-teachers-tab`,
 Desktop memakai grid Jam × Senin–Sabtu; mobile memakai pilihan hari berupa chip
 dan daftar slot vertikal, bukan tabel horizontal sangat lebar.
 
+## Menyegarkan layar setelah menyimpan
+
+Halaman `/jadwal` adalah server component: profil waktu, template, dan data
+master dibaca di server lalu diturunkan sebagai props. Karena itu mutasi pada
+tab Waktu & Kegiatan **wajib** memanggil `router.refresh()` lewat callback
+`onSaved`; tanpa itu server component tidak pernah dijalankan ulang dan layar
+memperlihatkan nilai lama sampai peramban di-refresh manual.
+
+Draft editor disinkronkan ulang memakai kunci yang memuat **isi** baris, bukan
+hanya jumlahnya. Mengubah 07:00 menjadi 07:15 tidak mengubah panjang daftar,
+sehingga kunci berbasis panjang akan menahan draft lama meski server sudah
+menyimpan nilai baru.
+
+Penyegaran hanya dilakukan setelah respons sukses. Kegagalan simpan memunculkan
+toast galat dan **tidak** menyegarkan, supaya layar tidak pernah berpura-pura
+sudah tersimpan.
+
 ## Batas bundel client
 
 `lib/server-schedule.ts` dan `lib/server-schedule-import.ts` adalah satu-satunya
@@ -295,7 +335,11 @@ tersebut; mengimpor value akan menyeret Prisma ke bundel peramban dan memecah
 `next build`. Logika murni yang dipakai bersama klien dan server berada di
 `lib/schedule-constants.ts`, `lib/schedule-time.ts`,
 `lib/schedule-authorization.ts`, `lib/asc-timetable-parser.ts`,
-`lib/asc-mapping.ts`, dan `lib/schedule-diff.ts`. Aturan ini diuji otomatis.
+`lib/asc-mapping.ts`, `lib/entity-search.ts`, `lib/subject-constants.ts`, dan
+`lib/schedule-diff.ts`. Aturan ini diuji otomatis.
+
+`lib/server-subjects.ts` mengikuti aturan yang sama: ia menyentuh Prisma,
+sehingga komponen klien hanya boleh mengimpor tipenya.
 
 ## Audit log
 
@@ -316,7 +360,8 @@ npx tsx --test tests/schedule-asc-parser.test.ts \
                 tests/schedule-time.test.ts \
                 tests/schedule-time-days.test.ts \
                 tests/schedule-conflicts.test.ts \
-                tests/schedule-authorization.test.ts
+                tests/schedule-authorization.test.ts \
+                tests/jadwal-fixes.test.ts
 ```
 
 Berkasnya berturut-turut menguji: parser aSc (resolusi lesson/card, hari,
@@ -326,4 +371,35 @@ struktur waktu, deteksi jam berjalan, dan zona waktu sekolah; struktur per hari
 dan semantik salinan template (hari berdiri sendiri, edit/hapus template tidak
 merembet, migrasi bersifat expand-backfill); bentrok guru dan
 kelas serta diff impor; dan otorisasi, role key `guru` versus nama tampilan,
-multi-role, `legacy_guru`, serta batas bundel client.
+multi-role, `legacy_guru`, serta batas bundel client; dan penerapan kandidat
+impor (per baris dan massal), pencarian pemilih, pemetaan hari Senin–Sabtu,
+serta aturan nama Data Master Mata Pelajaran.
+
+## Pemilih yang dapat diketik
+
+Semua pemilih panjang pada modul Jadwal (guru, kelas, mata pelajaran, dan
+pemetaan impor aSc) memakai `components/ui/combobox.tsx`. Pencocokannya ada di
+`lib/entity-search.ts`: huruf besar-kecil diabaikan, pencocokan bersifat
+**substring per kata** sehingga `alam` menemukan `Muhammad Nur Alamsyah` dan
+`nur` menemukan Alamsyah maupun Nurvita, tanda baca serta gelar (`S.Pd.`)
+diabaikan, dan urutan kata tidak wajib sama. Kueri kosong mengembalikan seluruh
+pilihan.
+
+Pemilih pendek (misalnya jenis baris pada Waktu & Kegiatan) tetap memakai
+`Select` biasa — menambahkan kotak pencarian untuk dua pilihan hanya menambah
+gesekan.
+
+## Data Master Mata Pelajaran
+
+`Subject` sudah lama ada di schema dan dipakai `ScheduleEntry`,
+`TeachingAssignment`, serta pemetaan impor, tetapi sebelumnya hanya lahir
+sebagai efek samping alur lain sehingga pemetaan mata pelajaran pada impor aSc
+tidak dapat diselesaikan. Kini ada halaman `/mata-pelajaran` (lihat, tambah,
+ubah, hapus) dengan `lib/server-subjects.ts` sebagai satu-satunya pintu tulis.
+
+Penghapusan bersifat **fail-closed**: mata pelajaran yang masih dipakai
+`ScheduleEntry`, `TeachingAssignment`, `TeacherSubject`, atau pemetaan impor
+ditolak dengan menyebut jumlah pemakaiannya, bukan dihapus berantai. Nama
+divalidasi lewat `lib/subject-constants.ts` (dirapikan, tidak boleh kosong,
+duplikat ditolak tanpa memandang besar-kecil huruf). Tidak ada migrasi:
+modelnya sudah memadai.

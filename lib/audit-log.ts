@@ -41,6 +41,8 @@ export type AuditEntity =
   | "ScheduleEntry"
   | "ScheduleImport"
   | "ScheduleExternalMapping"
+  /// Data Master Mata Pelajaran; entityId = Subject.id.
+  | "Subject"
   /// Entitas RBAC. Didefinisikan di lib/rbac-audit.ts agar UI dapat mengenali
   /// baris RBAC tanpa ikut menarik lib/prisma.ts ke bundel klien.
   | RbacAuditEntity
@@ -118,6 +120,9 @@ export type AuditAction =
   | "SCHEDULE_IMPORT_CANCELLED"
   | "SCHEDULE_MAPPING_UPDATED"
   | "SCHEDULE_REVISION_ROLLED_BACK"
+  | "SUBJECT_CREATED"
+  | "SUBJECT_UPDATED"
+  | "SUBJECT_DELETED"
   /// Aksi RBAC, disatukan ke trail yang sama agar tidak ada dua sistem audit.
   | RbacAuditAction
 

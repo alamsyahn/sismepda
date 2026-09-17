@@ -10,11 +10,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useScheduleResource } from "@/components/jadwal/use-schedule-resource"
 import {
   SCHEDULE_DAY_LABELS,
-  SCHEDULE_DAYS,
   formatTimeRange,
+  scheduleDayLabel,
   type ScheduleDay,
 } from "@/lib/schedule-constants"
-import { lessonSlots, type CurrentSlotResult, type TimeSlot } from "@/lib/schedule-time"
+import {
+  findProfileDay,
+  lessonSlots,
+  orderedDays,
+  type CurrentSlotResult,
+  type ProfileDay,
+  type TimeSlot,
+} from "@/lib/schedule-time"
 import type { ScheduleNowContext, ScheduleTeacher } from "@/lib/server-schedule"
 
 type Payload = {
@@ -37,21 +44,36 @@ type Payload = {
  * menjelaskan keadaan dan meminta pengguna memilih jam pelajaran.
  */
 export function FreeTeachersTab({
-  slots,
+  days,
   todayDay,
   current,
 }: {
-  slots: readonly TimeSlot[]
+  days: readonly ProfileDay[]
   todayDay: ScheduleDay | null
   current: CurrentSlotResult
 }) {
-  const lessons = lessonSlots([...slots])
-  const [day, setDay] = useState<ScheduleDay>(todayDay ?? 1)
+  const configured = orderedDays([...days]).filter((item) => item.slots.length > 0)
+  const initialDay =
+    (todayDay !== null && configured.some((item) => item.day === todayDay)
+      ? todayDay
+      : configured[0]?.day) ?? 1
+  const [day, setDay] = useState<ScheduleDay>(initialDay as ScheduleDay)
+
+  // Jam pelajaran yang boleh dipilih adalah milik HARI TERPILIH. Memakai satu
+  // daftar untuk semua hari menawarkan jam yang tidak ada pada hari itu, dan
+  // server memang menolaknya.
+  const lessons = lessonSlots([...(findProfileDay(configured, day)?.slots ?? [])])
+
   const [period, setPeriod] = useState<number | null>(
     current.state === "lesson" ? current.period : null,
   )
 
-  const url = period === null ? null : `/api/jadwal/jam-kosong?day=${day}&period=${period}`
+  // Berpindah hari tidak boleh menyisakan nomor jam yang tidak dikenal hari itu.
+  const periodExists = period !== null && lessons.some((slot) => slot.ascPeriod === period)
+  const effectivePeriod = periodExists ? period : null
+
+  const url =
+    effectivePeriod === null ? null : `/api/jadwal/jam-kosong?day=${day}&period=${effectivePeriod}`
   const { data, loading, error } = useScheduleResource<Payload>(url)
 
   return (
@@ -75,9 +97,9 @@ export function FreeTeachersTab({
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {SCHEDULE_DAYS.map((item) => (
-                <SelectItem key={item} value={String(item)}>
-                  {SCHEDULE_DAY_LABELS[item]}
+              {configured.map((item) => (
+                <SelectItem key={item.day} value={String(item.day)}>
+                  {scheduleDayLabel(item.day)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -87,7 +109,7 @@ export function FreeTeachersTab({
         <div className="space-y-1.5">
           <Label htmlFor="jam-kosong-jam">Jam pelajaran</Label>
           <Select
-            value={period === null ? "" : String(period)}
+            value={effectivePeriod === null ? "" : String(effectivePeriod)}
             onValueChange={(value) => value && setPeriod(Number(value))}
           >
             <SelectTrigger id="jam-kosong-jam" className="w-full">
@@ -108,7 +130,7 @@ export function FreeTeachersTab({
         </div>
       </div>
 
-      {period === null ? (
+      {effectivePeriod === null ? (
         <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
           Belum ada jam pelajaran yang dipilih.
         </p>

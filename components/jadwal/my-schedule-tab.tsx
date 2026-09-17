@@ -4,16 +4,16 @@ import { useState } from "react"
 import { Loader2 } from "lucide-react"
 
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Combobox } from "@/components/ui/combobox"
 import { ScheduleWeekGrid } from "@/components/jadwal/schedule-week-grid"
 import { useScheduleResource } from "@/components/jadwal/use-schedule-resource"
 import type { ScheduleDay } from "@/lib/schedule-constants"
-import type { TimeSlot } from "@/lib/schedule-time"
+import type { ProfileDay } from "@/lib/schedule-time"
 import type { ScheduleEntryView, ScheduleNowContext, ScheduleTeacher } from "@/lib/server-schedule"
 
 type Payload = {
   teacherId: string
-  slots: TimeSlot[]
+  days: ProfileDay[]
   entries: ScheduleEntryView[]
   now: ScheduleNowContext
 }
@@ -49,24 +49,15 @@ export function MyScheduleTab({
       {canPickTeacher ? (
         <div className="flex flex-col gap-1.5 sm:max-w-sm">
           <Label htmlFor="jadwal-guru">Guru</Label>
-          <Select
-            value={teacherId}
+          <Combobox
+            id="jadwal-guru"
+            options={teachers.map((teacher) => ({ value: teacher.id, label: teacher.name }))}
+            value={teacherId ? teacherId : null}
             disabled={teachers.length === 0}
-            onValueChange={(value) => value && setTeacherId(String(value))}
-          >
-            <SelectTrigger id="jadwal-guru" className="w-full">
-              <SelectValue placeholder="Pilih guru">
-                {(value: string) => teachers.find((item) => item.id === value)?.name ?? "Pilih guru"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent className="max-h-72">
-              {teachers.map((teacher) => (
-                <SelectItem key={teacher.id} value={teacher.id}>
-                  {teacher.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            placeholder="Cari nama guru"
+            emptyMessage="Guru tidak ditemukan"
+            onValueChange={(value) => setTeacherId(value ?? "")}
+          />
         </div>
       ) : null}
 
@@ -93,7 +84,7 @@ export function MyScheduleTab({
         </p>
       ) : data ? (
         <ScheduleWeekGrid
-          slots={data.slots}
+          days={data.days}
           entries={data.entries}
           highlightDay={data.now.todayDay ?? todayDay}
           showClass
