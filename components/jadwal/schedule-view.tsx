@@ -19,6 +19,7 @@ import type {
   ScheduleMasterData,
   ScheduleNowContext,
   ScheduleTimeProfileView,
+  ScheduleTimeTemplateView,
 } from "@/lib/server-schedule"
 
 /**
@@ -33,6 +34,7 @@ export function ScheduleView({
   viewerIsTeacher,
   capabilities,
   profile,
+  templates,
   now,
   master,
 }: {
@@ -40,6 +42,7 @@ export function ScheduleView({
   viewerIsTeacher: boolean
   capabilities: ScheduleCapabilities
   profile: ScheduleTimeProfileView
+  templates: readonly ScheduleTimeTemplateView[]
   now: ScheduleNowContext
   master: ScheduleMasterData
 }) {
@@ -105,7 +108,11 @@ export function ScheduleView({
 
       {tabs.includes("waktu") ? (
         <TabsContent value="waktu">
-          <TimeStructureTab profile={profile} />
+          <TimeStructureTab
+            profile={profile}
+            templates={templates}
+            canManage={capabilities.timeManage}
+          />
         </TabsContent>
       ) : null}
     </Tabs>

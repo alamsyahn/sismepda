@@ -33,6 +33,10 @@ export type AuditEntity =
   /// Modul Jadwal. `ScheduleTimeProfile` memakai entityId profil; revisi,
   /// impor, dan pemetaan memakai id barisnya masing-masing.
   | "ScheduleTimeProfile"
+  /// Konfigurasi satu hari pada sebuah profil waktu; entityId = id baris hari.
+  | "ScheduleProfileDay"
+  /// Template struktur waktu. Berdiri sendiri: tidak ada hari yang menautkannya.
+  | "ScheduleTimeTemplate"
   | "ScheduleRevision"
   | "ScheduleEntry"
   | "ScheduleImport"
@@ -98,6 +102,13 @@ export type AuditAction =
   /// Modul Jadwal. Payload audit hanya memuat metadata dan ringkasan angka —
   /// isi berkas XML tidak pernah ikut tercatat.
   | "SCHEDULE_TIME_SLOTS_UPDATED"
+  | "SCHEDULE_PROFILE_DAY_ADDED"
+  | "SCHEDULE_PROFILE_DAY_REMOVED"
+  | "SCHEDULE_TIME_DAY_COPIED"
+  | "SCHEDULE_TIME_TEMPLATE_CREATED"
+  | "SCHEDULE_TIME_TEMPLATE_UPDATED"
+  | "SCHEDULE_TIME_TEMPLATE_DELETED"
+  | "SCHEDULE_TIME_TEMPLATE_APPLIED"
   | "SCHEDULE_ENTRY_CREATED"
   | "SCHEDULE_ENTRY_UPDATED"
   | "SCHEDULE_ENTRY_DELETED"

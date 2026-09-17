@@ -6,34 +6,47 @@
  * boundary bundel di docs/architecture/overview.md).
  */
 
-/** Hari sekolah. 1 = Senin .. 6 = Sabtu, sama dengan `TeachingAssignment.day`. */
+/** Hari sekolah. 1 = Senin .. 7 = Minggu, sama dengan `TeachingAssignment.day`. */
+export const ALL_WEEKDAYS = [1, 2, 3, 4, 5, 6, 7] as const
+
+export type Weekday = (typeof ALL_WEEKDAYS)[number]
+
+/**
+ * Hari yang menjadi NILAI AWAL konfigurasi profil waktu (Senin–Sabtu).
+ *
+ * Ini bukan daftar tertutup: hari aktif sebuah profil dibaca dari database
+ * (`ScheduleProfileDay`), dan daftar ini hanya dipakai saat sebuah profil belum
+ * pernah dikonfigurasi sama sekali.
+ */
 export const SCHEDULE_DAYS = [1, 2, 3, 4, 5, 6] as const
 
-export type ScheduleDay = (typeof SCHEDULE_DAYS)[number]
+export type ScheduleDay = Weekday
 
-export const SCHEDULE_DAY_LABELS: Record<ScheduleDay, string> = {
+export const SCHEDULE_DAY_LABELS: Record<Weekday, string> = {
   1: "Senin",
   2: "Selasa",
   3: "Rabu",
   4: "Kamis",
   5: "Jumat",
   6: "Sabtu",
+  7: "Minggu",
 }
 
-export const SCHEDULE_DAY_SHORT_LABELS: Record<ScheduleDay, string> = {
+export const SCHEDULE_DAY_SHORT_LABELS: Record<Weekday, string> = {
   1: "Sen",
   2: "Sel",
   3: "Rab",
   4: "Kam",
   5: "Jum",
   6: "Sab",
+  7: "Min",
 }
 
 export function isScheduleDay(value: unknown): value is ScheduleDay {
-  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 6
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 7
 }
 
-/** Label hari; nilai di luar Senin–Sabtu tidak pernah dikarang menjadi hari sekolah. */
+/** Label hari; nilai di luar Senin–Minggu tidak pernah dikarang menjadi hari sekolah. */
 export function scheduleDayLabel(day: number): string {
   return isScheduleDay(day) ? SCHEDULE_DAY_LABELS[day] : `Hari ${day}`
 }
@@ -43,6 +56,10 @@ export function scheduleDayLabel(day: number): string {
  *
  * Minggu tidak punya jadwal; pemanggil memutuskan sendiri apa yang ditampilkan
  * (`null` berarti "bukan hari sekolah"), bukan diam-diam digeser ke Senin.
+ *
+ * Sebuah profil TEKNISNYA boleh mengaktifkan hari Minggu (`isScheduleDay(7)`),
+ * tetapi "hari ini" tetap tidak dikarang menjadi hari sekolah di sini —
+ * mengubahnya akan mengubah perilaku sorotan "Hari ini" pada seluruh modul.
  */
 export function scheduleDayFromSchoolDate(value: string): ScheduleDay | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)

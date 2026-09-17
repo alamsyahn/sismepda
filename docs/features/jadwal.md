@@ -49,22 +49,73 @@ selalu diresolusi dari profil waktu aktif:
 
 ```
 ScheduleTimeProfile (Reguler, Ramadan, …)  — tepat satu `active`
-└── ScheduleTimeSlot  position | kind | name | startMinute | endMinute | ascPeriod
+└── ScheduleProfileDay   day (1=Senin … 7=Minggu) | position
+    └── ScheduleTimeSlot  position | kind | name | startMinute | endMinute | ascPeriod
 ```
 
+Struktur waktu dimiliki **hari**, bukan profil. Hari disimpan sebagai baris,
+bukan enam kolom, sehingga menambah atau menghapus hari aktif tidak pernah
+membutuhkan migrasi. Profil baru dibuat dengan Senin–Sabtu (`DEFAULT_PROFILE_DAYS`)
+— itu nilai awal, bukan aturan yang dipaku.
+
 `kind` bernilai `PELAJARAN`, `ISTIRAHAT`, atau `KEGIATAN`. Hanya `PELAJARAN`
-yang boleh memiliki `ascPeriod`, dan `ascPeriod` unik per profil: inilah satu-
+yang boleh memiliki `ascPeriod`, dan `ascPeriod` unik **per hari**: inilah satu-
 satunya jembatan antara `card.period` pada XML aSc dan jam dinding sekolah.
+
+Keunikan berlingkup hari inilah inti fiturnya. `card.period` menyatakan *jam
+ke-berapa*, bukan pukul berapa; pukulnya baru ditentukan oleh profil + hari +
+nomor jam (`resolveSlotForDayPeriod`). Karena itu jam ke-1 boleh berakhir 07:40
+pada Senin dan 07:30 pada Jumat, dan sebuah hari yang tidak punya jam ke-3
+menjawab "tidak ada" alih-alih meminjam jam hari lain.
 
 Waktu disimpan sebagai **menit sejak tengah malam (0..1439)**, bukan `DateTime`,
 karena ini jam dinding yang berlaku setiap hari — menyimpannya sebagai timestamp
 akan menyeret tanggal dan zona waktu ke data yang tidak memilikinya.
 
 Penyuntingan struktur waktu (`PUT /api/jadwal/waktu`) mengganti seluruh daftar
-slot satu profil dalam satu transaksi setelah validasi: format jam benar, mulai
+slot **satu hari** dalam satu transaksi setelah validasi: format jam benar, mulai
 < selesai, tidak ada tumpang tindih, `ascPeriod` hanya pada `PELAJARAN` dan
-tidak berduplikat. Mengubah jam menggeser tampilan seluruh sekolah tanpa
-menyentuh satu pun penempatan.
+tidak berduplikat. Mengubah jam menggeser tampilan seluruh sekolah pada hari itu
+tanpa menyentuh satu pun penempatan, dan tanpa menyentuh hari lain.
+
+### Migrasi ke struktur per hari
+
+Migrasi `20260917150000_schedule_time_per_day_and_templates` bersifat
+**expand → backfill → switch**, bukan destruktif. Setiap profil memperoleh
+Senin–Sabtu; baris slot lama TIDAK dipindahkan maupun dibuat ulang — Senin
+memakai baris yang sudah ada (id lama tetap hidup), sedangkan Selasa–Sabtu
+menerima salinan deterministik (id diturunkan dari `md5(id sumber + hari)`).
+Hasilnya perilaku aplikasi sesudah migrasi identik dengan sebelumnya: period 4
+pada hari apa pun menunjuk jam dinding yang sama seperti dulu.
+
+Keunikan lama berlingkup profil (`profileId, position` dan `profileId, ascPeriod`)
+dibuang **sebelum** penyalinan, lalu dibangun kembali berlingkup hari — tanpa
+urutan itu penyalinan Selasa–Sabtu pasti melanggar constraint. Slot yatim tidak
+menyebabkan penghapusan diam-diam: migrasi justru `RAISE EXCEPTION` dan
+membatalkan seluruh transaksi agar data yang tidak dipahami tidak hilang.
+
+### Template waktu adalah salinan, bukan referensi
+
+`ScheduleTimeTemplate` + `ScheduleTimeTemplateSlot` menyimpan struktur siap
+pakai ("Reguler Senin–Kamis", "Ramadan"). Template **tidak** punya foreign key
+ke hari mana pun, dan sebaliknya. Menerapkan template ke sebuah hari, menyalin
+hari ke hari lain, atau menyimpan hari sebagai template selalu berarti
+menuliskan baris baru (`snapshotSlots` membuang id sumber dan merapatkan urutan
+menjadi 1..n).
+
+Konsekuensinya disengaja: mengedit atau menghapus template tidak pernah
+mengubah hari yang pernah memakainya, dan mengubah hari sumber tidak pernah
+mengubah hari hasil salinan. Template boleh dihapus tanpa merusak jadwal.
+Semua operasi salin/ganti berjalan dalam satu transaksi, dan hasil salinan
+melewati validasi yang sama dengan penyuntingan manual — apply/copy bukan pintu
+belakang untuk data korup. Menimpa hari yang sudah terisi selalu didahului
+konfirmasi di UI.
+
+Endpoint: `/api/jadwal/waktu` (struktur per hari, tambah/hapus hari, salin
+antarhari) dan `/api/jadwal/waktu/template` (daftar, buat, buat-dari-hari,
+edit, duplikat, hapus, terapkan). Membaca cukup dengan izin baca jadwal; semua
+mutasi menuntut permission `schedule.time.manage` yang sudah ada — tidak ada
+permission baru dan tidak ada pengecekan nama role.
 
 Beberapa profil didukung schema dan API, tetapi UI saat ini hanya menyunting
 profil aktif; menambah profil Ramadan berarti menambah baris `ScheduleTimeProfile`
@@ -249,6 +300,7 @@ tersebut; mengimpor value akan menyeret Prisma ke bundel peramban dan memecah
 ## Audit log
 
 Memakai `AuditLog` yang sudah ada, entitas `ScheduleTimeProfile`,
+`ScheduleProfileDay`, `ScheduleTimeTemplate`,
 `ScheduleTimeSlot`, `ScheduleRevision`, `ScheduleEntry`,
 `ScheduleExternalMapping`, `ScheduleImport`. Yang dicatat: unggah dan penerapan
 impor, impor gagal, perubahan pemetaan, tambah/ubah/hapus jadwal manual,
@@ -262,6 +314,7 @@ revisi, dan ringkasan.
 npx tsx --test tests/schedule-asc-parser.test.ts \
                 tests/schedule-asc-mapping.test.ts \
                 tests/schedule-time.test.ts \
+                tests/schedule-time-days.test.ts \
                 tests/schedule-conflicts.test.ts \
                 tests/schedule-authorization.test.ts
 ```
@@ -269,6 +322,8 @@ npx tsx --test tests/schedule-asc-parser.test.ts \
 Berkasnya berturut-turut menguji: parser aSc (resolusi lesson/card, hari,
 period, XML tidak valid, referensi menggantung, entity eksternal); pemetaan dan
 penanganan typo (external ID menang atas nama, ambigu tidak auto-link);
-struktur waktu, deteksi jam berjalan, dan zona waktu sekolah; bentrok guru dan
+struktur waktu, deteksi jam berjalan, dan zona waktu sekolah; struktur per hari
+dan semantik salinan template (hari berdiri sendiri, edit/hapus template tidak
+merembet, migrasi bersifat expand-backfill); bentrok guru dan
 kelas serta diff impor; dan otorisasi, role key `guru` versus nama tampilan,
 multi-role, `legacy_guru`, serta batas bundel client.

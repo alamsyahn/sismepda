@@ -9,6 +9,7 @@ import { SCHEDULE_PAGE_PERMISSIONS } from "@/lib/schedule-authorization"
 import {
   ensureActiveTimeProfile,
   isScheduleTeacher,
+  listTimeTemplates,
   readNowContext,
   readScheduleMasterData,
 } from "@/lib/server-schedule"
@@ -34,10 +35,11 @@ export default async function JadwalPage() {
   }
 
   const profile = await ensureActiveTimeProfile()
-  const [now, master, viewerIsTeacher] = await Promise.all([
-    readNowContext(profile.slots),
+  const [now, master, viewerIsTeacher, templates] = await Promise.all([
+    readNowContext(profile),
     readScheduleMasterData(),
     isScheduleTeacher(viewer.id),
+    listTimeTemplates(),
   ])
 
   return (
@@ -51,6 +53,7 @@ export default async function JadwalPage() {
         viewerIsTeacher={viewerIsTeacher}
         capabilities={viewer.capabilities}
         profile={profile}
+        templates={templates}
         now={now}
         master={master}
       />

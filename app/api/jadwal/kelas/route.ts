@@ -4,6 +4,7 @@ import { authFailureResponse } from "@/lib/api-errors"
 import { requireSchedulePermission } from "@/lib/schedule-access"
 import { ensureActiveTimeProfile, readActiveEntries, readNowContext } from "@/lib/server-schedule"
 import { isScheduleDay } from "@/lib/schedule-constants"
+import { findProfileDay } from "@/lib/schedule-time"
 import { prisma } from "@/lib/prisma"
 
 /**
@@ -33,10 +34,14 @@ export async function GET(request: Request) {
     const profile = await ensureActiveTimeProfile()
     const [entries, now] = await Promise.all([
       readActiveEntries({ classId, day }),
-      readNowContext(profile.slots),
+      readNowContext(profile),
     ])
 
-    return NextResponse.json({ schoolClass, day, slots: profile.slots, entries, now })
+    // Struktur HARI yang diminta, bukan struktur generik profil: jam ke-4 pada
+    // Jumat boleh berbeda jamnya dengan Senin.
+    const slots = findProfileDay(profile.days, day)?.slots ?? []
+
+    return NextResponse.json({ schoolClass, day, slots, entries, now })
   } catch (error) {
     return authFailureResponse(error, "Gagal memuat jadwal kelas")
   }

@@ -176,6 +176,9 @@ export function defaultPeriodForNow(slots: readonly TimeSlot[], minuteOfDay: num
 /** Struktur waktu bawaan saat sekolah belum pernah menyetelnya. */
 export const DEFAULT_TIME_PROFILE_KEY = "reguler"
 
+/** Hari yang diisi saat sebuah profil baru dibuat: Senin–Sabtu. */
+export const DEFAULT_PROFILE_DAYS: readonly number[] = [1, 2, 3, 4, 5, 6]
+
 export const DEFAULT_TIME_SLOTS: readonly Omit<TimeSlotInput, "id">[] = [
   { position: 1, kind: "PELAJARAN", name: "Jam ke-1", startMinute: 7 * 60, endMinute: 7 * 60 + 40, ascPeriod: 1 },
   { position: 2, kind: "PELAJARAN", name: "Jam ke-2", startMinute: 7 * 60 + 40, endMinute: 8 * 60 + 20, ascPeriod: 2 },
@@ -188,3 +191,96 @@ export const DEFAULT_TIME_SLOTS: readonly Omit<TimeSlotInput, "id">[] = [
   { position: 9, kind: "PELAJARAN", name: "Jam ke-7", startMinute: 11 * 60 + 50, endMinute: 12 * 60 + 30, ascPeriod: 7 },
   { position: 10, kind: "PELAJARAN", name: "Jam ke-8", startMinute: 12 * 60 + 30, endMinute: 13 * 60 + 10, ascPeriod: 8 },
 ]
+
+// ---------------------------------------------------------------------------
+// Struktur waktu PER HARI
+// ---------------------------------------------------------------------------
+
+/**
+ * Konfigurasi satu hari: identitas hari + barisnya sendiri.
+ *
+ * `day` adalah representasi internal stabil (1 = Senin .. 7 = Minggu), bukan
+ * label — label boleh diubah tanpa memindahkan data.
+ */
+export type ProfileDay = {
+  readonly id: string
+  readonly day: number
+  readonly position: number
+  readonly slots: readonly TimeSlot[]
+}
+
+/**
+ * Menyalin sekumpulan baris menjadi isian baru yang berdiri sendiri.
+ *
+ * Identitas baris (`id`) sengaja DIBUANG, dan urutan dirapatkan menjadi 1..n.
+ * Inilah yang membuat "terapkan template" dan "salin dari hari" menghasilkan
+ * SALINAN, bukan referensi: baris hasil tidak lagi membawa jejak apa pun ke
+ * sumbernya, sehingga mengubah atau menghapus sumber tidak dapat merembet.
+ */
+export function snapshotSlots(slots: readonly TimeSlot[]): TimeSlotInput[] {
+  return orderedSlots([...slots]).map((slot, index) => ({
+    position: index + 1,
+    kind: slot.kind,
+    name: slot.name,
+    startMinute: slot.startMinute,
+    endMinute: slot.endMinute,
+    ascPeriod: slot.ascPeriod,
+  }))
+}
+
+/** Hari-hari sebuah profil, urut seperti di pemilih hari. */
+export function orderedDays<T extends { position: number; day: number }>(days: readonly T[]): T[] {
+  return [...days].sort((a, b) => a.position - b.position || a.day - b.day)
+}
+
+/** Konfigurasi hari tertentu pada sebuah profil, atau `null` bila hari itu belum ada. */
+export function findProfileDay<T extends { day: number }>(
+  days: readonly T[],
+  day: number,
+): T | null {
+  return days.find((item) => item.day === day) ?? null
+}
+
+/**
+ * Jam dinding untuk sebuah penempatan aSc: profil + HARI + nomor period.
+ *
+ * Inilah satu-satunya jalan dari `card.day`/`card.period` menuju pukul berapa.
+ * Period yang sama pada hari berbeda SAH memiliki jam yang berbeda, sehingga
+ * pencarian tidak pernah dimulai dari daftar slot seluruh profil.
+ */
+export function resolveSlotForDayPeriod<T extends { day: number; slots: readonly TimeSlot[] }>(
+  days: readonly T[],
+  day: number,
+  period: number,
+): TimeSlot | null {
+  const config = findProfileDay(days, day)
+  if (!config) return null
+  return slotByPeriod(config.slots).get(period) ?? null
+}
+
+/** Seluruh nomor period yang dikenal profil, dari hari mana pun. */
+export function knownPeriodsAcrossDays<T extends { slots: readonly TimeSlot[] }>(
+  days: readonly T[],
+): Set<number> {
+  const periods = new Set<number>()
+  for (const config of days) {
+    for (const slot of lessonSlots(config.slots)) periods.add(slot.ascPeriod as number)
+  }
+  return periods
+}
+
+/**
+ * Struktur waktu yang dipakai tampilan lintas-hari (grid sepekan, pemilih jam).
+ *
+ * Hari boleh berbeda-beda, sehingga tidak ada satu daftar yang benar untuk
+ * semuanya. Yang dipakai adalah struktur hari PERTAMA yang terkonfigurasi —
+ * cukup sebagai kerangka baris, sementara jam dinding tiap sel tetap dicari
+ * lewat `resolveSlotForDayPeriod`.
+ */
+export function representativeSlots<T extends { slots: readonly TimeSlot[]; position: number; day: number }>(
+  days: readonly T[],
+): readonly TimeSlot[] {
+  const ordered = orderedDays(days)
+  const withSlots = ordered.find((config) => config.slots.length > 0)
+  return withSlots ? withSlots.slots : []
+}

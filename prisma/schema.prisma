@@ -1040,6 +1040,10 @@ enum ScheduleSlotKind {
 /// Profil waktu harian (mis. Reguler, Ramadan). Tepat satu baris `active`;
 /// keunikannya ditegakkan transaksi, bukan constraint parsial, supaya
 /// mengganti profil aktif tidak pernah butuh window tanpa profil aktif.
+///
+/// Sebuah profil TIDAK memiliki satu struktur generik: strukturnya selalu
+/// dimiliki sebuah HARI (`ScheduleProfileDay`), karena Jumat sah memiliki jam
+/// ke-1 yang lebih pendek daripada Senin.
 model ScheduleTimeProfile {
   id        String              @id @default(cuid())
   /// Kunci stabil lowercase, dipakai seed/idempotensi.
@@ -1048,12 +1052,35 @@ model ScheduleTimeProfile {
   active    Boolean             @default(false)
   createdAt DateTime            @default(now())
   updatedAt DateTime            @updatedAt
+  days      ScheduleProfileDay[]
   slots     ScheduleTimeSlot[]
 
   @@index([active])
 }
 
-/// Satu baris pada struktur waktu: urutan, jenis, nama, mulai, selesai.
+/// Konfigurasi satu hari pada sebuah profil waktu.
+///
+/// Hari disimpan sebagai BARIS, bukan enam kolom: sekolah boleh menambah atau
+/// menghapus hari aktif tanpa migrasi. `day` adalah representasi internal yang
+/// stabil (1 = Senin .. 7 = Minggu, sama dengan `ScheduleEntry.day`), bukan
+/// label tampilan — label boleh berubah tanpa memindahkan data.
+model ScheduleProfileDay {
+  id        String              @id @default(cuid())
+  profileId String
+  /// 1 = Senin .. 7 = Minggu. Unik per profil.
+  day       Int
+  /// Urutan tampil pemilih hari; tidak harus sama dengan `day`.
+  position  Int
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  profile   ScheduleTimeProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  slots     ScheduleTimeSlot[]
+
+  @@unique([profileId, day])
+  @@index([profileId])
+}
+
+/// Satu baris pada struktur waktu SATU HARI: urutan, jenis, nama, mulai, selesai.
 ///
 /// Waktu disimpan sebagai MENIT SEJAK TENGAH MALAM (0..1439), bukan DateTime:
 /// ini jam dinding sekolah yang berlaku setiap hari, sehingga menyimpannya
@@ -1061,8 +1088,11 @@ model ScheduleTimeProfile {
 /// sama sekali tidak memilikinya.
 model ScheduleTimeSlot {
   id          String              @id @default(cuid())
+  /// Profil pemilik. Denormalisasi yang disengaja: dipertahankan dari model
+  /// lama supaya kueri "semua slot profil ini" tetap satu langkah.
   profileId   String
-  /// Urutan tampil dalam satu hari. Unik per profil.
+  dayId       String
+  /// Urutan tampil dalam satu hari. Unik per hari.
   position    Int
   kind        ScheduleSlotKind
   name        String
@@ -1070,12 +1100,49 @@ model ScheduleTimeSlot {
   endMinute   Int
   /// Nomor period aSc untuk slot PELAJARAN. Null untuk istirahat/kegiatan.
   /// Inilah jembatan tunggal antara `card.period` XML dan jam dinding sekolah.
+  /// Unik per HARI, bukan per profil: period 1 boleh ada di setiap hari dengan
+  /// jam dinding yang berbeda.
   ascPeriod   Int?
   profile     ScheduleTimeProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  dayConfig   ScheduleProfileDay  @relation(fields: [dayId], references: [id], onDelete: Cascade)
 
-  @@unique([profileId, position])
-  @@unique([profileId, ascPeriod])
+  @@unique([dayId, position])
+  @@unique([dayId, ascPeriod])
   @@index([profileId])
+  @@index([dayId])
+}
+
+/// Template struktur waktu: sumber SALINAN, bukan referensi hidup.
+///
+/// Template sengaja TIDAK punya relasi ke `ScheduleProfileDay`. Menerapkan
+/// template menyalin barisnya; setelah itu hari berdiri sendiri, sehingga
+/// mengedit atau menghapus template tidak pernah mengubah jadwal hari mana pun.
+model ScheduleTimeTemplate {
+  id        String                     @id @default(cuid())
+  name      String                     @unique
+  createdAt DateTime                   @default(now())
+  updatedAt DateTime                   @updatedAt
+  slots     ScheduleTimeTemplateSlot[]
+
+  @@index([updatedAt])
+}
+
+/// Satu baris isi template. Bentuknya cerminan `ScheduleTimeSlot` supaya
+/// validasi yang sama berlaku untuk template dan untuk hari.
+model ScheduleTimeTemplateSlot {
+  id          String               @id @default(cuid())
+  templateId  String
+  position    Int
+  kind        ScheduleSlotKind
+  name        String
+  startMinute Int
+  endMinute   Int
+  ascPeriod   Int?
+  template    ScheduleTimeTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, position])
+  @@unique([templateId, ascPeriod])
+  @@index([templateId])
 }
 
 /// Asal sebuah revisi jadwal.

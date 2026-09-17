@@ -15,13 +15,19 @@ import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import { schoolMinutesOfDay, todayInSchoolTimeZone } from "@/lib/school-date"
 import {
   scheduleDayFromSchoolDate,
+  scheduleDayLabel,
   type ScheduleDay,
 } from "@/lib/schedule-constants"
 import {
+  DEFAULT_PROFILE_DAYS,
   DEFAULT_TIME_PROFILE_KEY,
   DEFAULT_TIME_SLOTS,
   currentSlot,
+  findProfileDay,
+  orderedDays,
   orderedSlots,
+  representativeSlots,
+  snapshotSlots,
   validateTimeStructure,
   type CurrentSlotResult,
   type TimeSlot,
@@ -89,14 +95,39 @@ export async function isScheduleTeacher(userId: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
-// Profil waktu
+// Profil waktu, hari, dan template
 // ---------------------------------------------------------------------------
+
+/**
+ * Sebuah profil waktu beserta konfigurasi TIAP HARI-nya.
+ *
+ * `days` adalah otoritas jam dinding. Tidak ada lagi "struktur profil" generik:
+ * pertanyaan "jam ke-4 pukul berapa" hanya dapat dijawab bersama sebuah hari.
+ */
+export type ScheduleProfileDayView = {
+  readonly id: string
+  readonly day: number
+  readonly position: number
+  readonly slots: readonly TimeSlot[]
+}
 
 export type ScheduleTimeProfileView = {
   readonly id: string
   readonly key: string
   readonly name: string
   readonly active: boolean
+  readonly days: readonly ScheduleProfileDayView[]
+  /**
+   * Struktur satu hari yang mewakili profil, untuk tampilan lintas-hari (grid
+   * sepekan, pemilih jam). Turunan dari `days`, bukan sumber kebenaran.
+   */
+  readonly slots: readonly TimeSlot[]
+}
+
+export type ScheduleTimeTemplateView = {
+  readonly id: string
+  readonly name: string
+  readonly updatedAt: string
   readonly slots: readonly TimeSlot[]
 }
 
@@ -120,9 +151,58 @@ function toTimeSlot(row: {
   }
 }
 
+type ProfileWithDays = {
+  id: string
+  key: string
+  name: string
+  active: boolean
+  days: {
+    id: string
+    day: number
+    position: number
+    slots: {
+      id: string
+      position: number
+      kind: string
+      name: string
+      startMinute: number
+      endMinute: number
+      ascPeriod: number | null
+    }[]
+  }[]
+}
+
+function toProfileView(profile: ProfileWithDays): ScheduleTimeProfileView {
+  const days = orderedDays(
+    profile.days.map((day) => ({
+      id: day.id,
+      day: day.day,
+      position: day.position,
+      slots: orderedSlots(day.slots.map(toTimeSlot)),
+    })),
+  )
+
+  return {
+    id: profile.id,
+    key: profile.key,
+    name: profile.name,
+    active: profile.active,
+    days,
+    slots: representativeSlots(days),
+  }
+}
+
+/** Bentuk `include` yang selalu dipakai supaya semua pembaca melihat data yang sama. */
+const profileInclude = {
+  days: {
+    orderBy: { position: "asc" as const },
+    include: { slots: { orderBy: { position: "asc" as const } } },
+  },
+}
+
 /**
- * Profil waktu aktif, dibuat dengan nilai bawaan bila sekolah belum pernah
- * menyetelnya.
+ * Profil waktu aktif beserta hari-harinya, dibuat dengan nilai bawaan bila
+ * sekolah belum pernah menyetelnya.
  *
  * Pembuatan otomatis di sini aman dan disengaja: tanpa satu pun slot, seluruh
  * modul tidak dapat menerjemahkan nomor jam menjadi pukul, dan halaman akan
@@ -132,99 +212,424 @@ function toTimeSlot(row: {
 export async function ensureActiveTimeProfile(): Promise<ScheduleTimeProfileView> {
   const existing = await prisma.scheduleTimeProfile.findFirst({
     where: { active: true },
-    include: { slots: { orderBy: { position: "asc" } } },
+    include: profileInclude,
   })
-  if (existing) {
-    return {
-      id: existing.id,
-      key: existing.key,
-      name: existing.name,
-      active: existing.active,
-      slots: existing.slots.map(toTimeSlot),
-    }
-  }
+  if (existing && existing.days.length > 0) return toProfileView(existing)
 
   const created = await prisma.$transaction(async (tx) => {
     // Profil boleh sudah ada tetapi non-aktif (mis. dibuat lalu dinonaktifkan);
     // dalam hal itu ia diaktifkan kembali, bukan diduplikasi.
-    const reusable = await tx.scheduleTimeProfile.findUnique({
-      where: { key: DEFAULT_TIME_PROFILE_KEY },
-      include: { slots: true },
-    })
+    const reusable =
+      existing ??
+      (await tx.scheduleTimeProfile.findUnique({ where: { key: DEFAULT_TIME_PROFILE_KEY } }))
 
-    if (reusable) {
-      await tx.scheduleTimeProfile.updateMany({ where: { active: true }, data: { active: false } })
-      await tx.scheduleTimeProfile.update({ where: { id: reusable.id }, data: { active: true } })
-      return tx.scheduleTimeProfile.findUniqueOrThrow({
-        where: { id: reusable.id },
-        include: { slots: { orderBy: { position: "asc" } } },
+    const profileId = reusable
+      ? reusable.id
+      : (
+          await tx.scheduleTimeProfile.create({
+            data: { key: DEFAULT_TIME_PROFILE_KEY, name: "Reguler", active: false },
+            select: { id: true },
+          })
+        ).id
+
+    await tx.scheduleTimeProfile.updateMany({ where: { active: true }, data: { active: false } })
+    await tx.scheduleTimeProfile.update({ where: { id: profileId }, data: { active: true } })
+
+    // Hari yang belum ada diisi struktur bawaan. Hari yang SUDAH ada tidak
+    // pernah ditimpa — profil lama hanya kekurangan hari, bukan salah isi.
+    const presentDays = new Set(
+      (
+        await tx.scheduleProfileDay.findMany({ where: { profileId }, select: { day: true } })
+      ).map((row) => row.day),
+    )
+
+    for (const day of DEFAULT_PROFILE_DAYS) {
+      if (presentDays.has(day)) continue
+      await tx.scheduleProfileDay.create({
+        data: {
+          profileId,
+          day,
+          position: day,
+          slots: {
+            create: DEFAULT_TIME_SLOTS.map((slot) => ({ ...slot, profileId })),
+          },
+        },
       })
     }
 
-    await tx.scheduleTimeProfile.updateMany({ where: { active: true }, data: { active: false } })
-    return tx.scheduleTimeProfile.create({
-      data: {
-        key: DEFAULT_TIME_PROFILE_KEY,
-        name: "Reguler",
-        active: true,
-        slots: { create: DEFAULT_TIME_SLOTS.map((slot) => ({ ...slot })) },
-      },
-      include: { slots: { orderBy: { position: "asc" } } },
-    })
+    return tx.scheduleTimeProfile.findUniqueOrThrow({ where: { id: profileId }, include: profileInclude })
   })
 
-  return {
-    id: created.id,
-    key: created.key,
-    name: created.name,
-    active: created.active,
-    slots: created.slots.map(toTimeSlot),
-  }
+  return toProfileView(created)
 }
 
 export async function listTimeProfiles(): Promise<readonly ScheduleTimeProfileView[]> {
   const profiles = await prisma.scheduleTimeProfile.findMany({
-    include: { slots: { orderBy: { position: "asc" } } },
+    include: profileInclude,
     orderBy: [{ active: "desc" }, { name: "asc" }],
   })
-  return profiles.map((profile) => ({
-    id: profile.id,
-    key: profile.key,
-    name: profile.name,
-    active: profile.active,
-    slots: profile.slots.map(toTimeSlot),
-  }))
+  return profiles.map(toProfileView)
+}
+
+/** Konfigurasi satu hari, dipastikan milik profil yang diminta. */
+async function requireProfileDay(profileId: string, day: number) {
+  const config = await prisma.scheduleProfileDay.findUnique({
+    where: { profileId_day: { profileId, day } },
+    include: { slots: { orderBy: { position: "asc" } } },
+  })
+  if (!config) throw new ApiError(404, `Hari ${scheduleDayLabel(day)} belum dikonfigurasi pada profil ini`)
+  return config
 }
 
 /**
- * Mengganti SELURUH struktur satu profil dalam satu transaksi.
+ * Mengganti SELURUH struktur satu HARI dalam satu transaksi.
  *
  * Penggantian utuh dipilih daripada patch per baris karena aturan yang dijaga
  * (urutan unik, period unik, tanpa tumpang tindih) berlaku atas himpunan, bukan
  * atas baris tunggal — memvalidasi satu baris saja akan selalu membiarkan
  * keadaan antara yang tidak sah.
+ *
+ * Perubahan hanya menyentuh hari ini; hari lain pada profil yang sama tidak
+ * pernah ikut berubah.
  */
-export async function replaceTimeSlots(input: {
+export async function replaceDaySlots(input: {
   readonly profileId: string
+  readonly day: number
   readonly slots: readonly TimeSlotInput[]
   readonly actorId: string
 }): Promise<ScheduleTimeProfileView> {
   const problems = validateTimeStructure(input.slots)
   if (problems.length > 0) throw new ApiError(422, problems.join("; "))
 
-  const profile = await prisma.scheduleTimeProfile.findUnique({
-    where: { id: input.profileId },
-    include: { slots: true },
-  })
+  const profile = await prisma.scheduleTimeProfile.findUnique({ where: { id: input.profileId } })
   if (!profile) throw new ApiError(404, "Profil waktu tidak ditemukan")
 
-  const before = orderedSlots(profile.slots.map(toTimeSlot))
+  const config = await requireProfileDay(profile.id, input.day)
+  const before = orderedSlots(config.slots.map(toTimeSlot))
 
   const updated = await prisma.$transaction(async (tx) => {
-    await tx.scheduleTimeSlot.deleteMany({ where: { profileId: profile.id } })
-    await tx.scheduleTimeSlot.createMany({
-      data: input.slots.map((slot) => ({
-        profileId: profile.id,
+    await writeDaySlots(tx, { profileId: profile.id, dayId: config.id, slots: input.slots })
+
+    await recordAuditLog(
+      {
+        actorId: input.actorId,
+        action: "SCHEDULE_TIME_SLOTS_UPDATED",
+        entity: "ScheduleProfileDay",
+        entityId: config.id,
+        summary: `Struktur waktu "${profile.name}" ${scheduleDayLabel(input.day)}: ${before.length} → ${input.slots.length} slot`,
+        before: before as unknown as Prisma.InputJsonValue,
+        after: input.slots as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    )
+
+    return tx.scheduleTimeProfile.findUniqueOrThrow({ where: { id: profile.id }, include: profileInclude })
+  })
+
+  return toProfileView(updated)
+}
+
+type TransactionClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0]
+
+/**
+ * Delete-lalu-insert isi satu hari. SELALU dipanggil di dalam transaksi supaya
+ * tidak pernah ada keadaan "baris lama sudah hilang, baris baru belum ada".
+ */
+async function writeDaySlots(
+  tx: TransactionClient,
+  input: { profileId: string; dayId: string; slots: readonly TimeSlotInput[] },
+): Promise<void> {
+  await tx.scheduleTimeSlot.deleteMany({ where: { dayId: input.dayId } })
+  if (input.slots.length === 0) return
+  await tx.scheduleTimeSlot.createMany({
+    data: input.slots.map((slot) => ({
+      profileId: input.profileId,
+      dayId: input.dayId,
+      position: slot.position,
+      kind: slot.kind,
+      name: slot.name.trim(),
+      startMinute: slot.startMinute,
+      endMinute: slot.endMinute,
+      ascPeriod: slot.ascPeriod,
+    })),
+  })
+}
+
+/** Menambahkan satu hari ke profil. Hari baru selalu dimulai kosong. */
+export async function addProfileDay(input: {
+  readonly profileId: string
+  readonly day: number
+  readonly actorId: string
+}): Promise<ScheduleTimeProfileView> {
+  const profile = await prisma.scheduleTimeProfile.findUnique({
+    where: { id: input.profileId },
+    include: { days: { select: { day: true, position: true } } },
+  })
+  if (!profile) throw new ApiError(404, "Profil waktu tidak ditemukan")
+  if (profile.days.some((row) => row.day === input.day)) {
+    throw new ApiError(409, `${scheduleDayLabel(input.day)} sudah ada pada profil ini`)
+  }
+
+  const nextPosition = profile.days.reduce((max, row) => Math.max(max, row.position), 0) + 1
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const created = await tx.scheduleProfileDay.create({
+      data: { profileId: profile.id, day: input.day, position: nextPosition },
+      select: { id: true },
+    })
+
+    await recordAuditLog(
+      {
+        actorId: input.actorId,
+        action: "SCHEDULE_PROFILE_DAY_ADDED",
+        entity: "ScheduleProfileDay",
+        entityId: created.id,
+        summary: `Hari ${scheduleDayLabel(input.day)} ditambahkan pada profil "${profile.name}"`,
+        after: { day: input.day, position: nextPosition } as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    )
+
+    return tx.scheduleTimeProfile.findUniqueOrThrow({ where: { id: profile.id }, include: profileInclude })
+  })
+
+  return toProfileView(updated)
+}
+
+/**
+ * Menghapus satu hari beserta strukturnya.
+ *
+ * Penempatan jadwal (`ScheduleEntry`) pada hari itu TIDAK ikut dihapus: jadwal
+ * dan struktur waktu adalah dua hal berbeda, dan menghapus jadwal diam-diam
+ * lewat menu struktur waktu akan menjadi kehilangan data yang tidak diminta.
+ */
+export async function removeProfileDay(input: {
+  readonly profileId: string
+  readonly day: number
+  readonly actorId: string
+}): Promise<ScheduleTimeProfileView> {
+  const profile = await prisma.scheduleTimeProfile.findUnique({
+    where: { id: input.profileId },
+    include: { days: { select: { id: true, day: true } } },
+  })
+  if (!profile) throw new ApiError(404, "Profil waktu tidak ditemukan")
+  if (profile.days.length <= 1) {
+    throw new ApiError(422, "Profil waktu harus memiliki minimal satu hari")
+  }
+
+  const config = await requireProfileDay(profile.id, input.day)
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.scheduleProfileDay.delete({ where: { id: config.id } })
+
+    await recordAuditLog(
+      {
+        actorId: input.actorId,
+        action: "SCHEDULE_PROFILE_DAY_REMOVED",
+        entity: "ScheduleProfileDay",
+        entityId: config.id,
+        summary: `Hari ${scheduleDayLabel(input.day)} dihapus dari profil "${profile.name}" (${config.slots.length} slot)`,
+        before: orderedSlots(config.slots.map(toTimeSlot)) as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    )
+
+    return tx.scheduleTimeProfile.findUniqueOrThrow({ where: { id: profile.id }, include: profileInclude })
+  })
+
+  return toProfileView(updated)
+}
+
+/**
+ * Menyalin struktur satu hari ke hari lain pada profil yang sama.
+ *
+ * Hasilnya SALINAN: mengubah hari sumber setelah ini tidak pernah mengubah hari
+ * tujuan, karena yang dibuat adalah baris baru, bukan referensi.
+ */
+export async function copyDayStructure(input: {
+  readonly profileId: string
+  readonly fromDay: number
+  readonly toDay: number
+  readonly actorId: string
+}): Promise<ScheduleTimeProfileView> {
+  if (input.fromDay === input.toDay) {
+    throw new ApiError(422, "Hari sumber dan hari tujuan tidak boleh sama")
+  }
+
+  const profile = await prisma.scheduleTimeProfile.findUnique({ where: { id: input.profileId } })
+  if (!profile) throw new ApiError(404, "Profil waktu tidak ditemukan")
+
+  const source = await requireProfileDay(profile.id, input.fromDay)
+  const target = await requireProfileDay(profile.id, input.toDay)
+
+  const slots = snapshotSlots(source.slots.map(toTimeSlot))
+  const problems = validateTimeStructure(slots)
+  if (problems.length > 0) throw new ApiError(422, problems.join("; "))
+
+  const before = orderedSlots(target.slots.map(toTimeSlot))
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await writeDaySlots(tx, { profileId: profile.id, dayId: target.id, slots })
+
+    await recordAuditLog(
+      {
+        actorId: input.actorId,
+        action: "SCHEDULE_TIME_DAY_COPIED",
+        entity: "ScheduleProfileDay",
+        entityId: target.id,
+        summary: `Struktur ${scheduleDayLabel(input.fromDay)} disalin ke ${scheduleDayLabel(input.toDay)} pada profil "${profile.name}"`,
+        before: before as unknown as Prisma.InputJsonValue,
+        after: slots as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    )
+
+    return tx.scheduleTimeProfile.findUniqueOrThrow({ where: { id: profile.id }, include: profileInclude })
+  })
+
+  return toProfileView(updated)
+}
+
+// ---------------------------------------------------------------------------
+// Template waktu — SALINAN, bukan referensi hidup
+// ---------------------------------------------------------------------------
+
+function toTemplateView(template: {
+  id: string
+  name: string
+  updatedAt: Date
+  slots: {
+    id: string
+    position: number
+    kind: string
+    name: string
+    startMinute: number
+    endMinute: number
+    ascPeriod: number | null
+  }[]
+}): ScheduleTimeTemplateView {
+  return {
+    id: template.id,
+    name: template.name,
+    updatedAt: template.updatedAt.toISOString(),
+    slots: orderedSlots(template.slots.map(toTimeSlot)),
+  }
+}
+
+export async function listTimeTemplates(): Promise<readonly ScheduleTimeTemplateView[]> {
+  const templates = await prisma.scheduleTimeTemplate.findMany({
+    include: { slots: { orderBy: { position: "asc" } } },
+    orderBy: { name: "asc" },
+  })
+  return templates.map(toTemplateView)
+}
+
+/** Membuat template dari isi apa pun yang sudah lolos validasi struktur. */
+export async function createTimeTemplate(input: {
+  readonly name: string
+  readonly slots: readonly TimeSlotInput[]
+  readonly actorId: string
+}): Promise<ScheduleTimeTemplateView> {
+  const name = input.name.trim()
+  if (!name) throw new ApiError(422, "Nama template wajib diisi")
+
+  const slots = snapshotSlots(input.slots as readonly TimeSlot[])
+  const problems = validateTimeStructure(slots)
+  if (problems.length > 0) throw new ApiError(422, problems.join("; "))
+
+  const existing = await prisma.scheduleTimeTemplate.findUnique({ where: { name } })
+  if (existing) throw new ApiError(409, `Template "${name}" sudah ada`)
+
+  const created = await prisma.$transaction(async (tx) => {
+    const template = await tx.scheduleTimeTemplate.create({
+      data: {
+        name,
+        slots: {
+          create: slots.map((slot) => ({
+            position: slot.position,
+            kind: slot.kind,
+            name: slot.name.trim(),
+            startMinute: slot.startMinute,
+            endMinute: slot.endMinute,
+            ascPeriod: slot.ascPeriod,
+          })),
+        },
+      },
+      include: { slots: { orderBy: { position: "asc" } } },
+    })
+
+    await recordAuditLog(
+      {
+        actorId: input.actorId,
+        action: "SCHEDULE_TIME_TEMPLATE_CREATED",
+        entity: "ScheduleTimeTemplate",
+        entityId: template.id,
+        summary: `Template waktu "${name}" dibuat (${slots.length} baris)`,
+        after: slots as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    )
+
+    return template
+  })
+
+  return toTemplateView(created)
+}
+
+/**
+ * Menyimpan konfigurasi sebuah hari sebagai template.
+ *
+ * Yang disimpan adalah SNAPSHOT: tidak ada tautan balik ke hari sumber, sehingga
+ * mengubah hari itu nanti tidak mengubah template.
+ */
+export async function createTemplateFromDay(input: {
+  readonly profileId: string
+  readonly day: number
+  readonly name: string
+  readonly actorId: string
+}): Promise<ScheduleTimeTemplateView> {
+  const config = await requireProfileDay(input.profileId, input.day)
+  if (config.slots.length === 0) {
+    throw new ApiError(422, `${scheduleDayLabel(input.day)} belum memiliki struktur waktu untuk disimpan`)
+  }
+
+  return createTimeTemplate({
+    name: input.name,
+    slots: snapshotSlots(config.slots.map(toTimeSlot)),
+    actorId: input.actorId,
+  })
+}
+
+/** Mengubah nama dan/atau isi template. Tidak pernah menyentuh hari mana pun. */
+export async function updateTimeTemplate(input: {
+  readonly templateId: string
+  readonly name: string
+  readonly slots: readonly TimeSlotInput[]
+  readonly actorId: string
+}): Promise<ScheduleTimeTemplateView> {
+  const name = input.name.trim()
+  if (!name) throw new ApiError(422, "Nama template wajib diisi")
+
+  const slots = snapshotSlots(input.slots as readonly TimeSlot[])
+  const problems = validateTimeStructure(slots)
+  if (problems.length > 0) throw new ApiError(422, problems.join("; "))
+
+  const template = await prisma.scheduleTimeTemplate.findUnique({
+    where: { id: input.templateId },
+    include: { slots: { orderBy: { position: "asc" } } },
+  })
+  if (!template) throw new ApiError(404, "Template tidak ditemukan")
+
+  const clash = await prisma.scheduleTimeTemplate.findUnique({ where: { name } })
+  if (clash && clash.id !== template.id) throw new ApiError(409, `Template "${name}" sudah ada`)
+
+  const before = orderedSlots(template.slots.map(toTimeSlot))
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.scheduleTimeTemplateSlot.deleteMany({ where: { templateId: template.id } })
+    await tx.scheduleTimeTemplateSlot.createMany({
+      data: slots.map((slot) => ({
+        templateId: template.id,
         position: slot.position,
         kind: slot.kind,
         name: slot.name.trim(),
@@ -233,33 +638,139 @@ export async function replaceTimeSlots(input: {
         ascPeriod: slot.ascPeriod,
       })),
     })
+    await tx.scheduleTimeTemplate.update({ where: { id: template.id }, data: { name } })
 
     await recordAuditLog(
       {
         actorId: input.actorId,
-        action: "SCHEDULE_TIME_SLOTS_UPDATED",
-        entity: "ScheduleTimeProfile",
-        entityId: profile.id,
-        summary: `Struktur waktu "${profile.name}": ${before.length} → ${input.slots.length} slot`,
+        action: "SCHEDULE_TIME_TEMPLATE_UPDATED",
+        entity: "ScheduleTimeTemplate",
+        entityId: template.id,
+        summary: `Template waktu "${name}": ${before.length} → ${slots.length} baris`,
         before: before as unknown as Prisma.InputJsonValue,
-        after: input.slots as unknown as Prisma.InputJsonValue,
+        after: slots as unknown as Prisma.InputJsonValue,
       },
       tx,
     )
 
-    return tx.scheduleTimeProfile.findUniqueOrThrow({
-      where: { id: profile.id },
+    return tx.scheduleTimeTemplate.findUniqueOrThrow({
+      where: { id: template.id },
       include: { slots: { orderBy: { position: "asc" } } },
     })
   })
 
-  return {
-    id: updated.id,
-    key: updated.key,
-    name: updated.name,
-    active: updated.active,
-    slots: updated.slots.map(toTimeSlot),
+  return toTemplateView(updated)
+}
+
+export async function duplicateTimeTemplate(input: {
+  readonly templateId: string
+  readonly actorId: string
+}): Promise<ScheduleTimeTemplateView> {
+  const template = await prisma.scheduleTimeTemplate.findUnique({
+    where: { id: input.templateId },
+    include: { slots: { orderBy: { position: "asc" } } },
+  })
+  if (!template) throw new ApiError(404, "Template tidak ditemukan")
+
+  // Nama wajib unik; akhiran dinaikkan sampai menemukan yang belum dipakai,
+  // bukan menimpa template lain yang kebetulan bernama sama.
+  const taken = new Set(
+    (await prisma.scheduleTimeTemplate.findMany({ select: { name: true } })).map((row) => row.name),
+  )
+  let name = `${template.name} (salinan)`
+  let counter = 2
+  while (taken.has(name)) {
+    name = `${template.name} (salinan ${counter})`
+    counter += 1
   }
+
+  return createTimeTemplate({
+    name,
+    slots: snapshotSlots(template.slots.map(toTimeSlot)),
+    actorId: input.actorId,
+  })
+}
+
+/**
+ * Menghapus template.
+ *
+ * Aman menurut desain: tidak ada hari yang menunjuk template, sehingga jadwal
+ * hari yang dulu dibuat dari template ini sama sekali tidak tersentuh.
+ */
+export async function deleteTimeTemplate(input: {
+  readonly templateId: string
+  readonly actorId: string
+}): Promise<void> {
+  const template = await prisma.scheduleTimeTemplate.findUnique({
+    where: { id: input.templateId },
+    include: { slots: { orderBy: { position: "asc" } } },
+  })
+  if (!template) throw new ApiError(404, "Template tidak ditemukan")
+
+  await prisma.$transaction(async (tx) => {
+    await tx.scheduleTimeTemplate.delete({ where: { id: template.id } })
+    await recordAuditLog(
+      {
+        actorId: input.actorId,
+        action: "SCHEDULE_TIME_TEMPLATE_DELETED",
+        entity: "ScheduleTimeTemplate",
+        entityId: template.id,
+        summary: `Template waktu "${template.name}" dihapus (${template.slots.length} baris)`,
+        before: orderedSlots(template.slots.map(toTimeSlot)) as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    )
+  })
+}
+
+/**
+ * Menerapkan template ke sebuah hari: isi template DISALIN, hari lama diganti.
+ *
+ * Setelah ini hari berdiri sendiri. Mengedit atau menghapus templatenya tidak
+ * akan mengubah hari ini lagi.
+ */
+export async function applyTemplateToDay(input: {
+  readonly profileId: string
+  readonly day: number
+  readonly templateId: string
+  readonly actorId: string
+}): Promise<ScheduleTimeProfileView> {
+  const profile = await prisma.scheduleTimeProfile.findUnique({ where: { id: input.profileId } })
+  if (!profile) throw new ApiError(404, "Profil waktu tidak ditemukan")
+
+  const template = await prisma.scheduleTimeTemplate.findUnique({
+    where: { id: input.templateId },
+    include: { slots: { orderBy: { position: "asc" } } },
+  })
+  if (!template) throw new ApiError(404, "Template tidak ditemukan")
+
+  const target = await requireProfileDay(profile.id, input.day)
+  const slots = snapshotSlots(template.slots.map(toTimeSlot))
+  const problems = validateTimeStructure(slots)
+  if (problems.length > 0) throw new ApiError(422, problems.join("; "))
+
+  const before = orderedSlots(target.slots.map(toTimeSlot))
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await writeDaySlots(tx, { profileId: profile.id, dayId: target.id, slots })
+
+    await recordAuditLog(
+      {
+        actorId: input.actorId,
+        action: "SCHEDULE_TIME_TEMPLATE_APPLIED",
+        entity: "ScheduleProfileDay",
+        entityId: target.id,
+        summary: `Template "${template.name}" diterapkan ke ${scheduleDayLabel(input.day)} pada profil "${profile.name}"`,
+        before: before as unknown as Prisma.InputJsonValue,
+        after: slots as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    )
+
+    return tx.scheduleTimeProfile.findUniqueOrThrow({ where: { id: profile.id }, include: profileInclude })
+  })
+
+  return toProfileView(updated)
 }
 
 // ---------------------------------------------------------------------------
@@ -684,17 +1195,27 @@ export type ScheduleNowContext = {
  * sekolah yang tersimpan di setelan — tidak ada `Asia/Jakarta` yang ditanam di
  * modul ini dan tidak ada jam yang dihitung dari waktu server.
  */
-export async function readNowContext(slots: readonly TimeSlot[], now = new Date()): Promise<ScheduleNowContext> {
+export async function readNowContext(
+  profile: ScheduleTimeProfileView,
+  now = new Date(),
+): Promise<ScheduleNowContext> {
   const timeZone = await readSchoolTimeZone()
   const today = todayInSchoolTimeZone(now, timeZone)
   const minuteOfDay = schoolMinutesOfDay(now, timeZone)
+  const todayDay = scheduleDayFromSchoolDate(today)
+
+  // "Sekarang jam ke berapa" hanya bermakna terhadap struktur HARI INI. Memakai
+  // struktur hari lain akan menghasilkan jam berjalan yang salah pada sekolah
+  // yang hari Jumat-nya lebih pendek.
+  const todaySlots =
+    todayDay === null ? [] : (findProfileDay(profile.days, todayDay)?.slots ?? [])
 
   return {
     timeZone,
     today,
-    todayDay: scheduleDayFromSchoolDate(today),
+    todayDay,
     minuteOfDay,
-    current: currentSlot(slots, minuteOfDay),
+    current: currentSlot(todaySlots, minuteOfDay),
   }
 }
 

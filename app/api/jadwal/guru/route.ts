@@ -54,10 +54,12 @@ export async function GET(request: Request) {
     const profile = await ensureActiveTimeProfile()
     const [entries, now] = await Promise.all([
       readActiveEntries({ teacherId, ...(day === undefined ? {} : { day }) }),
-      readNowContext(profile.slots),
+      readNowContext(profile),
     ])
 
-    return NextResponse.json({ teacherId, slots: profile.slots, entries, now })
+    // Tampilan sepekan memerlukan kerangka baris (`slots`) DAN jam tiap hari
+    // (`days`), karena satu nomor jam boleh berbeda waktunya antarhari.
+    return NextResponse.json({ teacherId, slots: profile.slots, days: profile.days, entries, now })
   } catch (error) {
     return authFailureResponse(error, "Gagal memuat jadwal guru")
   }

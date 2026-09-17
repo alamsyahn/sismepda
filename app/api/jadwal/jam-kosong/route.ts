@@ -9,7 +9,7 @@ import {
   readNowContext,
 } from "@/lib/server-schedule"
 import { isScheduleDay } from "@/lib/schedule-constants"
-import { slotByPeriod } from "@/lib/schedule-time"
+import { resolveSlotForDayPeriod } from "@/lib/schedule-time"
 
 /**
  * Guru yang TIDAK memiliki jadwal mengajar pada satu hari + jam pelajaran.
@@ -31,15 +31,15 @@ export async function GET(request: Request) {
 
     const period = Number(url.searchParams.get("period"))
     const profile = await ensureActiveTimeProfile()
-    const slots = slotByPeriod(profile.slots)
 
-    // Nomor jam yang tidak ada pada struktur waktu ditolak, bukan dihitung
-    // sebagai "semua guru kosong" — itu jawaban yang terlihat masuk akal
-    // padahal pertanyaannya tidak sah.
-    const slot = slots.get(period)
+    // Nomor jam yang tidak ada pada struktur waktu HARI ITU ditolak, bukan
+    // dihitung sebagai "semua guru kosong" — itu jawaban yang terlihat masuk
+    // akal padahal pertanyaannya tidak sah. Jam ke-8 yang hanya ada pada Senin
+    // memang tidak sah ditanyakan untuk Jumat.
+    const slot = resolveSlotForDayPeriod(profile.days, day, period)
     if (!slot) {
       return NextResponse.json(
-        { error: "Jam pelajaran tidak ditemukan pada struktur waktu aktif" },
+        { error: "Jam pelajaran tidak ditemukan pada struktur waktu hari tersebut" },
         { status: 400 },
       )
     }
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
     const [teachers, entries, now] = await Promise.all([
       listScheduleTeachers(),
       readActiveEntries({ day }),
-      readNowContext(profile.slots),
+      readNowContext(profile),
     ])
 
     const busy = new Map<string, { className: string; subjectName: string }>()
