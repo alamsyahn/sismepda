@@ -101,6 +101,38 @@ export const DEFAULT_TEMPLATES: WhatsAppTemplateSet = {
       },
     },
   },
+  /**
+   * Kondisi E — rekap masih SEMENTARA.
+   *
+   * Bentuknya sengaja berbeda dari kondisi C: yang paling penting dibaca saat
+   * itu bukan daftar siswa, melainkan kelas mana yang masih ditunggu, dan
+   * peringatan bahwa angkanya belum final.
+   */
+  ABSENT_INCOMPLETE: {
+    body: [
+      "⏳ *REKAP KEHADIRAN SEMENTARA*",
+      "📅 {{tanggal}} • {{waktu}} WIB",
+      "",
+      "⚠️ Rekap belum final karena masih ada kelas yang belum melengkapi absensi.",
+      "",
+      "🏫 *KELAS BELUM LENGKAP — {{jumlah_kelas_belum_rekap}}*",
+      "{{daftar_kelas_belum_rekap}}",
+      "",
+      "👥 *DATA SEMENTARA SISWA TIDAK HADIR*",
+      "🤒 Sakit: {{jumlah_sakit}}",
+      "📝 Izin: {{jumlah_izin}}",
+      "❌ Alfa: {{jumlah_alfa}}",
+      "🏅 Dispensasi: {{jumlah_dispensasi}}",
+      "",
+      "──────────",
+      "Data ketidakhadiran di atas masih dapat berubah setelah seluruh kelas mengisi absensi.",
+      "",
+      "🔗 app.smpn2blitar.sch.id",
+    ].join("\n"),
+    items: {
+      daftar_kelas_belum_rekap: { format: "• {{nama_kelas}}", separator: NEWLINE },
+    },
+  },
   ABSENT_NONE: {
     body: [
       "*REKAP SISWA TIDAK HADIR*",
@@ -127,5 +159,6 @@ export function defaultTemplateSet(): WhatsAppTemplateSet {
     MISSING_COMPLETE: defaultTemplate("MISSING_COMPLETE"),
     ABSENT_PRESENT: defaultTemplate("ABSENT_PRESENT"),
     ABSENT_NONE: defaultTemplate("ABSENT_NONE"),
+    ABSENT_INCOMPLETE: defaultTemplate("ABSENT_INCOMPLETE"),
   }
 }

@@ -15,6 +15,7 @@ import { test } from "node:test"
 import type { WhatsAppReportClass } from "@/lib/whatsapp-report"
 import {
   MAX_BODY_LENGTH,
+  TEMPLATE_KEYS,
   renderCollection,
   renderTemplate,
   templateErrorMessage,
@@ -123,7 +124,7 @@ test("placeholder koleksi hanya sah pada template yang memang memilikinya", () =
 
 test("template bawaan seluruhnya lolos validasinya sendiri", () => {
   // Menjaga agar teks bawaan tidak pernah memakai variabel yang tidak terdaftar.
-  for (const key of ["MISSING_PENDING", "MISSING_COMPLETE", "ABSENT_PRESENT", "ABSENT_NONE"] as const) {
+  for (const key of TEMPLATE_KEYS) {
     assert.deepEqual(validateTemplate(key, DEFAULT_TEMPLATES[key]), [], key)
   }
 })
@@ -281,9 +282,117 @@ test("tidak ada siswa tidak hadir memilih template D", () => {
 
 test("kondisi tidak tertukar antara dua jenis laporan", () => {
   // Kelas yang belum merekap TIDAK boleh membuat rekap kehadiran mengira ada
-  // siswa tidak hadir, dan sebaliknya.
-  assert.equal(templateKeyFor("ATTENDANCE_ABSENT", [PENDING]), "ABSENT_NONE")
+  // siswa tidak hadir. Sejak kondisi E ada, kelas belum lengkap membuat rekap
+  // menjadi SEMENTARA — bukan NIHIL, dan bukan pula "ada yang tidak hadir".
+  assert.equal(templateKeyFor("ATTENDANCE_ABSENT", [PENDING]), "ABSENT_INCOMPLETE")
   assert.equal(templateKeyFor("ATTENDANCE_MISSING", ABSENT_CLASSES), "MISSING_COMPLETE")
+})
+
+// --- kondisi E: rekap sementara --------------------------------------------
+//
+// Empat kombinasi berikut adalah seluruh ruang keputusan rekap kehadiran.
+// Urutannya aturan bisnis, bukan urutan tab di layar.
+
+test("E-1. kelas belum lengkap > 0 dan ada siswa tidak hadir → ABSENT_INCOMPLETE", () => {
+  assert.equal(
+    templateKeyFor("ATTENDANCE_ABSENT", [...ABSENT_CLASSES, PENDING]),
+    "ABSENT_INCOMPLETE",
+  )
+})
+
+test("E-2. kelas belum lengkap > 0 tanpa siswa tidak hadir → ABSENT_INCOMPLETE", () => {
+  assert.equal(
+    templateKeyFor("ATTENDANCE_ABSENT", [classOf("VII A", true, []), PENDING]),
+    "ABSENT_INCOMPLETE",
+  )
+})
+
+test("E-3. seluruh kelas lengkap dan ada siswa tidak hadir → ABSENT_PRESENT", () => {
+  assert.equal(templateKeyFor("ATTENDANCE_ABSENT", ABSENT_CLASSES), "ABSENT_PRESENT")
+})
+
+test("E-4. seluruh kelas lengkap tanpa siswa tidak hadir → ABSENT_NONE", () => {
+  assert.equal(templateKeyFor("ATTENDANCE_ABSENT", [classOf("VII A", true, [])]), "ABSENT_NONE")
+})
+
+test("E-5. kelas tersimpan sebagian tetap membuat rekap menjadi sementara", () => {
+  // Definisi "belum lengkap" tidak boleh berhenti pada flag `submitted`:
+  // simpan sebagian meninggalkan siswa berstatus null.
+  const partial = classOf("VII C", true, [
+    { id: "p1", name: "Ahmad", status: "SAKIT" },
+    { id: "p2", name: "Budi", status: null },
+  ])
+  assert.equal(templateKeyFor("ATTENDANCE_ABSENT", [partial]), "ABSENT_INCOMPLETE")
+})
+
+test("E-6. {{jumlah_kelas_belum_rekap}} dan {{daftar_kelas_belum_rekap}} ter-render pada kondisi E", () => {
+  const context = buildTemplateContext({
+    dateLabel: "17 September 2026",
+    slot: "10:00",
+    schoolName: "SMPN 1",
+    classes: [...ABSENT_CLASSES, ...THREE_PENDING],
+  })
+  const output = renderTemplate(
+    "ABSENT_INCOMPLETE",
+    {
+      body: "{{jumlah_kelas_belum_rekap}}\n{{daftar_kelas_belum_rekap}}",
+      items: { daftar_kelas_belum_rekap: { format: "• {{nama_kelas}}", separator: "NEWLINE" } },
+    },
+    context,
+  )
+  assert.equal(output, "3\n• 7A\n• 7B\n• 8A")
+})
+
+test("E-7. template bawaan kondisi E memuat angka sementara dan peringatan", () => {
+  const context = buildTemplateContext({
+    dateLabel: "Kamis, 17 September 2026",
+    slot: "10:00",
+    schoolName: "SMPN 1",
+    classes: [...ABSENT_CLASSES, ...THREE_PENDING],
+  })
+  const output = renderTemplate(
+    "ABSENT_INCOMPLETE",
+    defaultTemplate("ABSENT_INCOMPLETE"),
+    context,
+  )
+  assert.match(output, /^⏳ \*REKAP KEHADIRAN SEMENTARA\*/)
+  assert.match(output, /Kamis, 17 September 2026 • 10\.00 WIB/)
+  assert.match(output, /KELAS BELUM LENGKAP — 3/)
+  assert.match(output, /• 7A\n• 7B\n• 8A/)
+  assert.match(output, /Sakit: 1/)
+  assert.match(output, /Izin: 1/)
+  assert.match(output, /Alfa: 1/)
+  assert.match(output, /Dispensasi: 0/)
+  assert.match(output, /masih dapat berubah/)
+})
+
+test("E-8. template kondisi E yang disimpan admin tidak mengganggu kondisi lain", () => {
+  const stored = parseStoredTemplates({
+    ABSENT_INCOMPLETE: { body: "Sementara {{jumlah_kelas_belum_rekap}}", items: {} },
+    ABSENT_PRESENT: { body: "Tetap punya admin {{jumlah_tidak_hadir}}", items: {} },
+  })
+  assert.equal(stored.ABSENT_INCOMPLETE?.body, "Sementara {{jumlah_kelas_belum_rekap}}")
+  assert.equal(stored.ABSENT_PRESENT?.body, "Tetap punya admin {{jumlah_tidak_hadir}}")
+  // Kondisi yang tidak disimpan tetap memakai bawaan, apa adanya.
+  assert.deepEqual(effectiveTemplate("ABSENT_NONE", stored), defaultTemplate("ABSENT_NONE"))
+})
+
+test("E-9. baris lama tanpa kondisi E tetap terbaca dan memakai bawaan", () => {
+  // Kompatibilitas mundur: instalasi yang menyimpan template SEBELUM kondisi E
+  // ada tidak boleh kehilangan teksnya, dan kondisi baru jatuh ke bawaan.
+  const stored = parseStoredTemplates({
+    ABSENT_PRESENT: { body: "Teks lama {{jumlah_tidak_hadir}}", items: {} },
+    ABSENT_NONE: { body: "NIHIL versi admin", items: {} },
+  })
+  assert.equal(stored.ABSENT_PRESENT?.body, "Teks lama {{jumlah_tidak_hadir}}")
+  assert.equal(stored.ABSENT_NONE?.body, "NIHIL versi admin")
+  assert.equal(stored.ABSENT_INCOMPLETE, undefined)
+  assert.deepEqual(
+    effectiveTemplate("ABSENT_INCOMPLETE", stored),
+    defaultTemplate("ABSENT_INCOMPLETE"),
+  )
+  // Menyimpan ulang tidak menyisipkan salinan bawaan ke baris itu.
+  assert.deepEqual(customizedKeys(stored), ["ABSENT_PRESENT", "ABSENT_NONE"])
 })
 
 // --- konteks ----------------------------------------------------------------

@@ -157,6 +157,19 @@ function countByStatus(rows: readonly AbsentRow[], status: AbsenceStatus): numbe
  *
  * Kondisi sengaja dihitung di satu tempat agar template yang dipilih tidak
  * pernah bertentangan dengan angka yang ikut dikirim di dalamnya.
+ *
+ * URUTAN PADA REKAP KEHADIRAN BERSIFAT ATURAN BISNIS, BUKAN URUTAN TAMPILAN:
+ *
+ *   1. masih ada kelas belum lengkap  → ABSENT_INCOMPLETE
+ *   2. semua lengkap, ada yang absen  → ABSENT_PRESENT
+ *   3. semua lengkap, tidak ada absen → ABSENT_NONE
+ *
+ * Kelengkapan didahulukan karena selama masih ada kelas yang belum mengisi,
+ * angka ketidakhadiran BELUM final. Mengirimkannya sebagai rekap biasa —
+ * apalagi sebagai NIHIL — membuat pembaca menyimpulkan keadaan hari itu dari
+ * data yang belum masuk. Definisi "belum lengkap" tidak dihitung ulang di sini:
+ * `incompleteClasses()` adalah sumber kebenaran yang sama dengan halaman rekap
+ * dan dengan `{{daftar_kelas_belum_rekap}}`.
  */
 export function templateKeyFor(
   type: "ATTENDANCE_MISSING" | "ATTENDANCE_ABSENT",
@@ -165,6 +178,7 @@ export function templateKeyFor(
   if (type === "ATTENDANCE_MISSING") {
     return incompleteClasses(classes).length > 0 ? "MISSING_PENDING" : "MISSING_COMPLETE"
   }
+  if (incompleteClasses(classes).length > 0) return "ABSENT_INCOMPLETE"
   return absentStudentRows(classes).length > 0 ? "ABSENT_PRESENT" : "ABSENT_NONE"
 }
 

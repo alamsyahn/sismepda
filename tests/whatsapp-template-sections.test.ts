@@ -95,10 +95,13 @@ test("1. jenis 'kelas belum mengisi absensi' hanya mengekspos dua template pengi
   ])
 })
 
-test("2. jenis 'rekap siswa tidak hadir' hanya mengekspos dua template rekap", () => {
+test("2. jenis 'rekap siswa tidak hadir' hanya mengekspos tiga template rekap", () => {
+  // Kondisi rekap kehadiran ada tiga sejak rekap sementara diperkenalkan;
+  // pengingat tetap tidak boleh ikut muncul di sini.
   assert.deepEqual(templateKeysForType("ATTENDANCE_ABSENT"), [
     "ABSENT_PRESENT",
     "ABSENT_NONE",
+    "ABSENT_INCOMPLETE",
   ])
 })
 

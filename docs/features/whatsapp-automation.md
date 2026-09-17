@@ -57,24 +57,37 @@ and stored in `WhatsAppConfiguration.messageTemplates` (`Json?`). Templates are
 data, not code: there is no expression language, no conditionals and no
 evaluation — only placeholder substitution against an explicit registry.
 
-### Four conditions, chosen by the system
+### Five conditions, chosen by the system
 
-The admin never writes a condition. `templateKeyFor()` picks one of four:
+The admin never writes a condition. `templateKeyFor()` picks one of five:
 
 | Key | Chosen when |
 |---|---|
 | `MISSING_PENDING` | Reminder, and at least one class has not submitted |
 | `MISSING_COMPLETE` | Reminder, and every class has submitted |
-| `ABSENT_PRESENT` | Attendance report, and at least one student is absent |
-| `ABSENT_NONE` | Attendance report, and nobody is absent (NIHIL) |
+| `ABSENT_INCOMPLETE` | Attendance report, and at least one class is still incomplete |
+| `ABSENT_PRESENT` | Attendance report, every class complete, at least one student absent |
+| `ABSENT_NONE` | Attendance report, every class complete, nobody absent (NIHIL) |
 
-`ABSENT_NONE` is a separate template rather than `ABSENT_PRESENT` with an empty
-list, because the NIHIL message has a different shape, not merely less content.
+The attendance order is a business rule, not the order of the tabs on screen.
+Completeness is tested first: while a class is still missing, the absence counts
+are not final, so sending them as a normal report — let alone as NIHIL — would
+let the reader conclude the day from data that has not arrived. `ABSENT_NONE`
+and `ABSENT_INCOMPLETE` are separate templates rather than `ABSENT_PRESENT` with
+an empty or partial list, because each message has a different shape, not merely
+less content.
+
+Completeness has exactly one definition. `templateKeyFor()` reuses
+`incompleteClasses()` — the same source that feeds `{{daftar_kelas_belum_rekap}}`
+and the rekap screen — so the automatic report can never disagree with the page.
+A class counts as incomplete when it has not submitted *or* still has students
+without a status, so a partially saved class does not pass as complete.
 
 Only the conditions a message type can actually reach are offered in the editor:
 `templateKeysForType()` gives the reminder card its two reminder conditions and
-the attendance card its two report conditions. All four still exist in storage —
-the filter is about which conditions that card can reach, not which are stored.
+the attendance card its three report conditions. All five still exist in
+storage — the filter is about which conditions that card can reach, not which
+are stored.
 
 ### Placeholders
 

@@ -33,12 +33,21 @@ export type WhatsAppTemplateKey =
   | "ABSENT_PRESENT"
   /** D — tidak ada siswa tidak hadir (NIHIL). */
   | "ABSENT_NONE"
+  /**
+   * E — rekap kehadiran masih SEMENTARA karena ada kelas yang belum lengkap.
+   *
+   * Mendahului C dan D: selama masih ada kelas yang belum melengkapi absensi,
+   * angka ketidakhadiran belum final, dan mengirimkannya sebagai rekap biasa
+   * membuat pembaca menyimpulkan keadaan yang belum tentu benar.
+   */
+  | "ABSENT_INCOMPLETE"
 
 export const TEMPLATE_KEYS: readonly WhatsAppTemplateKey[] = [
   "MISSING_PENDING",
   "MISSING_COMPLETE",
   "ABSENT_PRESENT",
   "ABSENT_NONE",
+  "ABSENT_INCOMPLETE",
 ]
 
 /**
@@ -56,7 +65,7 @@ export const TEMPLATE_KEYS: readonly WhatsAppTemplateKey[] = [
  */
 const TYPE_TEMPLATE_KEYS: Record<WhatsAppMessageType, readonly WhatsAppTemplateKey[]> = {
   ATTENDANCE_MISSING: ["MISSING_PENDING", "MISSING_COMPLETE"],
-  ATTENDANCE_ABSENT: ["ABSENT_PRESENT", "ABSENT_NONE"],
+  ATTENDANCE_ABSENT: ["ABSENT_PRESENT", "ABSENT_NONE", "ABSENT_INCOMPLETE"],
 }
 
 export function templateKeysForType(
@@ -70,6 +79,7 @@ export const TEMPLATE_LABELS: Record<WhatsAppTemplateKey, string> = {
   MISSING_COMPLETE: "Pengingat — Semua Sudah Rekap",
   ABSENT_PRESENT: "Rekap Kehadiran — Ada yang Tidak Hadir",
   ABSENT_NONE: "Rekap Kehadiran — NIHIL",
+  ABSENT_INCOMPLETE: "Rekap Kehadiran — Belum Lengkap",
 }
 
 export const TEMPLATE_DESCRIPTIONS: Record<WhatsAppTemplateKey, string> = {
@@ -81,6 +91,8 @@ export const TEMPLATE_DESCRIPTIONS: Record<WhatsAppTemplateKey, string> = {
     "Dikirim pada jam rekap kehadiran bila terdapat siswa dengan status tidak hadir.",
   ABSENT_NONE:
     "Dikirim pada jam rekap kehadiran bila tidak ada satu pun siswa tercatat tidak hadir.",
+  ABSENT_INCOMPLETE:
+    "Dikirim pada jam rekap kehadiran bila pada saat itu masih ada kelas yang belum melengkapi absensi. Kondisi ini DIDAHULUKAN: selama masih ada kelas belum lengkap, angka ketidakhadiran belum final.",
 }
 
 /**
@@ -227,6 +239,10 @@ const TEMPLATE_COLLECTIONS: Record<WhatsAppTemplateKey, WhatsAppCollectionKey[]>
     ...ABSENCE_SECTIONS.map((section) => section.list),
   ],
   ABSENT_NONE: [],
+  // Kondisi sementara memuat daftar KELAS yang belum lengkap, bukan daftar
+  // siswa: yang perlu ditindak saat itu adalah kelasnya. Angka per status tetap
+  // tersedia sebagai skalar, karena memang masih bisa berubah.
+  ABSENT_INCOMPLETE: ["daftar_kelas_belum_rekap"],
 }
 
 /** Bagian status yang berlaku pada satu kondisi. */
@@ -272,7 +288,8 @@ export function placeholderGroups(key: WhatsAppTemplateKey): PlaceholderGroup[] 
     },
   ]
 
-  const isAbsence = key === "ABSENT_PRESENT" || key === "ABSENT_NONE"
+  const isAbsence =
+    key === "ABSENT_PRESENT" || key === "ABSENT_NONE" || key === "ABSENT_INCOMPLETE"
 
   if (!isAbsence) {
     groups.push({
@@ -292,6 +309,21 @@ export function placeholderGroups(key: WhatsAppTemplateKey): PlaceholderGroup[] 
         ...ABSENCE_SECTIONS.map((section) =>
           entry(section.count, SCALAR_PLACEHOLDERS[section.count]),
         ),
+        // Hanya kondisi sementara yang perlu menyebut berapa kelas yang masih
+        // ditunggu; pada dua kondisi rekap lain angka itu selalu nol.
+        ...(key === "ABSENT_INCOMPLETE"
+          ? [
+              entry("jumlah_kelas", SCALAR_PLACEHOLDERS.jumlah_kelas),
+              entry(
+                "jumlah_kelas_belum_rekap",
+                SCALAR_PLACEHOLDERS.jumlah_kelas_belum_rekap,
+              ),
+              entry(
+                "jumlah_kelas_sudah_rekap",
+                SCALAR_PLACEHOLDERS.jumlah_kelas_sudah_rekap,
+              ),
+            ]
+          : []),
       ],
     })
   }
