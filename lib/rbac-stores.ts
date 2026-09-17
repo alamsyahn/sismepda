@@ -68,6 +68,16 @@ function auditJson(payload: unknown): Prisma.InputJsonValue | null {
  * tabel. Service sudah memvalidasi terhadap registry; ini menangkap registry
  * yang belum tersinkron ke database.
  */
+export class PermissionCatalogDesyncError extends Error {
+  constructor(readonly missingKeys: readonly string[]) {
+    super(
+      `Katalog permission belum tersinkron ke database: ${missingKeys.join(", ")}. ` +
+        "Jalankan migrasi dan seed RBAC (`prisma db seed`) pada database ini.",
+    )
+    this.name = "PermissionCatalogDesyncError"
+  }
+}
+
 async function resolvePermissionIds(
   tx: TransactionClient,
   keys: readonly string[],
@@ -80,7 +90,7 @@ async function resolvePermissionIds(
   if (rows.length !== new Set(keys).size) {
     const found = new Set(rows.map((row) => row.key))
     const missing = [...new Set(keys)].filter((key) => !found.has(key))
-    throw new Error(`Permission belum tersedia di database: ${missing.join(", ")}`)
+    throw new PermissionCatalogDesyncError(missing)
   }
   return rows.map((row) => row.id)
 }

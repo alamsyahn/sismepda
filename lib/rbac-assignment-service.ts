@@ -163,9 +163,15 @@ export async function updateUserRoles(
 
   // Invariant dibaca SETELAH penulisan, supaya yang diperiksa adalah kondisi
   // akhir. Pemanggil wajib sudah memegang advisory lock populasi admin.
+  //
+  // Hanya relevan bila operasi ini benar-benar MENCABUT system_admin. Perubahan
+  // role yang tidak menyentuh Admin Sistem (mis. melepas Guru legacy) tidak
+  // boleh disentuh invariant ini sama sekali.
   if (revokesAdmin) {
     const others = await store.countOtherActiveSystemAdmins(user.id)
     const denial = assertSystemAdminRemains({
+      // Target baru saja kehilangan system_admin, jadi kondisi akhir hanya
+      // ditentukan admin AKTIF lainnya.
       remainingActiveAdminIds: others > 0 ? ["ada"] : [],
       actorId: input.actor.id,
       targetId: user.id,

@@ -18,13 +18,8 @@
  * untuk UX: route handler dan server guard tetap memutuskan sendiri lewat
  * `requirePermission()`.
  */
-import { hasPermission, type AuthorizationSubject } from "@/lib/rbac"
-import { PERMISSION_KEYS } from "@/lib/rbac-permissions"
+import { effectiveGrants, type AuthorizationSubject } from "@/lib/rbac"
 
 export function deriveNavGrants(subject: AuthorizationSubject): ReadonlySet<string> {
-  const grants = new Set<string>()
-  for (const key of PERMISSION_KEYS) {
-    if (hasPermission(subject, key)) grants.add(key)
-  }
-  return grants
+  return effectiveGrants(subject)
 }

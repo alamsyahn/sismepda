@@ -86,6 +86,11 @@ Invariants:
 - Role key `system_admin`, initial name `Admin Sistem`; legacy `ADMIN` maps to it.
 - Membership grants a controlled bypass: every permission check for a *known* catalog key passes. The bypass still requires an active account (`requireUser()`), never skips business validation (zod, invariants, confirmation identifiers), and never satisfies an unknown key.
 - Class scope for a system admin resolves to `all` for every scoped family.
+- **Effective grants are the single source of truth for any code that needs a permission *set* rather than a single yes/no answer.** `system_admin` deliberately has zero `RolePermission` rows, so the raw union of those rows (`collectGrants()`) is empty for it. `effectiveGrants()` in `lib/rbac.ts` re-decides every known catalog key through `hasPermission()`, so the bypass is included exactly once, in one place. `getAuthorizationContext().grants` already returns this effective set; consumers must not re-derive capabilities from `RolePermission` rows. Deriving rather than materialising keeps a role merely *named* "Admin Sistem" powerless and keeps unknown/mistyped keys closed.
+
+### Last-admin invariant evaluates final state
+
+`assertSystemAdminRemains()` receives the **post-write** list of active system admins, read inside the transaction that already holds the population lock. It must *not* exclude the mutation target: the final state has already dropped a target that was deactivated, deleted, or stripped of the role, and a target that is still an admin afterwards legitimately counts toward the population. Excluding it would reject unrelated edits — for example removing a legacy Guru role from the sole Admin Sistem, an operation that never reduces the admin count.
 
 ## Account deletion policy
 
@@ -137,6 +142,8 @@ Guard order on a permission surface: `requireUser()` (session + `active` re-read
 ## Permission catalog (derived from HEAD)
 
 Every key below corresponds to at least one surface in the inventory. Keys are grouped by module; `scope` column lists the values that exist.
+
+**The catalog in `lib/rbac-permissions.ts` and the `Permission` table must stay in sync.** Grants are stored as `RolePermission` rows referencing `Permission.id`, so a key that exists only in code cannot be saved: the role editor offers the checkbox, the service validates it against the code catalog and accepts it, then the store finds no row to link and the whole update fails. Any change that adds catalog keys therefore needs a migration that inserts the rows — see `prisma/migrations/20260917090000_sync_permission_catalog` for the idempotent pattern (`INSERT ... ON CONFLICT (key) DO NOTHING`, no grant rows touched). When the two do drift, `lib/rbac-stores.ts` raises `PermissionCatalogDesyncError`, which `lib/api-errors.ts` maps to 503 and logs with the missing keys, instead of surfacing an unexplained "Role gagal diperbarui".
 
 | Key | Scope values | Surfaces |
 |---|---|---|
@@ -308,7 +315,7 @@ Phases are executed serially; each is a separate commit with its own validation.
    - Root `/` renders `components/layout/safe-landing.tsx` — no dashboard query runs at all for users without `attendance.dashboard.read.*`.
    - `auth.ts` no longer filters core routes by the JWT role; only public-vs-authenticated policy remains (`lib/route-policy.ts`, fail closed).
    - `lib/nav.ts` filters by permission key instead of role name; empty groups disappear and there is no `GURU` fallback while the session loads. Grants are computed server-side (`lib/server-nav-grants.ts`) and passed down as props. Role display is multi-badge with a "Tanpa role" state.
-   - Navigation grants are derived through the canonical evaluator, not from raw `RolePermission` rows: `lib/nav-grants.ts` re-decides every **known** permission with `hasPermission()`. `system_admin` deliberately has zero `RolePermission` rows, so forwarding `context.grants` verbatim would hide every guarded destination from it. Deriving instead of materialising keeps the controlled bypass in one place — a role merely *named* "Admin Sistem", or a clone of `system_admin` under a different key, gains nothing, and unknown/mistyped keys stay closed. Navigation remains UX only; `requirePermission()` still decides access.
+   - Navigation grants are derived through the canonical evaluator, not from raw `RolePermission` rows: `lib/nav-grants.ts` delegates to `effectiveGrants()` (see "System admin"), which re-decides every **known** permission with `hasPermission()`. `system_admin` deliberately has zero `RolePermission` rows, so forwarding a raw row union would hide every guarded destination from it. Since `getAuthorizationContext().grants` is now already the effective set, navigation and module content read the same source and cannot disagree. Navigation remains UX only; `requirePermission()` still decides access.
    - Teacher population comes from `User.isTeacher` (`lib/teacher-population.ts`), which also refuses account operations against holders of a **protected** role unless the caller is a system admin.
    Still legacy at the end of Phase 4: BOS, Sarpras, E-UKS, `/pengaturan`, database backup, and the `requireAdmin` helper they use.
 4. **Phase 5 – domain enforcement (done).** BOS, Sarpras, E-UKS, school settings, branding, holidays and database backup/restore now authorize through the current database, with operation-specific keys:

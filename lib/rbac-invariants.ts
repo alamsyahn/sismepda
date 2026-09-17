@@ -32,16 +32,29 @@ export type InvariantDenial = {
 /**
  * Memastikan masih ada system admin aktif SETELAH mutasi.
  *
- * `remainingActiveAdminIds` harus sudah mengecualikan target, dan harus
- * dihitung di dalam transaksi yang memegang kunci.
+ * `remainingActiveAdminIds` adalah KONDISI AKHIR: seluruh system admin yang
+ * masih aktif setelah perubahan ditulis, dihitung di dalam transaksi yang
+ * memegang kunci.
+ *
+ * Target TIDAK dikecualikan di sini, dan itu disengaja. Pengecualian target
+ * pernah ada sebagai penjaga terhadap query yang lupa membuang admin yang baru
+ * saja dicabut — tetapi kondisi akhir sudah membuangnya sendiri: akun yang
+ * dinonaktifkan gugur lewat `active`, akun yang dihapus tidak punya baris, dan
+ * role yang dicabut tidak lagi punya `UserRole`. Yang tersisa dari pengecualian
+ * itu hanyalah kerusakan: satu-satunya Admin Sistem menjadi tidak dapat
+ * menyunting role miliknya sama sekali — termasuk melepas role Guru legacy yang
+ * tidak menyentuh Admin Sistem — karena dirinya sendiri, yang MASIH admin,
+ * dibuang dari perhitungan lalu dinyatakan tidak ada.
+ *
+ * Invariant yang benar adalah pertanyaan global: setelah operasi ini, apakah
+ * sekolah masih punya minimal satu Admin Sistem aktif?
  */
 export function assertSystemAdminRemains(input: {
   remainingActiveAdminIds: readonly string[]
   actorId: string
   targetId: string
 }): InvariantDenial | null {
-  const others = input.remainingActiveAdminIds.filter((id) => id !== input.targetId)
-  if (others.length > 0) return null
+  if (input.remainingActiveAdminIds.length > 0) return null
 
   return {
     reason: "last_system_admin",

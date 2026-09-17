@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 
-import { authFailureResponse } from "@/lib/api-errors"
+import { authFailureResponse, describeAuthFailure } from "@/lib/api-errors"
 import { prisma } from "@/lib/prisma"
 import { getAuthorizationContext, requirePermission } from "@/lib/rbac-access"
 import {
@@ -18,7 +18,7 @@ import {
   updateRoleProfile,
   type ServiceActor,
 } from "@/lib/rbac-role-service"
-import { createRoleStore } from "@/lib/rbac-stores"
+import { createRoleStore, PermissionCatalogDesyncError } from "@/lib/rbac-stores"
 import { verifySameOrigin } from "@/lib/same-origin"
 import { lockSystemAdminPopulation } from "@/lib/rbac-invariants-db"
 
@@ -60,6 +60,16 @@ function failure(error: unknown, fallback: string) {
   }
   if (error instanceof z.ZodError) {
     return NextResponse.json({ error: "Data role tidak valid" }, { status: 400 })
+  }
+  // Katalog permission tertinggal dipetakan terpusat di `lib/api-errors.ts`
+  // (503 + log server). Key yang hilang ikut dikembalikan di sini karena
+  // editor role adalah tempat satu-satunya yang bisa menampilkannya berguna.
+  if (error instanceof PermissionCatalogDesyncError) {
+    const failure = describeAuthFailure(error)
+    return NextResponse.json(
+      { error: failure.error, missingPermissionKeys: [...error.missingKeys] },
+      { status: failure.status },
+    )
   }
   return authFailureResponse(error, fallback)
 }

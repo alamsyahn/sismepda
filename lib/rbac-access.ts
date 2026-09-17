@@ -17,6 +17,7 @@ import { cache } from "react"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import {
+  effectiveGrants,
   hasAnyPermission,
   hasPermission,
   isSystemAdmin,
@@ -26,7 +27,7 @@ import {
   type RoleSummary,
   type ScopeDecision,
 } from "@/lib/rbac"
-import { SYSTEM_ADMIN_ROLE_KEY, isKnownPermission } from "@/lib/rbac-permissions"
+import { SYSTEM_ADMIN_ROLE_KEY } from "@/lib/rbac-permissions"
 import { LEGACY_BACKFILL_KEY } from "@/lib/rbac-legacy"
 import { evaluateReadiness, type RbacReadiness } from "@/lib/rbac-readiness"
 
@@ -170,18 +171,16 @@ export const getAuthorizationContext = cache(async (): Promise<AuthorizationCont
     isTeacher: user.isTeacher,
   }
 
-  const grants = new Set<string>()
-  for (const role of roles) {
-    for (const key of role.permissionKeys) {
-      if (isKnownPermission(key)) grants.add(key)
-    }
-  }
-
   return {
     user,
     subject,
     roles,
-    grants,
+    // Grant EFEKTIF, bukan baris RolePermission mentah. `system_admin` sengaja
+    // tidak memiliki baris itu, sehingga modul yang menurunkan kemampuannya
+    // dari baris mentah (Jadwal, BOS, Sarpras) akan menampilkan modul kosong
+    // bagi Admin Sistem meski guard halamannya lolos. Derivasi kanonik membuat
+    // `grants` sepakat dengan `hasPermission()` untuk semua pemakai.
+    grants: effectiveGrants(subject),
     isSystemAdmin: isSystemAdmin(subject),
   }
 })

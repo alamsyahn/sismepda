@@ -18,6 +18,7 @@
 import { NextResponse } from "next/server"
 
 import { ForbiddenError, RbacNotReadyError, UnauthorizedError } from "@/lib/rbac-access"
+import { PermissionCatalogDesyncError } from "@/lib/rbac-stores"
 import { UploadPolicyError } from "@/lib/upload-policy"
 
 export type ApiFailure = {
@@ -53,6 +54,21 @@ export function describeAuthFailure(error: unknown): ApiFailure {
   }
   if (error instanceof ApiError) {
     return { status: error.status, error: error.message }
+  }
+  // Katalog permission tertinggal adalah kesalahan OPERASIONAL (database belum
+  // di-migrate/seed), bukan permintaan cacat dan bukan kekurangan hak. Ia
+  // dipetakan ke 503 supaya tidak tersamar sebagai bug klien, dan dicatat ke
+  // log server supaya key yang hilang benar-benar terbaca developer — tanpa itu
+  // pemakai hanya melihat "Role gagal diperbarui" dan penyebabnya tidak pernah
+  // muncul di mana pun. Key permission bukan data sensitif; stack dan detail
+  // koneksi tetap tidak ikut dikirim ke klien.
+  if (error instanceof PermissionCatalogDesyncError) {
+    console.error(`[rbac] katalog permission tertinggal: ${error.missingKeys.join(", ")}`, error)
+    return {
+      status: 503,
+      error:
+        "Sebagian permission belum tersedia di database. Hubungi administrator sistem untuk menyinkronkan katalog permission.",
+    }
   }
   return { status: 500, error: "Terjadi kesalahan pada server" }
 }

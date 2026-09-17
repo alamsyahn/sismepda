@@ -21,10 +21,9 @@ export async function readNavGrants(): Promise<NavIdentity> {
   try {
     const context = await getAuthorizationContext()
     return {
-      // `context.grants` hanya memuat baris RolePermission yang termaterialisasi,
-      // sehingga system admin (yang sengaja tidak punya baris) akan kehilangan
-      // menunya. Navigasi karena itu diturunkan dari evaluator kanonik supaya
-      // mencerminkan kewenangan efektif, bukan baris mentah.
+      // `context.grants` sudah merupakan grant EFEKTIF (lihat
+      // `lib/rbac.ts#effectiveGrants`), jadi bypass system admin ikut
+      // tercermin tanpa memateralisasi satu pun baris RolePermission.
       grants: [...deriveNavGrants(context.subject)],
       roleNames: context.roles.map((role) => role.name),
     }

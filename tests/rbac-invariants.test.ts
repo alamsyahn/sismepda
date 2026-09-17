@@ -27,12 +27,27 @@ test("mencabut system_admin diizinkan saat masih ada admin aktif lain", () => {
   )
 })
 
-test("admin aktif lain harus benar-benar lain, bukan target itu sendiri", () => {
-  // Penjaga terhadap query yang lupa mengecualikan target.
+test("target yang tetap Admin Sistem setelah perubahan tidak ditolak", () => {
+  // `remainingActiveAdminIds` adalah KONDISI AKHIR yang dibaca setelah
+  // perubahan ditulis, jadi target yang masih menyandang Admin Sistem memang
+  // muncul di sana dan harus dihitung. Mengecualikannya di sini membuat
+  // perubahan role lain — misalnya melepas Guru legacy — ikut tertolak walau
+  // populasi admin tidak pernah berkurang.
+  assert.equal(
+    assertSystemAdminRemains({
+      remainingActiveAdminIds: ["admin-1"],
+      actorId: "admin-1",
+      targetId: "admin-1",
+    }),
+    null,
+  )
+})
+
+test("kondisi akhir tanpa Admin Sistem tetap ditolak walau target bukan aktornya", () => {
   const denial = assertSystemAdminRemains({
-    remainingActiveAdminIds: ["admin-1"],
+    remainingActiveAdminIds: [],
     actorId: "admin-1",
-    targetId: "admin-1",
+    targetId: "admin-2",
   })
   assert.equal(denial?.reason, "last_system_admin")
 })

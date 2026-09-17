@@ -17,6 +17,7 @@
  */
 
 import {
+  PERMISSION_KEYS,
   SYSTEM_ADMIN_ROLE_KEY,
   buildPermissionKey,
   getPermission,
@@ -85,6 +86,28 @@ export function hasPermission(subject: AuthorizationSubject, key: string): boole
   if (!isKnownPermission(key)) return false
   if (isSystemAdmin(subject)) return true
   return collectGrants(subject).has(key)
+}
+
+/**
+ * Permission EFEKTIF: setiap key yang benar-benar diizinkan bagi subjek ini.
+ *
+ * Berbeda dari `collectGrants`, yang hanya memantulkan baris `RolePermission`
+ * mentah. Role `system_admin` sengaja TIDAK memiliki baris itu — kewenangannya
+ * hidup sebagai bypass terkendali di `hasPermission`. Modul fitur yang
+ * menurunkan kemampuannya dari `collectGrants` karena itu melihat himpunan
+ * KOSONG untuk Admin Sistem dan menyembunyikan seluruh isinya.
+ *
+ * Fungsi ini menutup celah itu di satu tempat, dengan memutuskan ulang setiap
+ * key yang dikenal lewat evaluator kanonik. Konsekuensinya otomatis benar:
+ * bypass hanya milik role ber-key `system_admin` (bukan yang sekadar bernama
+ * sama atau hasil kloning), key di luar registry tetap tertutup, dan pemakai
+ * biasa tetap memperoleh union OR dari seluruh role-nya.
+ *
+ * Tidak ada `RolePermission` yang dimaterialisasi demi ini.
+ */
+export function effectiveGrants(subject: AuthorizationSubject): ReadonlySet<string> {
+  if (!isSystemAdmin(subject)) return collectGrants(subject)
+  return new Set(PERMISSION_KEYS)
 }
 
 export function hasAnyPermission(subject: AuthorizationSubject, keys: readonly string[]): boolean {

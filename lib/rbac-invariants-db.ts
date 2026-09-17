@@ -44,6 +44,11 @@ export async function lockSystemAdminPopulation(tx: TransactionClient): Promise<
  *
  * Harus dipanggil SETELAH `lockSystemAdminPopulation` dan setelah perubahan
  * ditulis, agar yang terbaca adalah kondisi akhir transaksi.
+ *
+ * `excludeUserId` sengaja TIDAK dipakai penegakan invariant: kondisi akhir
+ * sudah membuang sendiri akun yang dinonaktifkan, dihapus, atau kehilangan
+ * role-nya. Mengecualikan target di atas itu akan menyatakan Admin Sistem
+ * satu-satunya "tidak ada" bahkan ketika ia tetap admin setelah perubahan.
  */
 export async function findRemainingActiveSystemAdmins(
   tx: TransactionClient,
