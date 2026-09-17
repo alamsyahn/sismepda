@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Loader2 } from "lucide-react"
+import { Loader2, Users } from "lucide-react"
 
 import { Label } from "@/components/ui/label"
 import { Combobox } from "@/components/ui/combobox"
@@ -47,17 +47,22 @@ export function MyScheduleTab({
   return (
     <div className="space-y-4">
       {canPickTeacher ? (
-        <div className="flex flex-col gap-1.5 sm:max-w-sm">
-          <Label htmlFor="jadwal-guru">Guru</Label>
-          <Combobox
-            id="jadwal-guru"
-            options={teachers.map((teacher) => ({ value: teacher.id, label: teacher.name }))}
-            value={teacherId ? teacherId : null}
-            disabled={teachers.length === 0}
-            placeholder="Cari nama guru"
-            emptyMessage="Guru tidak ditemukan"
-            onValueChange={(value) => setTeacherId(value ?? "")}
-          />
+        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border/60 bg-card p-3">
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:max-w-sm">
+            <Label htmlFor="jadwal-guru" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Users className="size-3.5" aria-hidden />
+              Guru
+            </Label>
+            <Combobox
+              id="jadwal-guru"
+              options={teachers.map((teacher) => ({ value: teacher.id, label: teacher.name }))}
+              value={teacherId ? teacherId : null}
+              disabled={teachers.length === 0}
+              placeholder="Cari nama guru"
+              emptyMessage="Guru tidak ditemukan"
+              onValueChange={(value) => setTeacherId(value ?? "")}
+            />
+          </div>
         </div>
       ) : null}
 
@@ -87,6 +92,7 @@ export function MyScheduleTab({
           days={data.days}
           entries={data.entries}
           highlightDay={data.now.todayDay ?? todayDay}
+          current={data.now.current}
           showClass
         />
       ) : null}

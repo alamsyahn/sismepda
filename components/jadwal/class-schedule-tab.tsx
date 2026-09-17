@@ -1,8 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { Loader2 } from "lucide-react"
+import { CalendarRange, Loader2, School } from "lucide-react"
 
+import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Combobox } from "@/components/ui/combobox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -15,7 +16,16 @@ import {
   type ScheduleDay,
 } from "@/lib/schedule-constants"
 import { orderedDays, orderedSlots, type ProfileDay, type TimeSlot } from "@/lib/schedule-time"
+import type { CurrentSlotResult } from "@/lib/schedule-time"
+import {
+  SLOT_TONE_CLASS,
+  isCurrentSlot,
+  slotKindLabel,
+  slotTone,
+  sortClassesForDisplay,
+} from "@/lib/schedule-presentation"
 import type { ScheduleEntryView, ScheduleNowContext } from "@/lib/server-schedule"
+import { cn } from "@/lib/utils"
 
 type Payload = {
   schoolClass: { id: string; name: string }
@@ -36,10 +46,13 @@ export function ClassScheduleTab({
   classes,
   days,
   todayDay,
+  current,
 }: {
   classes: readonly { id: string; name: string; grade: string }[]
   days: readonly ProfileDay[]
   todayDay: ScheduleDay | null
+  /** Konteks "sekarang" dari server; tanpa ini tidak ada badge "Sekarang". */
+  current?: CurrentSlotResult
 }) {
   const configured = orderedDays([...days]).filter((item) => item.slots.length > 0)
   const initialDay =
@@ -53,12 +66,19 @@ export function ClassScheduleTab({
   const { data, loading, error } = useScheduleResource<Payload>(url)
 
   const rows = data ? orderedSlots([...data.slots]) : []
+  // Basis data mengurutkan nama secara alfabet ("IX A" sebelum "VII A"); urutan
+  // yang dibaca manusia dipulihkan di sini saja, tanpa mengubah query.
+  const classOptions = sortClassesForDisplay(classes)
+  const isToday = data ? data.day === (data.now.todayDay ?? todayDay) : false
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:max-w-xl sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="jadwal-kelas-hari">Hari</Label>
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border/60 bg-card p-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:max-w-[13rem]">
+          <Label htmlFor="jadwal-kelas-hari" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <CalendarRange className="size-3.5" aria-hidden />
+            Hari
+          </Label>
           <Select value={String(day)} onValueChange={(value) => value && setDay(Number(value) as ScheduleDay)}>
             <SelectTrigger id="jadwal-kelas-hari" className="w-full">
               <SelectValue>
@@ -75,17 +95,36 @@ export function ClassScheduleTab({
           </Select>
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="jadwal-kelas-kelas">Kelas</Label>
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:max-w-[16rem]">
+          <Label htmlFor="jadwal-kelas-kelas" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <School className="size-3.5" aria-hidden />
+            Kelas
+          </Label>
           <Combobox
             id="jadwal-kelas-kelas"
-            options={classes.map((item) => ({ value: item.id, label: item.name, description: `Tingkat ${item.grade}` }))}
+            options={classOptions.map((item) => ({
+              value: item.id,
+              label: item.name,
+              description: `Tingkat ${item.grade}`,
+            }))}
             value={classId ? classId : null}
             placeholder="Cari kelas"
             emptyMessage="Kelas tidak ditemukan"
             onValueChange={(value) => setClassId(value ?? "")}
           />
         </div>
+
+        {/* Konteks hasil filter, bukan kartu besar tersendiri. */}
+        {data ? (
+          <p className="flex items-center gap-2 pb-2 text-sm font-medium">
+            {scheduleDayLabel(data.day)} · {data.schoolClass.name}
+            {isToday ? (
+              <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">
+                Hari ini
+              </Badge>
+            ) : null}
+          </p>
+        ) : null}
       </div>
 
       {!classId ? (
@@ -105,12 +144,12 @@ export function ClassScheduleTab({
         <div className="overflow-x-auto rounded-xl border border-border/60">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead className="w-40">Jam</TableHead>
-                <TableHead className="w-36">Waktu</TableHead>
-                <TableHead>Mata Pelajaran</TableHead>
-                <TableHead>Pengajar</TableHead>
-                <TableHead className="w-28">Ruang</TableHead>
+              <TableRow className="bg-muted/50 hover:bg-muted/50">
+                <TableHead className="w-36 text-xs font-semibold text-foreground">Jam</TableHead>
+                <TableHead className="w-32 text-xs font-semibold text-foreground">Waktu</TableHead>
+                <TableHead className="text-xs font-semibold text-foreground">Mata Pelajaran</TableHead>
+                <TableHead className="text-xs font-semibold text-foreground">Pengajar</TableHead>
+                <TableHead className="w-24 text-xs font-semibold text-foreground">Ruang</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -119,24 +158,62 @@ export function ClassScheduleTab({
                   slot.ascPeriod === null
                     ? null
                     : data.entries.find((item) => item.period === slot.ascPeriod) ?? null
+                const tone = slotTone(slot, entry !== null)
+                const isNow = current ? isCurrentSlot(current, slot, isToday) : false
+
+                const rowClass = cn(
+                  "transition-colors duration-150",
+                  SLOT_TONE_CLASS[tone],
+                  isNow && "bg-primary/[0.06] hover:bg-primary/[0.09]",
+                )
 
                 if (slot.kind !== "PELAJARAN") {
                   return (
-                    <TableRow key={slot.id} className="bg-muted/30">
-                      <TableCell className="font-medium">{slot.name}</TableCell>
-                      <TableCell>{formatTimeRange(slot.startMinute, slot.endMinute)}</TableCell>
+                    <TableRow key={slot.id} className={rowClass} aria-current={isNow ? "time" : undefined}>
+                      <TableCell className="font-medium">
+                        <span className="flex items-center gap-1.5">
+                          {slot.name}
+                          {isNow ? (
+                            <Badge className="h-4 px-1.5 text-[10px] font-semibold tracking-wide uppercase">
+                              Sekarang
+                            </Badge>
+                          ) : null}
+                        </span>
+                      </TableCell>
+                      <TableCell className="tabular-nums">
+                        {formatTimeRange(slot.startMinute, slot.endMinute)}
+                      </TableCell>
+                      {/* Label jenis baris tetap tertulis: warna saja tidak boleh
+                          menjadi satu-satunya pembeda status. */}
                       <TableCell colSpan={3} className="text-muted-foreground">
-                        {slot.kind === "ISTIRAHAT" ? "Istirahat" : "Kegiatan sekolah"}
+                        {slotKindLabel(slot)}
                       </TableCell>
                     </TableRow>
                   )
                 }
 
                 return (
-                  <TableRow key={slot.id}>
-                    <TableCell className="font-medium">{slot.name}</TableCell>
-                    <TableCell>{formatTimeRange(slot.startMinute, slot.endMinute)}</TableCell>
-                    <TableCell>{entry ? entry.subjectName : <span className="text-muted-foreground">—</span>}</TableCell>
+                  <TableRow key={slot.id} className={rowClass} aria-current={isNow ? "time" : undefined}>
+                    <TableCell className="font-medium">
+                      <span className="flex items-center gap-1.5">
+                        {slot.name}
+                        {isNow ? (
+                          <Badge className="h-4 px-1.5 text-[10px] font-semibold tracking-wide uppercase">
+                            Sekarang
+                          </Badge>
+                        ) : null}
+                      </span>
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {formatTimeRange(slot.startMinute, slot.endMinute)}
+                    </TableCell>
+                    <TableCell>
+                      {entry ? (
+                        <span className="font-medium text-foreground">{entry.subjectName}</span>
+                      ) : (
+                        <span className="text-muted-foreground/70">Tidak ada jadwal</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">
                       {entry ? (entry.teacherName ?? "Guru belum ditetapkan") : "—"}
                     </TableCell>

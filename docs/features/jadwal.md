@@ -317,8 +317,50 @@ tab) dengan `my-schedule-tab`, `class-schedule-tab`, `free-teachers-tab`,
 `manage-schedule-tab`, `time-structure-tab`, `import-panel`,
 `schedule-entry-dialog`, dan `schedule-week-grid`.
 
-Desktop memakai grid Jam × Senin–Sabtu; mobile memakai pilihan hari berupa chip
-dan daftar slot vertikal, bukan tabel horizontal sangat lebar.
+Desktop memakai satu kolom per hari (Senin–Sabtu) dengan lebar minimum 11rem;
+bila viewport sempit, papan menggeser mendatar alih-alih memeras kolom sampai
+nama mapel terpotong. Mobile memakai pilihan hari berupa chip dan daftar slot
+vertikal, bukan tabel horizontal sangat lebar.
+
+## Aturan tampilan
+
+`lib/schedule-presentation.ts` memegang keputusan PRESENTASI modul Jadwal
+sebagai fungsi murni, terpisah dari logika jadwal:
+
+| Fungsi | Tanggung jawab |
+|---|---|
+| `slotTone()` | nada semantic satu slot: `lesson`, `activity`, `break`, `empty` |
+| `SLOT_TONE_CLASS` | kelas Tailwind per nada; `lesson` sengaja tanpa tint |
+| `slotKindLabel()` | label teks jenis slot |
+| `isCurrentSlot()` | apakah slot itu yang sedang berlangsung |
+| `sortClassesForDisplay()` | urutan kelas VII → VIII → IX |
+
+Tiga aturan yang dijaga pengujian:
+
+**Warna bukan satu-satunya pembeda status.** Istirahat dan kegiatan sekolah
+selalu membawa labelnya sendiri, sehingga statusnya tetap terbaca tanpa
+membedakan warna.
+
+**Pelajaran tidak diberi tint.** Istirahat memakai amber sangat lembut dan
+kegiatan sekolah memakai slate; pelajaran reguler dibiarkan netral supaya tetap
+menjadi informasi yang paling menonjol.
+
+**Badge "Sekarang" hanya muncul pada hari ini.** `isCurrentSlot()` menolak slot
+yang nomor jamnya sama tetapi berada di hari lain, sehingga membuka jadwal Kamis
+tidak menyalakan jam milik Senin. Penanda ini dihitung dari `now.current` yang
+sudah dikirim server — tidak ada endpoint baru untuk "jam berjalan".
+
+Urutan kelas datang dari basis data sebagai `name asc`, yang menaruh `IX A`
+sebelum `VII A`. `sortClassesForDisplay()` memulihkan urutan tingkat hanya di
+lapisan tampilan; kueri dan data tidak diubah. Kelas dengan tingkat di luar
+VII/VIII/IX tetap ditampilkan di belakang, bukan disembunyikan.
+
+Base UI 1.6.0 menyisakan panel tab yang baru ditinggalkan tetap ter-mount
+dengan atribut `inert` tetapi tanpa `hidden`, sehingga isi tab lama masih
+terbaca di bawah tab yang sedang dibuka. `schedule-view.tsx` menyembunyikannya
+lewat `TAB_PANEL_CLASS` (`[&[inert]]:hidden`) pada setiap `TabsContent`.
+Perbaikan ditaruh di modul Jadwal, bukan di `components/ui/tabs.tsx`, agar
+modul lain tidak berubah perilaku.
 
 ## Menyegarkan layar setelah menyimpan
 
@@ -371,7 +413,9 @@ npx tsx --test tests/schedule-asc-parser.test.ts \
                 tests/schedule-time-days.test.ts \
                 tests/schedule-conflicts.test.ts \
                 tests/schedule-authorization.test.ts \
-                tests/jadwal-fixes.test.ts
+                tests/jadwal-fixes.test.ts \
+                tests/schedule-import-day-periods.test.ts \
+                tests/schedule-presentation.test.ts
 ```
 
 Berkasnya berturut-turut menguji: parser aSc (resolusi lesson/card, hari,
@@ -383,7 +427,10 @@ merembet, migrasi bersifat expand-backfill); bentrok guru dan
 kelas serta diff impor; dan otorisasi, role key `guru` versus nama tampilan,
 multi-role, `legacy_guru`, serta batas bundel client; dan penerapan kandidat
 impor (per baris dan massal), pencarian pemilih, pemetaan hari Senin–Sabtu,
-serta aturan nama Data Master Mata Pelajaran.
+serta aturan nama Data Master Mata Pelajaran; validasi jam impor per kombinasi
+hari dan jam; serta aturan tampilan (nada semantic slot, label teks yang tidak
+bergantung warna, badge "Sekarang" hanya pada hari ini, urutan kelas
+VII → VIII → IX).
 
 ## Pemilih yang dapat diketik
 

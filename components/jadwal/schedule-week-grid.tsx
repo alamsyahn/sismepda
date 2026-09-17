@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
 import {
   SCHEDULE_DAY_LABELS,
   SCHEDULE_DAY_SHORT_LABELS,
@@ -12,7 +11,8 @@ import {
   type ScheduleDay,
 } from "@/lib/schedule-constants"
 import { orderedDays, orderedSlots } from "@/lib/schedule-time"
-import type { ProfileDay, TimeSlot } from "@/lib/schedule-time"
+import type { CurrentSlotResult, ProfileDay, TimeSlot } from "@/lib/schedule-time"
+import { SLOT_TONE_CLASS, isCurrentSlot, slotKindLabel, slotTone } from "@/lib/schedule-presentation"
 import type { ScheduleEntryView } from "@/lib/server-schedule"
 import { cn } from "@/lib/utils"
 
@@ -29,33 +29,66 @@ function entryFor(entries: readonly ScheduleEntryView[], day: number, period: nu
   return entries.find((entry) => entry.day === day && entry.period === period) ?? null
 }
 
-function SlotCell({
+/**
+ * Isi satu slot.
+ *
+ * Hierarki sengaja dibalik dari versi lama: mata pelajaran menjadi teks paling
+ * menonjol, sedangkan jam/waktu turun menjadi baris kecil yang teredam. Yang
+ * dicari mata saat memindai jadwal adalah "mengajar apa", bukan "jam ke
+ * berapa" — nomor jam hanya penunjuk posisi.
+ */
+function SlotBody({
   slot,
   entry,
-  emphasis,
   showTeacher,
   showClass,
 }: {
   slot: TimeSlot
   entry: ScheduleEntryView | null
-  emphasis?: boolean
   showTeacher?: boolean
   showClass?: boolean
 }) {
   if (slot.kind !== "PELAJARAN") {
-    return <span className="text-xs text-muted-foreground">{slot.name}</span>
+    // Nama kegiatan tetap ditulis apa adanya — "Upacara Bendera" lebih berguna
+    // daripada label generik, dan warna saja tidak boleh jadi satu-satunya
+    // penanda jenis baris.
+    return <p className="text-sm leading-tight font-medium text-foreground/80">{slotKindLabel(slot)}</p>
   }
 
-  if (!entry) return <span className="text-xs text-muted-foreground/60">—</span>
+  if (!entry) {
+    return <p className="text-sm leading-tight text-muted-foreground/70">Tidak ada jadwal</p>
+  }
 
   return (
-    <div className={cn("space-y-0.5", emphasis && "font-medium")}>
-      <p className="text-sm leading-tight">{entry.subjectName}</p>
-      {showClass ? <p className="text-xs text-muted-foreground">{entry.className}</p> : null}
-      {showTeacher ? (
-        <p className="text-xs text-muted-foreground">{entry.teacherName ?? "Guru belum ditetapkan"}</p>
+    <div className="space-y-1">
+      <p className="text-sm leading-tight font-semibold text-foreground">{entry.subjectName}</p>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {showClass ? (
+          <Badge variant="outline" className="h-5 px-1.5 text-[11px] font-medium">
+            {entry.className}
+          </Badge>
+        ) : null}
+        {showTeacher ? (
+          <span className="text-xs text-muted-foreground">
+            {entry.teacherName ?? "Guru belum ditetapkan"}
+          </span>
+        ) : null}
+        {entry.room ? <span className="text-xs text-muted-foreground">Ruang {entry.room}</span> : null}
+      </div>
+    </div>
+  )
+}
+
+/** Baris "Jam ke-X · 07.45–08.25" plus penanda sedang berlangsung. */
+function SlotMeta({ slot, isNow }: { slot: TimeSlot; isNow: boolean }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <p className="text-xs text-muted-foreground">
+        {slot.name} · {formatTimeRange(slot.startMinute, slot.endMinute)}
+      </p>
+      {isNow ? (
+        <Badge className="h-4 px-1.5 text-[10px] font-semibold tracking-wide uppercase">Sekarang</Badge>
       ) : null}
-      {entry.room ? <p className="text-xs text-muted-foreground">Ruang {entry.room}</p> : null}
     </div>
   )
 }
@@ -64,27 +97,32 @@ function SlotCell({
  * Jadwal satu pekan.
  *
  * Setiap hari membawa STRUKTUR WAKTUNYA SENDIRI (`ProfileDay.slots`).
- * Tampilan ini sengaja tidak lagi menerima satu daftar slot tunggal: struktur
- * waktu Senin tidak berlaku untuk Jumat, dan memakai satu daftar untuk semua
- * kolom membuat setiap hari tampak seperti Senin — termasuk upacara dan
- * istirahat yang sebenarnya hanya ada pada hari tertentu.
+ * Tampilan ini sengaja tidak menerima satu daftar slot tunggal: struktur waktu
+ * Senin tidak berlaku untuk Jumat, dan memakai satu daftar untuk semua kolom
+ * membuat setiap hari tampak seperti Senin — termasuk upacara dan istirahat
+ * yang sebenarnya hanya ada pada hari tertentu.
  *
- * Kolom hari juga dibaca dari data, bukan dari daftar hari tetap, supaya profil
- * yang menambah/mengurangi hari aktif tetap tampil apa adanya.
+ * Kolom hari dibaca dari data, bukan dari daftar hari tetap, supaya profil yang
+ * menambah/mengurangi hari aktif tetap tampil apa adanya.
  *
- * Desktop memakai satu kolom per hari; mobile TIDAK memaksakan grid selebar itu
- * — hari menjadi chip dan slot menjadi daftar vertikal.
+ * Desktop memakai satu kolom per hari dengan lebar minimum yang layak: bila
+ * viewport sempit, papan MENGGESER mendatar alih-alih memeras kolom sampai
+ * nama mapel terpotong. Mobile tidak memaksakan grid selebar itu — hari menjadi
+ * chip dan slot menjadi daftar vertikal.
  */
 export function ScheduleWeekGrid({
   days,
   entries,
   highlightDay,
+  current,
   showTeacher = false,
   showClass = true,
 }: {
   days: readonly ProfileDay[]
   entries: readonly ScheduleEntryView[]
   highlightDay: ScheduleDay | null
+  /** Konteks "sekarang" dari server; tanpa ini tidak ada badge "Sekarang". */
+  current?: CurrentSlotResult
   showTeacher?: boolean
   showClass?: boolean
 }) {
@@ -108,7 +146,7 @@ export function ScheduleWeekGrid({
 
   if (configured.length === 0) {
     return (
-      <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+      <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
         Struktur waktu belum disusun. Buka tab “Waktu &amp; Kegiatan” untuk menyusunnya.
       </p>
     )
@@ -116,99 +154,134 @@ export function ScheduleWeekGrid({
 
   const activeMobile = configured.find((item) => item.day === mobileDay) ?? configured[0]
 
+  /** Satu baris slot, dipakai kolom desktop maupun daftar mobile. */
+  const renderSlot = (item: (typeof configured)[number], slot: TimeSlot) => {
+    const entry = entryFor(entries, item.day, slot.ascPeriod)
+    const tone = slotTone(slot, entry !== null)
+    const isToday = highlightDay === item.day
+    const isNow = current ? isCurrentSlot(current, slot, isToday) : false
+
+    return (
+      <li
+        key={slot.id}
+        className={cn(
+          "px-3 py-2.5 transition-colors duration-150",
+          SLOT_TONE_CLASS[tone],
+          // Jam berjalan diberi garis kiri, bukan latar mencolok: penanda tetap
+          // terbaca walau slotnya sudah punya tint istirahat/kegiatan.
+          isNow && "border-l-2 border-l-primary bg-primary/[0.06]",
+        )}
+        aria-current={isNow ? "time" : undefined}
+      >
+        <SlotMeta slot={slot} isNow={isNow} />
+        <div className="mt-1">
+          <SlotBody slot={slot} entry={entry} showTeacher={showTeacher} showClass={showClass} />
+        </div>
+      </li>
+    )
+  }
+
   return (
     <div className="space-y-4">
       {/* Mobile: hari sebagai chip, hari ini aktif secara bawaan. */}
-      <div className="flex flex-wrap gap-2 lg:hidden">
-        {configured.map((item) => (
-          <button
-            key={item.day}
-            type="button"
-            onClick={() => setMobileDay(item.day)}
-            aria-pressed={activeMobile.day === item.day}
-            className={cn(
-              "min-h-9 rounded-full border px-3 text-sm transition-colors",
-              activeMobile.day === item.day
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-card text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {SCHEDULE_DAY_SHORT_LABELS[item.day as ScheduleDay] ?? scheduleDayLabel(item.day)}
-            {highlightDay === item.day ? <span className="ml-1 text-[10px]">•</span> : null}
-          </button>
-        ))}
-      </div>
-
-      <div className="space-y-2 lg:hidden">
-        {activeMobile.slots.map((slot) => {
-          const entry = entryFor(entries, activeMobile.day, slot.ascPeriod)
-          if (slot.kind !== "PELAJARAN" && !entry) {
-            return (
-              <div key={slot.id} className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                {formatTimeRange(slot.startMinute, slot.endMinute)} · {slot.name}
-              </div>
-            )
-          }
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 lg:hidden">
+        {configured.map((item) => {
+          const active = activeMobile.day === item.day
           return (
-            <Card key={slot.id} className="border-border/70">
-              <CardContent className="flex items-start justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground">
-                    {slot.name} · {formatTimeRange(slot.startMinute, slot.endMinute)}
-                  </p>
-                  <div className="mt-1">
-                    <SlotCell slot={slot} entry={entry} showTeacher={showTeacher} showClass={showClass} />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <button
+              key={item.day}
+              type="button"
+              onClick={() => setMobileDay(item.day)}
+              aria-pressed={active}
+              className={cn(
+                "inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border px-4 text-sm",
+                "transition-colors duration-150 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
+                active
+                  ? "border-primary bg-primary text-primary-foreground font-medium"
+                  : "border-border bg-card text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {SCHEDULE_DAY_SHORT_LABELS[item.day as ScheduleDay] ?? scheduleDayLabel(item.day)}
+              {highlightDay === item.day ? (
+                <span
+                  className={cn("size-1.5 rounded-full", active ? "bg-primary-foreground" : "bg-primary")}
+                  aria-hidden
+                />
+              ) : null}
+            </button>
           )
         })}
       </div>
 
-      {/* Desktop: satu kolom per hari, masing-masing memakai jamnya sendiri. */}
-      <div
-        className="hidden gap-3 overflow-x-auto lg:grid"
-        style={{ gridTemplateColumns: `repeat(${configured.length}, minmax(0, 1fr))` }}
-      >
-        {configured.map((item) => (
-          <section
-            key={item.day}
+      <div className="rounded-xl border border-border/60 lg:hidden">
+        <header
+          className={cn(
+            "flex items-center gap-2 rounded-t-xl border-b px-3 py-2.5",
+            highlightDay === activeMobile.day ? "bg-primary/[0.07]" : "bg-muted/40",
+          )}
+        >
+          <h3
             className={cn(
-              "rounded-xl border border-border/60",
-              highlightDay === item.day && "border-primary/50 bg-primary/5",
+              "text-sm font-semibold",
+              highlightDay === activeMobile.day && "text-primary",
             )}
           >
-            <header className="flex items-center gap-2 border-b bg-muted/60 px-3 py-2">
-              <h3 className={cn("text-sm font-semibold", highlightDay === item.day && "text-primary")}>
-                {SCHEDULE_DAY_LABELS[item.day as ScheduleDay] ?? scheduleDayLabel(item.day)}
-              </h3>
-              {highlightDay === item.day ? <Badge variant="secondary">Hari ini</Badge> : null}
-            </header>
+            {SCHEDULE_DAY_LABELS[activeMobile.day as ScheduleDay] ?? scheduleDayLabel(activeMobile.day)}
+          </h3>
+          {highlightDay === activeMobile.day ? (
+            <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">
+              Hari ini
+            </Badge>
+          ) : null}
+        </header>
+        <ul className="divide-y divide-border/50">
+          {activeMobile.slots.map((slot) => renderSlot(activeMobile, slot))}
+        </ul>
+      </div>
 
-            <ul className="divide-y">
-              {item.slots.map((slot) => (
-                <li
-                  key={slot.id}
-                  className={cn("px-3 py-2", slot.kind !== "PELAJARAN" && "bg-muted/30")}
+      {/* Desktop: satu kolom per hari, masing-masing memakai jamnya sendiri. */}
+      <div className="-mx-1 hidden overflow-x-auto px-1 pb-1 lg:block">
+        <div
+          className="grid gap-2.5"
+          style={{
+            // minmax menjaga kolom tetap terbaca; bila total melebihi layar,
+            // pembungkusnya yang menggeser, bukan teks yang menyempit.
+            gridTemplateColumns: `repeat(${configured.length}, minmax(11rem, 1fr))`,
+          }}
+        >
+          {configured.map((item) => {
+            const isToday = highlightDay === item.day
+            return (
+              <section
+                key={item.day}
+                className={cn(
+                  "overflow-hidden rounded-xl border bg-card",
+                  isToday ? "border-primary/40" : "border-border/60",
+                )}
+              >
+                <header
+                  className={cn(
+                    "flex items-center justify-between gap-2 border-b px-3 py-2.5",
+                    isToday ? "border-b-primary/20 bg-primary/[0.07]" : "bg-muted/40",
+                  )}
                 >
-                  <p className="text-xs text-muted-foreground">
-                    {slot.name} · {formatTimeRange(slot.startMinute, slot.endMinute)}
-                  </p>
-                  <div className="mt-1">
-                    <SlotCell
-                      slot={slot}
-                      entry={entryFor(entries, item.day, slot.ascPeriod)}
-                      emphasis={highlightDay === item.day}
-                      showTeacher={showTeacher}
-                      showClass={showClass}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
+                  <h3 className={cn("text-sm font-semibold", isToday && "text-primary")}>
+                    {SCHEDULE_DAY_LABELS[item.day as ScheduleDay] ?? scheduleDayLabel(item.day)}
+                  </h3>
+                  {isToday ? (
+                    <Badge variant="secondary" className="h-5 shrink-0 px-1.5 text-[11px]">
+                      Hari ini
+                    </Badge>
+                  ) : null}
+                </header>
+
+                <ul className="divide-y divide-border/50">
+                  {item.slots.map((slot) => renderSlot(item, slot))}
+                </ul>
+              </section>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

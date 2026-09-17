@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { History, Loader2, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react"
+import { CalendarRange, History, Loader2, Pencil, Plus, RotateCcw, School, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Combobox } from "@/components/ui/combobox"
+import { sortClassesForDisplay } from "@/lib/schedule-presentation"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -161,9 +162,12 @@ export function ManageScheduleTab({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:max-w-xl sm:grid-cols-2">
+            <div className="grid gap-3 rounded-xl border border-border/60 bg-muted/20 p-3 sm:max-w-xl sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="kelola-hari">Hari</Label>
+                <Label htmlFor="kelola-hari" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <CalendarRange className="size-3.5" aria-hidden />
+                  Hari
+                </Label>
                 <Select
                   value={String(day)}
                   onValueChange={(value) => value && setDay(Number(value) as ScheduleDay)}
@@ -183,10 +187,13 @@ export function ManageScheduleTab({
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="kelola-kelas">Kelas</Label>
+                <Label htmlFor="kelola-kelas" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <School className="size-3.5" aria-hidden />
+                  Kelas
+                </Label>
                 <Combobox
                   id="kelola-kelas"
-                  options={master.classes.map((item) => ({
+                  options={sortClassesForDisplay(master.classes).map((item) => ({
                     value: item.id,
                     label: item.name,
                     description: `Tingkat ${item.grade}`,
