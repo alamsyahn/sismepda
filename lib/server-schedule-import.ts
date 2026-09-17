@@ -35,7 +35,8 @@ import {
   readActiveEntries,
   readScheduleMasterData,
 } from "@/lib/server-schedule"
-import { lessonSlots } from "@/lib/schedule-time"
+import { scheduleDayLabel } from "@/lib/schedule-constants"
+import { resolveSlotForDayPeriod, type ProfileDay } from "@/lib/schedule-time"
 
 /** Satu-satunya sumber eksternal yang dikenal saat ini. */
 const ASC_SOURCE = "ASC_TIMETABLES" as const
@@ -223,7 +224,8 @@ export type SchedulePreview = {
   /** Alasan Apply diblokir. Kosong berarti boleh diterapkan. */
   readonly blockers: readonly string[]
   readonly warnings: AscTimetable["warnings"]
-  readonly unknownPeriods: readonly number[]
+  /** Kombinasi (hari, jam) yang dipakai XML tetapi belum ada di Waktu & Kegiatan. */
+  readonly missingDayPeriods: readonly { readonly day: number; readonly period: number }[]
   readonly ascPeriods: AscTimetable["periods"]
 }
 
@@ -306,12 +308,14 @@ export async function buildPreview(importId: string): Promise<SchedulePreview> {
     ),
   }
 
-  const knownPeriods = new Set(lessonSlots(profile.slots).map((slot) => slot.ascPeriod as number))
-  const unknownPeriods = [...new Set(payload.placements.map((row) => row.period))]
-    .filter((period) => !knownPeriods.has(period))
-    .sort((a, b) => a - b)
+  // Yang boleh diimpor ditentukan oleh kombinasi HARI + nomor jam, bukan oleh
+  // satu daftar period global. Struktur waktu SISMEPDA memang boleh berbeda
+  // tiap hari (Senin 1–7, Jumat 1–5, Selasa/Rabu/Kamis/Sabtu 1–8), sehingga
+  // memakai daftar satu hari sebagai ukuran seluruh pekan akan menolak jam
+  // ke-8 yang sebenarnya tersedia pada hari yang memang memakainya.
+  const missingDayPeriods = missingDayPeriodPairs(payload.placements, profile.days)
 
-  const next = buildEntryShapes(payload, mappings, knownPeriods)
+  const next = buildEntryShapes(payload, mappings, profile.days)
 
   const current: ScheduleEntryShape[] = currentEntries.map((entry) => ({
     id: entry.id,
@@ -336,10 +340,12 @@ export async function buildPreview(importId: string): Promise<SchedulePreview> {
   if (mapping.subjects.unmappedCount > 0) {
     blockers.push(`${mapping.subjects.unmappedCount} mata pelajaran aSc belum dipetakan`)
   }
-  if (unknownPeriods.length > 0) {
-    blockers.push(
-      `Jam ke-${unknownPeriods.join(", ")} belum ada pada Waktu & Kegiatan; lengkapi struktur waktu lebih dulu`,
-    )
+  if (missingDayPeriods.length > 0) {
+    // Disebut per kombinasi supaya admin tahu persis hari mana yang kurang,
+    // bukan disuruh menambah jam ke-8 pada semua hari.
+    for (const pair of missingDayPeriods) {
+      blockers.push(`${scheduleDayLabel(pair.day)} — Jam ke-${pair.period} belum diatur pada Waktu & Kegiatan`)
+    }
   }
   const conflicts = findConflicts(next)
   if (conflicts.length > 0) blockers.push(`${conflicts.length} bentrok pada hasil impor`)
@@ -361,9 +367,29 @@ export async function buildPreview(importId: string): Promise<SchedulePreview> {
     },
     blockers,
     warnings: payload.warnings,
-    unknownPeriods,
+    missingDayPeriods,
     ascPeriods: payload.periods,
   }
+}
+
+/**
+ * Kombinasi (hari, nomor jam) yang dipakai XML tetapi tidak ada pada struktur
+ * waktu hari itu.
+ *
+ * Pemeriksaan sengaja per kombinasi, bukan per nomor jam saja: sekolah boleh
+ * memakai jam ke-8 pada Selasa tanpa memakainya pada Senin. Yang salah adalah
+ * jam yang DIPAKAI kartu tetapi tidak punya baris PELAJARAN pada hari itu.
+ */
+export function missingDayPeriodPairs(
+  placements: StoredImportPayload["placements"],
+  days: readonly ProfileDay[],
+): { readonly day: number; readonly period: number }[] {
+  const missing = new Map<string, { day: number; period: number }>()
+  for (const row of placements) {
+    if (resolveSlotForDayPeriod(days, row.day, row.period) !== null) continue
+    missing.set(`${row.day}:${row.period}`, { day: row.day, period: row.period })
+  }
+  return [...missing.values()].sort((a, b) => a.day - b.day || a.period - b.period)
 }
 
 /**
@@ -376,13 +402,14 @@ export async function buildPreview(importId: string): Promise<SchedulePreview> {
 function buildEntryShapes(
   payload: StoredImportPayload,
   mappings: MappingTables,
-  knownPeriods: ReadonlySet<number>,
+  days: readonly ProfileDay[],
 ): ScheduleEntryShape[] {
   const rows: ScheduleEntryShape[] = []
   for (const row of payload.placements) {
     const schoolClass = mappings.CLASS.get(row.classExternalId)
     const subject = row.subjectExternalId ? mappings.SUBJECT.get(row.subjectExternalId) : null
-    if (!schoolClass || !subject || !knownPeriods.has(row.period)) continue
+    // Nomor jam harus ada pada HARI penempatan itu, bukan pada hari mana pun.
+    if (!schoolClass || !subject || resolveSlotForDayPeriod(days, row.day, row.period) === null) continue
     const teacher = row.teacherExternalId ? mappings.TEACHER.get(row.teacherExternalId) : null
     rows.push({
       day: row.day,
@@ -502,9 +529,7 @@ export async function applyImport(
     classes: master.classes,
     subjects: master.subjects,
   })
-  const knownPeriods = new Set(lessonSlots(profile.slots).map((slot) => slot.ascPeriod as number))
-
-  const rows = buildEntryShapes(payload, mappings, knownPeriods).map((row) => ({
+  const rows = buildEntryShapes(payload, mappings, profile.days).map((row) => ({
     day: row.day,
     period: row.period,
     classId: row.classId,

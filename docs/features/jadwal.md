@@ -201,6 +201,16 @@ Alur wajib dua langkah — tidak ada jalur "pilih berkas lalu langsung timpa":
 Berkas XML mentah tidak disimpan; yang disimpan hanya hasil parse ternormalisasi
 (`ScheduleImport.payload`) dan ringkasannya.
 
+**Jam divalidasi per kombinasi (hari, nomor jam).** Struktur waktu boleh
+berbeda tiap hari, jadi yang wajib ada hanyalah nomor jam yang benar-benar
+dipakai `<card>` pada hari itu. Sekolah dengan Senin 1–7, Jumat 1–5, dan
+Selasa/Rabu/Kamis/Sabtu 1–8 mengimpor tanpa perlu menambah jam ke-8 pada Senin
+atau Jumat. Mengukur seluruh pekan dengan daftar jam milik satu hari adalah
+kekeliruan: selain memblokir impor yang sah, penyaring yang sama dipakai jalur
+apply sehingga kartu jam ke-8 terbuang diam-diam. Kombinasi yang memang belum
+diatur disebut per hari — `Sabtu — Jam ke-8 belum diatur pada Waktu &
+Kegiatan` — bukan sebagai pesan global.
+
 **Pemetaan yang belum selesai memblokir Apply.** Guru, kelas, dan mapel aSc yang
 belum dipetakan semuanya menjadi *blocker*: pratinjau menyebutkannya satu per
 satu, dan `POST /api/jadwal/impor/[importId]` menolak dengan `409` selama masih
