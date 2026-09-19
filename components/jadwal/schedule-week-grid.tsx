@@ -183,8 +183,15 @@ export function ScheduleWeekGrid({
 
   return (
     <div className="space-y-4">
-      {/* Mobile: hari sebagai chip, hari ini aktif secara bawaan. */}
-      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 lg:hidden">
+      {/* Mobile: hari sebagai grid enam kolom sama lebar. Bukan baris yang
+          menggeser mendatar — menyembunyikan Sabtu di luar layar membuat guru
+          mengira harinya tidak ada. Kolom dibaca dari jumlah hari yang benar-
+          benar terkonfigurasi, sehingga profil lima hari tetap memenuhi baris
+          tanpa kolom kosong. */}
+      <div
+        className="grid gap-1.5 lg:hidden"
+        style={{ gridTemplateColumns: `repeat(${configured.length}, minmax(0, 1fr))` }}
+      >
         {configured.map((item) => {
           const active = activeMobile.day === item.day
           return (
@@ -194,17 +201,24 @@ export function ScheduleWeekGrid({
               onClick={() => setMobileDay(item.day)}
               aria-pressed={active}
               className={cn(
-                "inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border px-4 text-sm",
+                // Padding mendatar kecil supaya enam tombol benar-benar muat;
+                // tingginya tetap 40px agar nyaman disentuh.
+                "inline-flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-lg border px-1 text-xs sm:text-sm",
                 "transition-colors duration-150 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
                 active
                   ? "border-primary bg-primary text-primary-foreground font-medium"
                   : "border-border bg-card text-muted-foreground hover:text-foreground",
               )}
             >
-              {SCHEDULE_DAY_SHORT_LABELS[item.day as ScheduleDay] ?? scheduleDayLabel(item.day)}
+              <span className="truncate">
+                {SCHEDULE_DAY_SHORT_LABELS[item.day as ScheduleDay] ?? scheduleDayLabel(item.day)}
+              </span>
               {highlightDay === item.day ? (
                 <span
-                  className={cn("size-1.5 rounded-full", active ? "bg-primary-foreground" : "bg-primary")}
+                  className={cn(
+                    "size-1.5 shrink-0 rounded-full",
+                    active ? "bg-primary-foreground" : "bg-primary",
+                  )}
                   aria-hidden
                 />
               ) : null}

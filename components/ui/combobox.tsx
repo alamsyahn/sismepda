@@ -112,7 +112,19 @@ export function Combobox({
             data-slot="combobox-content"
             className="max-h-72 w-full overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
           >
-            <ComboboxPrimitive.Empty className="px-2 py-3 text-center text-sm text-muted-foreground">
+            {/*
+              `Combobox.Empty` WAJIB tetap ter-mount agar pembaca layar
+              mengumumkan perubahan jumlah hasil; Base UI mengosongkan
+              `children`-nya, bukan elemennya. Karena itu, saat ada hasil ia
+              tersisa sebagai <div> kosong yang tetap membawa padding — itulah
+              ruang kosong puluhan piksel sebelum item pertama.
+
+              `empty:hidden` menyembunyikannya HANYA ketika benar-benar tanpa
+              anak, sehingga pesan "tidak ditemukan" tetap tampil dan
+              diumumkan saat daftar kosong. Perbaikan ditaruh di sini, di
+              komponen sumbernya, bukan ditambal margin negatif di pemanggil.
+            */}
+            <ComboboxPrimitive.Empty className="px-2 py-3 text-center text-sm text-muted-foreground empty:hidden">
               {emptyMessage}
             </ComboboxPrimitive.Empty>
             <ComboboxPrimitive.List>

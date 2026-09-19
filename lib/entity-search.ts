@@ -57,3 +57,40 @@ export function filterBySearchQuery<T>(
   if (needle === "") return [...items]
   return items.filter((item) => matchesSearchQuery(toText(item), query))
 }
+
+/**
+ * Panjang ketikan minimum sebelum pencarian autocomplete dimulai.
+ *
+ * Dipakai pemilih guru pada tab "Jadwal Saya". Daftar guru sekolah berisi
+ * puluhan nama; membuka seluruhnya begitu kotak disentuh membuat pengguna
+ * memindai daftar panjang yang tidak ia minta. Dua huruf pun masih mencocokkan
+ * hampir semua orang, sehingga ambangnya tiga.
+ */
+export const SEARCH_MIN_QUERY_LENGTH = 3
+
+/**
+ * Apakah `query` sudah cukup panjang untuk mulai mencari.
+ *
+ * Dihitung dari teks yang SUDAH dinormalkan, sehingga spasi dan tanda baca
+ * tidak dapat memenuhi ambang: mengetik "a. " tetap belum memulai pencarian.
+ */
+export function hasEnoughSearchQuery(query: string): boolean {
+  return normalizeSearchText(query).replace(/ /g, "").length >= SEARCH_MIN_QUERY_LENGTH
+}
+
+/**
+ * Penyaringan autocomplete: kosong SELAMA ambang belum tercapai.
+ *
+ * Berbeda dari `filterBySearchQuery`, kueri pendek di sini mengembalikan daftar
+ * KOSONG, bukan seluruh pilihan. Pemanggil membedakan "belum mengetik cukup"
+ * dari "tidak ada hasil" lewat `hasEnoughSearchQuery`, bukan dengan menebak
+ * dari panjang hasil.
+ */
+export function autocompleteMatches<T>(
+  items: readonly T[],
+  query: string,
+  toText: (item: T) => string,
+): T[] {
+  if (!hasEnoughSearchQuery(query)) return []
+  return items.filter((item) => matchesSearchQuery(toText(item), query))
+}

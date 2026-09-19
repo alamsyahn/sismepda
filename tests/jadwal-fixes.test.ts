@@ -22,7 +22,14 @@ import {
   type InternalEntity,
   type MappingPlan,
 } from "../lib/asc-mapping"
-import { filterBySearchQuery, matchesSearchQuery, normalizeSearchText } from "../lib/entity-search"
+import {
+  SEARCH_MIN_QUERY_LENGTH,
+  autocompleteMatches,
+  filterBySearchQuery,
+  hasEnoughSearchQuery,
+  matchesSearchQuery,
+  normalizeSearchText,
+} from "../lib/entity-search"
 import { findProfileDay, orderedDays, resolveSlotForDayPeriod, type ProfileDay } from "../lib/schedule-time"
 import { ALL_WEEKDAYS, scheduleDayFromSchoolDate, scheduleDayLabel } from "../lib/schedule-constants"
 import { normalizeSubjectName, subjectNameProblem } from "../lib/subject-constants"
@@ -303,4 +310,54 @@ test("mata pelajaran dapat dicari dengan pemilih yang sama", () => {
     "Bahasa Indonesia",
     "Bahasa Inggris",
   ])
+})
+
+// --- E. ambang autocomplete pemilih guru -----------------------------------
+//
+// Berbeda dari `filterBySearchQuery`, pemilih guru pada "Jadwal Saya" TIDAK
+// boleh menampilkan seluruh guru sebelum pengguna mengetik cukup banyak.
+
+test("ambang autocomplete adalah tiga huruf", () => {
+  assert.equal(SEARCH_MIN_QUERY_LENGTH, 3)
+})
+
+test("satu dan dua huruf belum memulai pencarian", () => {
+  assert.equal(hasEnoughSearchQuery("a"), false)
+  assert.equal(hasEnoughSearchQuery("ay"), false)
+  assert.equal(hasEnoughSearchQuery("ayu"), true)
+})
+
+test("spasi dan tanda baca tidak dapat memenuhi ambang", () => {
+  // "a. " terlihat tiga karakter, tetapi hanya satu huruf yang dicari.
+  assert.equal(hasEnoughSearchQuery("a. "), false)
+  assert.equal(hasEnoughSearchQuery("   "), false)
+  assert.equal(hasEnoughSearchQuery(""), false)
+})
+
+test("di bawah ambang hasilnya KOSONG, bukan seluruh guru", () => {
+  // Inti perbedaannya dengan combobox biasa: kueri pendek tidak membuka daftar.
+  assert.deepEqual(autocompleteMatches(NAMES, "ay", (name) => name), [])
+  assert.deepEqual(autocompleteMatches(NAMES, "", (name) => name), [])
+})
+
+test("setelah tiga huruf, pencarian substring dan case-insensitive berjalan", () => {
+  assert.deepEqual(autocompleteMatches(NAMES, "alam", (name) => name), [
+    "Bpk. Muhammad Nur Alamsyah, S.Pd",
+  ])
+  assert.deepEqual(
+    autocompleteMatches(NAMES, "ALAM", (name) => name),
+    autocompleteMatches(NAMES, "alam", (name) => name),
+  )
+})
+
+test("\"nur\" menemukan setiap nama yang mengandungnya", () => {
+  const hits = autocompleteMatches(NAMES, "nur", (name) => name)
+  assert.ok(hits.length >= 2)
+  assert.ok(hits.every((name) => name.toLowerCase().includes("nur")))
+})
+
+test("kueri cukup panjang tanpa kecocokan menghasilkan daftar kosong", () => {
+  // Pemanggil membedakannya dari "belum cukup huruf" lewat hasEnoughSearchQuery.
+  assert.deepEqual(autocompleteMatches(NAMES, "zzz", (name) => name), [])
+  assert.equal(hasEnoughSearchQuery("zzz"), true)
 })

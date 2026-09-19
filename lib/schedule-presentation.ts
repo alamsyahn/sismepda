@@ -111,3 +111,54 @@ export function sortClassesForDisplay<T extends { name: string; grade: string }>
     return a.name.localeCompare(b.name, "id", { numeric: true, sensitivity: "base" })
   })
 }
+
+/** Angka tingkat untuk nama ringkas; null bila tingkatnya tidak dikenali. */
+const GRADE_DIGIT: Record<string, string> = { VII: "7", VIII: "8", IX: "9" }
+
+/**
+ * Nama kelas RINGKAS untuk pemilih: "VII A" → "7A", "IX I" → "9I".
+ *
+ * Murni lapisan tampilan. `SchoolClass.name` di basis data tetap "VII A" dan
+ * id kelas tidak disentuh — penyaringan jadwal tetap memakai id, sehingga
+ * relasi jadwal tidak bergantung pada bentuk tulisan ini sama sekali.
+ *
+ * Prefiks tingkat hanya dipotong bila TIDAK langsung diikuti huruf lain
+ * (`(?![A-Z])`). Tanpa penjagaan itu, data menyimpang seperti grade "VII"
+ * pada nama "VIII A" akan terpotong menjadi "7IA". Bila apa pun tidak cocok,
+ * nama asli dikembalikan apa adanya: lebih baik menampilkan "VII A" daripada
+ * mengarang label yang salah.
+ */
+export function formatClassShortName(schoolClass: { name: string; grade: string }): string {
+  const name = schoolClass.name.trim()
+  const roman = schoolClass.grade.trim().toUpperCase()
+  const digit = GRADE_DIGIT[roman]
+  if (!digit) return name
+
+  const stripped = name.replace(new RegExp(`^${roman}(?![A-Z])[\\s-]*`, "i"), "")
+  if (stripped === name) return name
+  return stripped === "" ? digit : `${digit}${stripped.toUpperCase()}`
+}
+
+/**
+ * Kelas yang sudah diurutkan, dikelompokkan per tingkat.
+ *
+ * Dipakai pemilih kelas untuk menyisipkan pemisah tipis antara tingkat 7, 8,
+ * dan 9 TANPA menulis judul "Tingkat VII" — garisnya sendiri sudah cukup
+ * memisahkan. Kelompok dikembalikan sebagai data, bukan dirender di sini,
+ * supaya aturannya dapat diuji tanpa peramban.
+ *
+ * Kelas bertingkat tak dikenal tidak dibuang; ia masuk kelompok terakhir
+ * dengan `grade` apa adanya.
+ */
+export function groupClassesByGrade<T extends { name: string; grade: string }>(
+  classes: readonly T[],
+): { grade: string; classes: T[] }[] {
+  const groups: { grade: string; classes: T[] }[] = []
+  for (const item of sortClassesForDisplay(classes)) {
+    const key = item.grade.trim().toUpperCase()
+    const last = groups.at(-1)
+    if (last && last.grade === key) last.classes.push(item)
+    else groups.push({ grade: key, classes: [item] })
+  }
+  return groups
+}

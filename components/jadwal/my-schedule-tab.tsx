@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Loader2, Users } from "lucide-react"
 
 import { Label } from "@/components/ui/label"
-import { Combobox } from "@/components/ui/combobox"
+import { TeacherAutocomplete } from "@/components/jadwal/teacher-autocomplete"
 import { ScheduleWeekGrid } from "@/components/jadwal/schedule-week-grid"
 import { useScheduleResource } from "@/components/jadwal/use-schedule-resource"
 import type { ScheduleDay } from "@/lib/schedule-constants"
@@ -39,7 +39,28 @@ export function MyScheduleTab({
   teachers: readonly ScheduleTeacher[]
   todayDay: ScheduleDay | null
 }) {
-  const [teacherId, setTeacherId] = useState<string>(viewerIsTeacher ? viewerId : "")
+  /**
+   * Guru yang BENAR-BENAR dipilih — satu-satunya pemicu pemuatan jadwal.
+   *
+   * Sengaja menyimpan objek, bukan sekadar id, supaya kotak pencarian dapat
+   * menampilkan nama tanpa menelusuri ulang daftar. Teks yang sedang diketik
+   * hidup di dalam `TeacherAutocomplete` sebagai `query` dan TIDAK pernah
+   * masuk ke state ini: ketikan yang kebetulan cocok bukan sebuah pilihan.
+   *
+   * Guru yang membuka tabnya sendiri langsung terisi. Bagi pemakai berwenang
+   * yang bukan guru, nilainya null sampai ia memilih dari hasil pencarian.
+   */
+  const [selectedTeacher, setSelectedTeacher] = useState<ScheduleTeacher | null>(() => {
+    if (!viewerIsTeacher) return null
+    // `viewerIsTeacher` dan populasi `teachers` memakai syarat yang sama,
+    // sehingga pencarian ini normalnya selalu ketemu. Bila suatu saat tidak,
+    // identitas pemanggil tetap dipakai agar jadwalnya tidak hilang diam-diam.
+    return teachers.find((teacher) => teacher.id === viewerId) ?? { id: viewerId, name: "Jadwal saya" }
+  })
+
+  // Pemakai non-guru tanpa hak memilih tetap memakai identitasnya sendiri:
+  // server menolak/menentukan sendiri bila id itu bukan miliknya.
+  const teacherId = canPickTeacher ? selectedTeacher?.id ?? "" : viewerIsTeacher ? viewerId : ""
 
   const url = teacherId ? `/api/jadwal/guru?teacherId=${encodeURIComponent(teacherId)}` : null
   const { data, loading, error } = useScheduleResource<Payload>(url)
@@ -53,14 +74,12 @@ export function MyScheduleTab({
               <Users className="size-3.5" aria-hidden />
               Guru
             </Label>
-            <Combobox
+            <TeacherAutocomplete
               id="jadwal-guru"
-              options={teachers.map((teacher) => ({ value: teacher.id, label: teacher.name }))}
-              value={teacherId ? teacherId : null}
+              teachers={teachers}
+              value={selectedTeacher}
               disabled={teachers.length === 0}
-              placeholder="Cari nama guru"
-              emptyMessage="Guru tidak ditemukan"
-              onValueChange={(value) => setTeacherId(value ?? "")}
+              onValueChange={setSelectedTeacher}
             />
           </div>
         </div>

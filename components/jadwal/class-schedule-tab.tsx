@@ -5,8 +5,8 @@ import { CalendarRange, Loader2, School } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
-import { Combobox } from "@/components/ui/combobox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ClassPicker } from "@/components/jadwal/class-picker"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useScheduleResource } from "@/components/jadwal/use-schedule-resource"
 import {
@@ -19,10 +19,10 @@ import { orderedDays, orderedSlots, type ProfileDay, type TimeSlot } from "@/lib
 import type { CurrentSlotResult } from "@/lib/schedule-time"
 import {
   SLOT_TONE_CLASS,
+  formatClassShortName,
   isCurrentSlot,
   slotKindLabel,
   slotTone,
-  sortClassesForDisplay,
 } from "@/lib/schedule-presentation"
 import type { ScheduleEntryView, ScheduleNowContext } from "@/lib/server-schedule"
 import { cn } from "@/lib/utils"
@@ -66,9 +66,9 @@ export function ClassScheduleTab({
   const { data, loading, error } = useScheduleResource<Payload>(url)
 
   const rows = data ? orderedSlots([...data.slots]) : []
-  // Basis data mengurutkan nama secara alfabet ("IX A" sebelum "VII A"); urutan
-  // yang dibaca manusia dipulihkan di sini saja, tanpa mengubah query.
-  const classOptions = sortClassesForDisplay(classes)
+  // Urutan dan pengelompokan kelas ditangani `ClassPicker`; di sini hanya
+  // dibutuhkan tingkat kelas terpilih untuk menulis namanya secara ringkas.
+  const selectedClass = classes.find((item) => item.id === classId) ?? null
   const isToday = data ? data.day === (data.now.todayDay ?? todayDay) : false
 
   return (
@@ -100,24 +100,19 @@ export function ClassScheduleTab({
             <School className="size-3.5" aria-hidden />
             Kelas
           </Label>
-          <Combobox
+          <ClassPicker
             id="jadwal-kelas-kelas"
-            options={classOptions.map((item) => ({
-              value: item.id,
-              label: item.name,
-              description: `Tingkat ${item.grade}`,
-            }))}
-            value={classId ? classId : null}
-            placeholder="Cari kelas"
-            emptyMessage="Kelas tidak ditemukan"
-            onValueChange={(value) => setClassId(value ?? "")}
+            classes={classes}
+            value={classId}
+            onValueChange={setClassId}
           />
         </div>
 
         {/* Konteks hasil filter, bukan kartu besar tersendiri. */}
         {data ? (
           <p className="flex items-center gap-2 pb-2 text-sm font-medium">
-            {scheduleDayLabel(data.day)} · {data.schoolClass.name}
+            {scheduleDayLabel(data.day)} ·{" "}
+            {selectedClass ? formatClassShortName(selectedClass) : data.schoolClass.name}
             {isToday ? (
               <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">
                 Hari ini

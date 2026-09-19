@@ -11,6 +11,8 @@ import { test } from "node:test"
 
 import {
   SLOT_TONE_CLASS,
+  formatClassShortName,
+  groupClassesByGrade,
   isCurrentSlot,
   slotKindLabel,
   slotTone,
@@ -129,4 +131,68 @@ test("pengurutan tidak mengubah array masukan", () => {
   ]
   sortClassesForDisplay(input)
   assert.equal(input[0].name, "IX A")
+})
+
+// --- D. nama kelas ringkas untuk pemilih -----------------------------------
+
+test("nama kelas diringkas menjadi 7A, 8C, 9I", () => {
+  assert.equal(formatClassShortName({ name: "VII A", grade: "VII" }), "7A")
+  assert.equal(formatClassShortName({ name: "VIII C", grade: "VIII" }), "8C")
+  assert.equal(formatClassShortName({ name: "IX I", grade: "IX" }), "9I")
+})
+
+test("seluruh 27 kelas menghasilkan label ringkas yang unik", () => {
+  const grades = [["VII", "7"], ["VIII", "8"], ["IX", "9"]] as const
+  const letters = ["A", "B", "C", "D", "E", "F", "G", "H", "I"]
+  const labels = grades.flatMap(([grade, digit]) =>
+    letters.map((letter) => {
+      const short = formatClassShortName({ name: `${grade} ${letter}`, grade })
+      assert.equal(short, `${digit}${letter}`)
+      return short
+    }),
+  )
+  assert.equal(new Set(labels).size, 27)
+})
+
+test("VIII tidak terpotong oleh prefiks VII", () => {
+  // Grade menyimpang: tanpa penjagaan `(?![A-Z])` hasilnya akan "7IA".
+  assert.equal(formatClassShortName({ name: "VIII A", grade: "VII" }), "VIII A")
+})
+
+test("nama yang tak cocok pola dikembalikan apa adanya", () => {
+  // Mengarang label lebih buruk daripada menampilkan nama aslinya.
+  assert.equal(formatClassShortName({ name: "Kelas Khusus", grade: "X" }), "Kelas Khusus")
+  assert.equal(formatClassShortName({ name: "Akselerasi", grade: "VII" }), "Akselerasi")
+})
+
+// --- E. pengelompokan tingkat untuk pemisah tipis --------------------------
+
+test("kelas dikelompokkan per tingkat dalam urutan VII, VIII, IX", () => {
+  const input = [
+    { name: "IX A", grade: "IX" },
+    { name: "VII B", grade: "VII" },
+    { name: "VIII A", grade: "VIII" },
+    { name: "VII A", grade: "VII" },
+  ]
+  const groups = groupClassesByGrade(input)
+  assert.deepEqual(groups.map((group) => group.grade), ["VII", "VIII", "IX"])
+  assert.deepEqual(groups[0].classes.map((item) => item.name), ["VII A", "VII B"])
+})
+
+test("satu tingkat menghasilkan satu kelompok, sehingga tidak ada pemisah", () => {
+  // Pemisah dirender hanya antar kelompok; satu kelompok berarti nol garis.
+  const groups = groupClassesByGrade([
+    { name: "VII A", grade: "VII" },
+    { name: "VII B", grade: "VII" },
+  ])
+  assert.equal(groups.length, 1)
+})
+
+test("pengelompokan tidak membuang kelas bertingkat tak dikenal", () => {
+  const groups = groupClassesByGrade([
+    { name: "Kelas Khusus", grade: "X" },
+    { name: "VII A", grade: "VII" },
+  ])
+  assert.equal(groups.flatMap((group) => group.classes).length, 2)
+  assert.equal(groups.at(-1)?.classes[0].name, "Kelas Khusus")
 })

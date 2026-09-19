@@ -32,7 +32,7 @@ keanggotaan `legacy_guru` → `guru` dikerjakan administrator secara manual di
 luar modul ini.
 
 Selama migrasi itu belum dijalankan, populasi guru bisa **kosong sepenuhnya**.
-Itu keadaan sah, bukan kerusakan — tetapi UI wajib menjelaskannya. Dropdown guru
+Itu keadaan sah, bukan kerusakan — tetapi UI wajib menjelaskannya. Pemilih guru
 di tab "Jadwal Saya" dan di tabel pemetaan impor dinonaktifkan saat daftar
 kosong dan disertai keterangan syarat populasi guru, supaya tidak tampak seperti
 komponen rusak yang membuka menu tanpa isi. Aturan yang sama berlaku untuk kelas
@@ -334,6 +334,8 @@ sebagai fungsi murni, terpisah dari logika jadwal:
 | `slotKindLabel()` | label teks jenis slot |
 | `isCurrentSlot()` | apakah slot itu yang sedang berlangsung |
 | `sortClassesForDisplay()` | urutan kelas VII → VIII → IX |
+| `formatClassShortName()` | nama ringkas untuk pemilih: `VII A` → `7A`, `IX I` → `9I` |
+| `groupClassesByGrade()` | kelas per tingkat, sumber pemisah tipis pada pemilih kelas |
 
 Tiga aturan yang dijaga pengujian:
 
@@ -354,6 +356,20 @@ Urutan kelas datang dari basis data sebagai `name asc`, yang menaruh `IX A`
 sebelum `VII A`. `sortClassesForDisplay()` memulihkan urutan tingkat hanya di
 lapisan tampilan; kueri dan data tidak diubah. Kelas dengan tingkat di luar
 VII/VIII/IX tetap ditampilkan di belakang, bukan disembunyikan.
+
+Nama kelas hanya diringkas di lapisan tampilan. `formatClassShortName()`
+memetakan `VII A` → `7A` dan `IX I` → `9I`, sementara seleksi dan penyaringan
+tetap memakai **id kelas**; nama di basis data tidak pernah ditulis ulang. Nama
+yang tidak berpola tingkat + huruf dikembalikan apa adanya — menebak label
+lebih buruk daripada menampilkan nama aslinya.
+
+Pemilih hari pada tampilan mobile (`schedule-week-grid.tsx`) adalah **grid
+selebar jumlah hari terkonfigurasi**, bukan baris yang menggeser mendatar.
+Menyembunyikan Sabtu di luar layar membuat guru mengira harinya tidak ada,
+padahal sekolah memakai enam hari. Kolomnya dibaca dari hari yang benar-benar
+aktif, sehingga profil lima hari tetap memenuhi baris tanpa kolom kosong.
+Tinggi tombol dijaga 40px agar tetap nyaman disentuh; yang dikecilkan hanya
+padding mendatar dan ukuran font.
 
 Base UI 1.6.0 menyisakan panel tab yang baru ditinggalkan tetap ter-mount
 dengan atribut `inert` tetapi tanpa `hidden`, sehingga isi tab lama masih
@@ -430,21 +446,59 @@ impor (per baris dan massal), pencarian pemilih, pemetaan hari Senin–Sabtu,
 serta aturan nama Data Master Mata Pelajaran; validasi jam impor per kombinasi
 hari dan jam; serta aturan tampilan (nada semantic slot, label teks yang tidak
 bergantung warna, badge "Sekarang" hanya pada hari ini, urutan kelas
-VII → VIII → IX).
+VII → VIII → IX, nama kelas ringkas `7A`/`9I`, pengelompokan per tingkat,
+serta ambang tiga huruf pada autocomplete guru).
 
 ## Pemilih yang dapat diketik
 
-Semua pemilih panjang pada modul Jadwal (guru, kelas, mata pelajaran, dan
-pemetaan impor aSc) memakai `components/ui/combobox.tsx`. Pencocokannya ada di
-`lib/entity-search.ts`: huruf besar-kecil diabaikan, pencocokan bersifat
-**substring per kata** sehingga `alam` menemukan `Muhammad Nur Alamsyah` dan
-`nur` menemukan Alamsyah maupun Nurvita, tanda baca serta gelar (`S.Pd.`)
-diabaikan, dan urutan kata tidak wajib sama. Kueri kosong mengembalikan seluruh
-pilihan.
+Pemilih panjang pada pemetaan impor aSc dan Data Master memakai
+`components/ui/combobox.tsx`. Pencocokannya ada di `lib/entity-search.ts`:
+huruf besar-kecil diabaikan, pencocokan bersifat **substring per kata**
+sehingga `alam` menemukan `Muhammad Nur Alamsyah` dan `nur` menemukan Alamsyah
+maupun Nurvita, tanda baca serta gelar (`S.Pd.`) diabaikan, dan urutan kata
+tidak wajib sama. Kueri kosong mengembalikan seluruh pilihan.
+
+Dua pemilih pada halaman `/jadwal` sengaja **tidak** memakai pola itu, karena
+jumlah pilihan dan cara guru memakainya berbeda:
+
+**Kelas (`components/jadwal/class-picker.tsx`) — `Select`, bukan combobox.**
+Dua puluh tujuh kelas dengan label dua karakter tidak perlu diketik; mengetik
+`7a` justru lebih lambat daripada menunjuknya. Satu klik membuka seluruh
+daftar, dikelompokkan per tingkat oleh `groupClassesByGrade()` dan dipisah
+`SelectSeparator` tipis tanpa teks "Tingkat VII" — pengelompokannya sudah
+terbaca dari angka pada labelnya sendiri.
+
+**Guru (`components/jadwal/teacher-autocomplete.tsx`) — autocomplete berambang.**
+Daftar guru terlalu panjang untuk dipindai, sehingga membukanya utuh tidak
+membantu. Popup baru muncul setelah **tiga huruf** (`SEARCH_MIN_QUERY_LENGTH`);
+di bawah itu `autocompleteMatches()` mengembalikan daftar kosong dan input
+menampilkan petunjuk, bukan seluruh guru. Afordansinya ikon orang di kiri dan
+tombol bersih di kanan — bukan chevron, yang menjanjikan perilaku dropdown yang
+memang tidak ada.
+
+`searchQuery` dan `selectedTeacherId` adalah state terpisah. Jadwal hanya
+dimuat dari guru yang benar-benar dipilih; teks yang kebetulan cocok persis
+dengan sebuah nama bukan pilihan. Menekan tombol bersih mengosongkan keduanya,
+sehingga jadwal guru sebelumnya ikut hilang dan tidak tertinggal sebagai hasil
+basi di layar.
 
 Pemilih pendek (misalnya jenis baris pada Waktu & Kegiatan) tetap memakai
 `Select` biasa — menambahkan kotak pencarian untuk dua pilihan hanya menambah
 gesekan.
+
+## Ruang kosong pada popup pemilih
+
+`Combobox.Empty` milik Base UI **wajib tetap ter-mount** supaya pembaca layar
+mengumumkan perubahan jumlah hasil; ketika ada hasil, Base UI mengosongkan
+`children`-nya, bukan elemennya. Elemen kosong itu tetap membawa padding
+vertikalnya sendiri, dan itulah asal ruang kosong puluhan piksel sebelum opsi
+pertama.
+
+Perbaikannya `empty:hidden` di `components/ui/combobox.tsx`: elemen
+disembunyikan **hanya** saat benar-benar tanpa anak, sehingga pesan "tidak ada
+yang cocok" tetap tampil dan tetap diumumkan saat daftar memang kosong. Jangan
+menambalnya dengan margin negatif di pemanggil — itu menyembunyikan gejalanya
+dan ikut menggeser opsi pertama menempel ke border.
 
 ## Data Master Mata Pelajaran
 
