@@ -161,6 +161,18 @@ export const dashboardItem: NavItem = {
 export const mainNav: NavEntry[] = [
   dashboardItem,
   {
+    // Tepat di bawah Dashboard: jadwal adalah rujukan harian paling sering
+    // dibuka, sehingga tidak boleh terkubur di bawah modul lain.
+    //
+    // Satu menu untuk seluruh modul: "Jadwal Saya", "Jadwal Kelas", dan
+    // seterusnya adalah TAB di dalam halaman ini, bukan item sidebar sendiri.
+    title: "Jadwal",
+    href: "/jadwal",
+    icon: CalendarClock,
+    description: "Jadwal pelajaran mingguan, jam kosong guru, dan struktur waktu",
+    permissions: SCHEDULE_PAGE_PERMISSIONS,
+  },
+  {
     type: "group",
     id: "absensi",
     title: "Absensi",
@@ -304,15 +316,6 @@ export const mainNav: NavEntry[] = [
         ],
       },
     ],
-  },
-  {
-    // Satu menu untuk seluruh modul: "Jadwal Saya", "Jadwal Kelas", dan
-    // seterusnya adalah TAB di dalam halaman ini, bukan item sidebar sendiri.
-    title: "Jadwal",
-    href: "/jadwal",
-    icon: CalendarClock,
-    description: "Jadwal pelajaran mingguan, jam kosong guru, dan struktur waktu",
-    permissions: SCHEDULE_PAGE_PERMISSIONS,
   },
   {
     title: "BOS",
