@@ -302,6 +302,15 @@ export const mainNav: NavEntry[] = [
         permissions: ["euks.visits.read"],
       },
       {
+        // Statis dan tidak memuat data kesehatan siapa pun, jadi dikunci oleh
+        // izin baca konten E-UKS yang sudah ada — bukan izin pantauan.
+        title: "Panduan & Referensi",
+        href: "/e-uks/panduan",
+        icon: BookOpen,
+        description: "Dasar perhitungan IMT/U, cara membaca hasil, dan tindak lanjutnya",
+        permissions: ["euks.content.read"],
+      },
+      {
         title: "Pengaturan E-UKS",
         href: "/e-uks/pengaturan",
         icon: SlidersHorizontal,

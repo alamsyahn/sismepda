@@ -246,6 +246,7 @@ test("E-UKS adalah group di antara Kurikulum dan BOS", () => {
     "/e-uks/pantauan-kesehatan-kelas",
     "/e-uks/pantauan-kesehatan",
     "/e-uks/riwayat-kunjungan",
+    "/e-uks/panduan",
     "/e-uks/pengaturan",
   ])
 })
@@ -274,6 +275,10 @@ test("submenu E-UKS mengikuti permission masing-masing", () => {
   )
   assert.ok(!hrefs(GURU_GRANTS).includes("/e-uks/pantauan-kesehatan-kelas"))
   assert.ok(hrefs([...GURU_GRANTS, "euks.visits.read"]).includes("/e-uks/riwayat-kunjungan"))
+  // Panduan hanya berisi penjelasan, tanpa data kesehatan siapa pun, jadi
+  // memakai izin baca konten E-UKS — bukan izin pantauan atau kunjungan.
+  assert.ok(hrefs([...GURU_GRANTS, "euks.content.read"]).includes("/e-uks/panduan"))
+  assert.ok(!hrefs([...GURU_GRANTS, "euks.monitoring.read"]).includes("/e-uks/panduan"))
   assert.ok(!hrefs([...GURU_GRANTS, "euks.visits.create"]).includes("/e-uks/pengaturan"))
 })
 
@@ -297,6 +302,7 @@ test("active state E-UKS bekerja untuk seluruh route modul", () => {
     "/e-uks/pantauan-kesehatan-kelas",
   )
   assert.equal(activeNavHref(entries, "/e-uks/riwayat-kunjungan"), "/e-uks/riwayat-kunjungan")
+  assert.equal(activeNavHref(entries, "/e-uks/panduan"), "/e-uks/panduan")
   assert.equal(activeNavHref(entries, "/e-uks/pengaturan"), "/e-uks/pengaturan")
   // Halaman utama dicocokkan persis agar tidak ikut aktif di sub-route.
   assert.notEqual(activeNavHref(entries, "/e-uks/riwayat-kunjungan"), "/e-uks")
@@ -309,6 +315,7 @@ test("expanded state E-UKS terbuka untuk setiap sub-route", () => {
     "/e-uks/pantauan-kesehatan",
     "/e-uks/pantauan-kesehatan-kelas",
     "/e-uks/riwayat-kunjungan",
+    "/e-uks/panduan",
     "/e-uks/pengaturan",
   ]) {
     assert.equal(activeNavGroupId(entries, activeNavHref(entries, path)), "e-uks", path)

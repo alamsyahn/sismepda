@@ -10,9 +10,24 @@ E-UKS is the school health unit (Unit Kesehatan Sekolah) module inside SISMEPDA.
 | `/e-uks/pantauan-kesehatan` | Per-student health monitoring: nutrition status, sick-absence history, UKS visit history, IMT and KMS charts | `euks.view` |
 | `/e-uks/pantauan-kesehatan-kelas` | Per-class health monitoring: nutrition distribution, sick/visit trends, top complaints, data completeness, student table | `euks.monitoring.read` |
 | `/e-uks/riwayat-kunjungan` | UKS visit log — the write surface and source of truth for every E-UKS statistic | `euks.view`, writes require `euks.edit` |
+| `/e-uks/panduan` | Panduan & Referensi: how the numbers are computed, how to read them, what to do next | `euks.content.read` |
 | `/e-uks/pengaturan` | UKS identity, officers, facilities, and the standard complaint list | ADMIN |
 
-`lib/nav.ts` renders E-UKS as one collapsible group between Kurikulum and BOS; `match: "exact"` on `/e-uks` keeps the home item from staying active on sub-routes, and `activeNavGroupId` opens the group on every E-UKS route. Pantauan Kesehatan Kelas sits directly *above* Pantauan Kesehatan Siswa, following the school → class → student hierarchy: the class view is the aggregation level an officer passes through before individual monitoring. Ordering is presentation only — both items keep `euks.monitoring.read`. Active state is safe despite `/e-uks/pantauan-kesehatan` being a string prefix of `/e-uks/pantauan-kesehatan-kelas`, because `matches()` in `lib/nav.ts` compares the full href or requires a `/` separator.
+`lib/nav.ts` renders E-UKS as one collapsible group between Kurikulum and BOS; `match: "exact"` on `/e-uks` keeps the home item from staying active on sub-routes, and `activeNavGroupId` opens the group on every E-UKS route. Pantauan Kesehatan Kelas sits directly *above* Pantauan Kesehatan Siswa, following the school → class → student hierarchy: the class view is the aggregation level an officer passes through before individual monitoring. Ordering is presentation only — both items keep `euks.monitoring.read`. Active state is safe despite `/e-uks/pantauan-kesehatan` being a string prefix of `/e-uks/pantauan-kesehatan-kelas`, because `matches()` in `lib/nav.ts` compares the full href or requires a `/` separator. Panduan & Referensi sits between the visit log and Pengaturan: it is read *after* the operational screens it explains, and before the configuration screen an officer rarely opens.
+
+## Panduan & Referensi
+
+`/e-uks/panduan` explains the module to its own users: where each number comes from, how to read it, what to do next, and what E-UKS deliberately does not claim. Access is `euks.content.read` — the existing right for E-UKS content that carries no student health data. No permission and no migration was added for it, because the page holds no personal data at all: an account that may read the UKS profile page may read the manual.
+
+The content is static and version-controlled in `lib/euks-guide.ts`. There is no CMS, no table, no article API and no runtime fetch; updating the guide is a code change and a commit, which is also what keeps it reviewable alongside the algorithms it describes.
+
+**The guide derives its figures from the implementation rather than repeating them.** The worked IMT example is computed by `calculateBmi()`, and every row of the nutrition table stores a representative z-score whose category comes from `categorizeZScore()` with the label from `nutritionCategoryLabels`. The KMS fallback sentence is selected from `KMS_FALLBACK_GENDER`. A changed cut-off therefore changes the printed table too; a guide that could silently contradict the calculation would be worse than no guide. `tests/euks-guide.test.ts` asserts that correspondence, plus the LMS formula against `lib/lms.ts`, and renders the hero, quick navigation and flow diagram with React so a dead anchor or a missing reference link fails the suite.
+
+The page is entirely a server component. Its only interactive parts are native `<details>` panels for the technical LMS section and plain in-page anchors, neither of which needs `"use client"`, so nothing but HTML is shipped. The flow diagram (`components/e-uks/euks-guide-flow.tsx`) is HTML, Tailwind and lucide icons — no diagram dependency was added — and collapses from a four-column grid with side arrows to a vertical list with down arrows on narrow screens.
+
+Callout colour is semantic, not decorative: blue informs, green marks recommended practice, amber warns, soft red marks a limitation, violet marks a calculation basis. Every tone is a transparent tint over the theme surface with `text-foreground`, so contrast holds in both themes without per-tone dark variants. `EUKS_GUIDE_LAST_UPDATED` is a constant edited by hand, never derived from the server clock: "last updated" must mean the content was checked, not that the page was opened.
+
+Medical scope is a content rule, not a styling one. The page states repeatedly that E-UKS screens, monitors and documents but does not diagnose, and it carries no prescriptions, dosages, or diagnoses.
 
 ## Authorization
 
