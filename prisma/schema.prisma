@@ -222,6 +222,22 @@ model EuksVisit {
   treatment String
   followUp String?
   recordedById String?
+  /// Hasil notifikasi WhatsApp ke wali kelas untuk kunjungan ini.
+  /// NULL berarti belum pernah dicoba — berbeda artinya dari FAILED, dan
+  /// perbedaan itu yang membuat tombol di layar berbunyi "Kirim" atau
+  /// "Kirim Ulang". Seluruh kolom nullable: kunjungan lama tidak pernah
+  /// dinotifikasi dan tidak boleh di-backfill dengan status palsu.
+  notifyStatus EuksNotifyStatus?
+  notifyAttemptedAt DateTime?
+  notifySentAt DateTime?
+  /// Snapshot penerima pada saat kirim. Nama dan nomor wali kelas dapat
+  /// berubah; riwayat harus tetap menjawab "pesan ini dikirim ke siapa".
+  notifyRecipientName String?
+  notifyRecipientPhone String?
+  /// Kalimat kegagalan yang aman ditampilkan; tidak pernah stack trace.
+  notifyError String?
+  /// Baris WhatsAppSendLog dari percobaan terakhir, bila ada.
+  notifySendLogId String?
   /// Data uji yang dibuat generator development. Selalu false untuk data
   /// nyata, sehingga penghapusan data uji dapat menyaring baris secara pasti.
   isSynthetic Boolean @default(false)
@@ -867,6 +883,19 @@ enum WhatsAppMessageType {
   ATTENDANCE_MISSING
   /// Rekap siswa tidak hadir hari itu (12.00).
   ATTENDANCE_ABSENT
+  /// Notifikasi kunjungan UKS ke wali kelas. Bawaan tetapi TIDAK terjadwal:
+  /// dipicu petugas UKS, dan penerimanya seorang wali kelas, bukan grup.
+  EUKS_VISIT_NOTIFICATION
+}
+
+/// Hasil percobaan notifikasi kunjungan UKS.
+///
+/// SKIPPED berarti keputusan sadar sistem (wali kelas belum ada, nomor kosong
+/// atau tidak valid) — bukan kegagalan transport, dan pemulihannya berbeda.
+enum EuksNotifyStatus {
+  SENT
+  FAILED
+  SKIPPED
 }
 
 /// Bagaimana sebuah pengiriman dipicu. Riwayat WAJIB bisa membedakan keduanya:

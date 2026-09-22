@@ -45,6 +45,13 @@ type VisitDialogProps = {
   students: EuksStudentOption[]
   /** Label keluhan baku dari Pengaturan; kosong berarti isian bebas saja. */
   complaintOptions?: string[]
+  /**
+   * Apakah pengguna ini boleh mengirim notifikasi ke wali kelas.
+   *
+   * Tombol primer disembunyikan bila tidak, sehingga "Simpan Saja" menjadi
+   * satu-satunya aksi simpan — bukan tombol yang terlihat lalu ditolak server.
+   */
+  canNotify?: boolean
   onSaved: () => void
 }
 
@@ -55,10 +62,14 @@ export function EuksVisitDialog({
   draft,
   students,
   complaintOptions = [],
+  canNotify = false,
   onSaved,
 }: VisitDialogProps) {
   const [form, setForm] = useState<VisitDraft>(draft)
-  const [saving, setSaving] = useState(false)
+  // Menyimpan aksi yang sedang berjalan, bukan sekadar boolean: spinner harus
+  // muncul di tombol yang benar-benar ditekan.
+  const [saving, setSaving] = useState<null | "SAVE" | "NOTIFY">(null)
+  const busy = saving !== null
   const editing = Boolean(form.id)
 
   // Re-seed the form whenever a different visit (or a fresh create) is opened.
@@ -68,13 +79,20 @@ export function EuksVisitDialog({
     setForm(draft)
   }
 
-  async function save() {
+  /**
+   * Simpan kunjungan; `notify` menentukan apakah wali kelas ikut dikabari.
+   *
+   * SATU PERMINTAAN, BUKAN DUA. Simpan-lalu-kirim sebagai dua panggilan akan
+   * menghasilkan keadaan di mana kunjungan tersimpan tetapi petugas melihat
+   * pesan kegagalan yang tidak menyebutkan bahwa datanya sudah aman.
+   */
+  async function save(notify: boolean) {
     if (!form.studentId) return toast.error("Siswa wajib dipilih")
     if (!form.occurredAt) return toast.error("Tanggal wajib diisi")
     if (form.complaint.trim().length < 2) return toast.error("Keluhan wajib diisi")
     if (form.treatment.trim().length < 2) return toast.error("Tindakan wajib diisi")
 
-    setSaving(true)
+    setSaving(notify ? "NOTIFY" : "SAVE")
     try {
       const response = await fetch(
         editing ? `/api/e-uks/visits/${form.id}` : "/api/e-uks/visits",
@@ -87,23 +105,39 @@ export function EuksVisitDialog({
             complaint: form.complaint.trim(),
             treatment: form.treatment.trim(),
             followUp: form.followUp.trim(),
+            // Hanya jalur buat-baru yang menerima flag ini; PATCH tidak pernah
+            // mengirim pesan sebagai efek samping penyuntingan.
+            ...(editing || !notify ? {} : { notify: true }),
           }),
         },
       )
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? "Kunjungan gagal disimpan")
+
       toast.success(editing ? "Kunjungan UKS diperbarui" : "Kunjungan UKS dicatat")
+
+      // Hasil notifikasi dilaporkan TERPISAH dari hasil simpan: kunjungan yang
+      // tersimpan tetap tersimpan walaupun pesannya gagal terkirim, dan petugas
+      // harus tahu persis bagian mana yang gagal.
+      if (notify && !editing) {
+        const notification = data.notification as
+          | { status: "SENT" | "FAILED" | "SKIPPED"; message: string }
+          | null
+        if (notification?.status === "SENT") toast.success(notification.message)
+        else if (notification) toast.error(notification.message)
+      }
+
       onOpenChange(false)
       onSaved()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Kunjungan gagal disimpan")
     } finally {
-      setSaving(false)
+      setSaving(null)
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (!saving) onOpenChange(value) }}>
+    <Dialog open={open} onOpenChange={(value) => { if (!busy) onOpenChange(value) }}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{editing ? "Edit Kunjungan UKS" : "Input Kunjungan UKS"}</DialogTitle>
@@ -178,7 +212,7 @@ export function EuksVisitDialog({
             <Input
               id="euks-follow-up"
               value={form.followUp}
-              placeholder="Opsional"
+              placeholder="Misal: Dirujuk ke Puskesmas"
               onChange={(event) =>
                 setForm((current) => ({ ...current, followUp: event.target.value }))
               }
@@ -186,12 +220,43 @@ export function EuksVisitDialog({
           </div>
         </div>
 
-        <DialogFooter>
-          <DialogClose render={<Button variant="outline" disabled={saving} />}>Batal</DialogClose>
-          <Button onClick={() => void save()} disabled={saving}>
-            {saving ? <Loader2 className="size-4 animate-spin" /> : null}
-            Simpan
+        {/* Urutan kiri→kanan: Batal (netral) · Simpan Saja (sekunder) ·
+            Simpan & Kirim Notifikasi (aksi utama). Aksi utama berada paling
+            kanan karena itulah yang diharapkan dilakukan petugas UKS setelah
+            mencatat kunjungan.
+
+            `flex-col` pada layar sempit membuat ketiga tombol menumpuk penuh
+            selebar dialog, bukan berdesakan lalu terpotong. Tidak ada kelas
+            global yang diubah: seluruh gaya berasal dari varian Button yang
+            sudah ada. */}
+        <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+          <DialogClose
+            render={<Button variant="outline" disabled={busy} className="w-full sm:w-auto" />}
+          >
+            Batal
+          </DialogClose>
+          <Button
+            variant="secondary"
+            className="w-full sm:w-auto"
+            onClick={() => void save(false)}
+            disabled={busy}
+          >
+            {saving === "SAVE" ? <Loader2 className="size-4 animate-spin" /> : null}
+            Simpan Saja
           </Button>
+          {/* Notifikasi hanya bermakna untuk kunjungan BARU. Pada mode edit,
+              mengirim pesan sebagai efek samping penyuntingan akan mengejutkan
+              wali kelas dengan pesan kedua atas kunjungan lama. */}
+          {canNotify && !editing ? (
+            <Button
+              className="w-full sm:w-auto"
+              onClick={() => void save(true)}
+              disabled={busy}
+            >
+              {saving === "NOTIFY" ? <Loader2 className="size-4 animate-spin" /> : null}
+              Simpan &amp; Kirim Notifikasi
+            </Button>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>

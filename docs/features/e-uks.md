@@ -16,7 +16,7 @@ E-UKS is the school health unit (Unit Kesehatan Sekolah) module inside SISMEPDA.
 
 ## Authorization
 
-E-UKS authorizes through RBAC against the current database on every request; `lib/euks-access.ts` is a thin wrapper over `requirePermission()`. Rights are granular per operation — `euks.content.read` for public-facing content, `euks.overview.read` for visit aggregates, `euks.visits.read/create/update/delete`, `euks.monitoring.read`, `euks.measurements.read/create/delete`, `euks.sick_absences.read/update`, `euks.complaint_options.read/create/update`, `euks.profile.update`, and `create/update/delete` for officers, facilities, hero images and hero logos. Holding one never widens another: a visit editor does not gain sick-absence editing, and reading complaint options does not permit configuring them.
+E-UKS authorizes through RBAC against the current database on every request; `lib/euks-access.ts` is a thin wrapper over `requirePermission()`. Rights are granular per operation — `euks.content.read` for public-facing content, `euks.overview.read` for visit aggregates, `euks.visits.read/create/update/delete`, `euks.visits.notify` (send the WhatsApp notification; separate from editing because the message leaves the system and cannot be recalled), `euks.monitoring.read`, `euks.measurements.read/create/delete`, `euks.sick_absences.read/update`, `euks.complaint_options.read/create/update`, `euks.profile.update`, and `create/update/delete` for officers, facilities, hero images and hero logos. Holding one never widens another: a visit editor does not gain sick-absence editing, and reading complaint options does not permit configuring them.
 
 E-UKS is school-wide for domain permission holders; homeroom assignment never restricts it. Health data is never public and `/e-uks` is not a public page. Permission also governs the payload, not just rendering: an account with only `euks.content.read` triggers no measurement, visit or sick-absence query at all, rather than receiving the data and having React hide it. `euks.sick_absences.update` may change only `note`/`followUp`, and only on attendance rows whose status is `SAKIT` as verified from the database — never status, date, class, or general attendance.
 
@@ -34,8 +34,33 @@ One row per student visit to the health unit, and the single source of truth for
 | `followUp` | Optional |
 | `recordedById` | The recording user, `SetNull` on delete so history survives account removal |
 | `isSynthetic` | `false` for every real entry; `true` only for development test data |
+| `notifyStatus` | `SENT` / `FAILED` / `SKIPPED`, or NULL for "never attempted" |
+| `notifyAttemptedAt`, `notifySentAt` | Last attempt, and last attempt that actually delivered |
+| `notifyRecipientName`, `notifyRecipientPhone` | Snapshot of who was messaged; teacher names and numbers change |
+| `notifyError` | A sentence safe to display; never a stack trace |
+| `notifySendLogId` | The `WhatsAppSendLog` row of the last attempt, when one exists |
 
 Indexed on `occurredAt` and on `(studentId, occurredAt)` to serve both the chronological log and per-student lookups.
+
+Every notification column is nullable and none of them were backfilled. Visits recorded before the feature existed genuinely were never notified, and `notifyStatus IS NULL` is a distinct state from `FAILED`: it is what makes the row's button read "Kirim" rather than "Kirim Ulang".
+
+## Homeroom notification
+
+A UKS officer can send the visit to the student's homeroom teacher over WhatsApp, either while saving it ("Simpan & Kirim Notifikasi") or later from the visit table ("Kirim" / "Kirim Ulang").
+
+**Recipient resolution is derived, never configured.** The chain is visit → student → the student's class → `SchoolClass.homeroomUser` → `User.phone`. This is the same homeroom relation attendance reporting uses; E-UKS stores no mapping and no phone number of its own, and the officer is never asked to pick a teacher. The number is read again on every attempt, so a number corrected in Data Master Guru takes effect on the next send without touching the visit.
+
+**Phone normalization is centralized** in `lib/phone-number.ts` (`normalizeIndonesianPhone`). `08…` → `62…`, `+62…` → `62…`, `62…` unchanged, separators stripped; `+62` is never merely prepended, because the leading national `0` must be *replaced*. Anything that cannot be established as an Indonesian mobile number is rejected with a reason (`EMPTY`, `INVALID_CHARACTER`, `UNKNOWN_PREFIX`, `TOO_SHORT`, `TOO_LONG`) rather than guessed. Personal JIDs use `@s.whatsapp.net`, not the group `@g.us`.
+
+**Blocked states are recorded as `SKIPPED`, not `FAILED`**, because their remedies differ: no active homeroom teacher (fix the class), missing or invalid number (fix Data Master Guru), WhatsApp disconnected (reconnect). The reasons and their sentences live in `lib/euks-notification.ts`.
+
+**Sending is not editing.** It has its own permission, `euks.visits.notify`, checked separately even inside `POST /api/e-uks/visits` when `notify: true` — holding `euks.visits.create` does not authorize messaging a teacher's personal number. `PATCH` never notifies: sending a second message as a side effect of an edit would surprise a homeroom teacher with an unexplained repeat.
+
+**Re-sending requires explicit confirmation**, and only after a message actually arrived (`requiresResendConfirmation`). Failed and skipped attempts put nothing on anyone's phone, so calling the next attempt a "resend" would mislead. The server deliberately does *not* refuse a second send — an officer whose first message sank in a chat, or whose teacher number was just fixed, must be able to try again.
+
+The message text is rendered from the `EUKS_VISIT_NOTIFICATION` card's template, read fresh on every send, so a template edited under Komunikasi & Data → WhatsApp Otomatis applies to the next notification immediately. The transport is the existing worker; E-UKS opens no WhatsApp connection of its own. See `docs/features/whatsapp-automation.md`.
+
+Every attempt is written to the shared audit trail as `EUKS_VISIT_NOTIFIED`, including the recipient and the number, whatever the outcome.
 
 Because complaints are free text, `countVisitTerms()` in `lib/euks.ts` groups them case- and whitespace-insensitively, so "Pusing", "pusing" and "Pusing " count as one term. Ties sort alphabetically to keep chart order stable.
 
@@ -820,6 +845,10 @@ age outside the reference range.
 `POST /api/e-uks/measurements` records one measurement (409 when that student already has one on that date); `DELETE /api/e-uks/measurements/[measurementId]` removes one. Both require `euks.edit` and write an `AuditLog` entry in the same transaction.
 
 `POST /api/e-uks/visits` creates a visit; `PATCH`/`DELETE /api/e-uks/visits/[visitId]` edit and remove one. All three require `euks.edit`, validate with zod, reject inactive students, and append an `AuditLog` entry (`EUKS_VISIT_CREATED`/`UPDATED`/`DELETED`) inside the same transaction as the change. Clients refresh via `router.refresh()` rather than optimistic updates.
+
+`POST` also accepts `notify: true` ("Simpan & Kirim Notifikasi"). The notification runs *after* the transaction commits and requires `euks.visits.notify` on top of `euks.visits.create`: a WhatsApp call to an external worker must never be able to roll back a valid visit, and the response carries `notification` separately so the client can report a saved visit and a failed message as the two distinct facts they are.
+
+`POST /api/e-uks/visits/[visitId]/notify` sends or re-sends the notification for an existing visit. It requires `euks.visits.notify` and returns `{ status, message, recipientName, recipientPhone }`. It is a separate endpoint rather than a flag on `PATCH` because sending is not editing — it has its own permission, its own irreversible effect, and may be performed by someone who may not change the visit's contents.
 
 `/api/e-uks/officers` and `/api/e-uks/facilities` each expose `POST` (create), `PATCH` (edit fields, toggle `active`, or `move` one position) and `DELETE` (remove the row), all ADMIN-only and each writing an `AuditLog` entry (`EUKS_OFFICER_*`/`EUKS_FACILITY_*`, including `_PHOTO_UPDATED`) in the same transaction. The photo sub-routes are described under Settings photos.
 

@@ -194,7 +194,13 @@ test("jam bawaan hanya benih migrasi: 08.00 dan 10.00 untuk kelas belum mengisi,
   // diatur admin, sehingga sekolah yang sudah berjalan tidak kehilangan jadwal.
   assert.deepEqual(scheduleFor("ATTENDANCE_MISSING").defaultSlots, ["08:00", "10:00"])
   assert.deepEqual(scheduleFor("ATTENDANCE_ABSENT").defaultSlots, ["12:00"])
-  assert.deepEqual(WHATSAPP_MESSAGE_TYPES, ["ATTENDANCE_MISSING", "ATTENDANCE_ABSENT"])
+  assert.deepEqual(WHATSAPP_MESSAGE_TYPES, [
+    "ATTENDANCE_MISSING",
+    "ATTENDANCE_ABSENT",
+    // Dipicu peristiwa, bukan jam: kartunya lahir tanpa slot sama sekali.
+    "EUKS_VISIT_NOTIFICATION",
+  ])
+  assert.deepEqual(scheduleFor("EUKS_VISIT_NOTIFICATION").defaultSlots, [])
 })
 
 test("label jadwal siap tampil tanpa menghitung ulang jam di UI", () => {
@@ -223,11 +229,15 @@ test("slot berbeda pada hari sama menghasilkan kunci berbeda", () => {
   assert.notEqual(eight, ten)
 })
 
-test("setiap jenis pesan punya label, deskripsi, dan minimal satu jam bawaan", () => {
+test("setiap jenis pesan punya label, deskripsi, dan jam bawaan sesuai sifatnya", () => {
   for (const definition of WHATSAPP_SCHEDULE) {
     assert.ok(definition.label.trim().length > 0)
     assert.ok(definition.description.trim().length > 0)
-    assert.ok(definition.defaultSlots.length > 0)
+    // Jenis terjadwal WAJIB punya jam — tanpa jam ia tidak akan pernah
+    // terkirim. Jenis yang dipicu peristiwa justru wajib TIDAK punya jam,
+    // karena satu jam saja membuat scheduler mengirimnya tanpa peristiwa.
+    if (definition.schedulable) assert.ok(definition.defaultSlots.length > 0, definition.type)
+    else assert.equal(definition.defaultSlots.length, 0, definition.type)
     for (const slot of definition.defaultSlots) {
       assert.match(slot, /^\d{2}:\d{2}$/, `slot tidak berformat HH:mm: ${slot}`)
     }

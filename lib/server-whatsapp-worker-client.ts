@@ -85,10 +85,22 @@ export async function workerGroups(): Promise<{ groups: WhatsAppGroup[] }> {
 export function workerSend(body: {
   messageId: string
   slot: string | null
-  /** Teks kartu manual, diteruskan apa adanya. */
+  /** Teks kartu manual atau pesan berbasis peristiwa, diteruskan apa adanya. */
   text?: string
+  /**
+   * Penerima perorangan (wali kelas). Bila ada, worker mengirim ke nomor ini
+   * dan tidak menyentuh grup tujuan kartu.
+   */
+  recipient?: { jid: string; name: string }
   initiatedById: string | null
-}): Promise<{ status: string; code?: string; message?: string; reason?: string; detail?: string }> {
+}): Promise<{
+  status: string
+  code?: string
+  message?: string
+  reason?: string
+  detail?: string
+  logId?: string | null
+}> {
   return call("/send", { method: "POST", body })
 }
 

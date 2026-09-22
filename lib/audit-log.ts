@@ -70,6 +70,9 @@ export type AuditAction =
   | "EUKS_VISIT_CREATED"
   | "EUKS_VISIT_UPDATED"
   | "EUKS_VISIT_DELETED"
+  /// Percobaan notifikasi WhatsApp kunjungan UKS ke wali kelas — dicatat apa
+  /// pun hasilnya, karena percobaan yang gagal sama pentingnya untuk ditelusuri.
+  | "EUKS_VISIT_NOTIFIED"
   | "EUKS_MEASUREMENT_CREATED"
   | "EUKS_MEASUREMENT_DELETED"
   | "EUKS_PROFILE_UPDATED"

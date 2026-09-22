@@ -10,13 +10,32 @@
  */
 
 /** Sinkron dengan enum Prisma `WhatsAppMessageType`, tanpa mengimpor klien. */
-export type WhatsAppMessageType = "ATTENDANCE_MISSING" | "ATTENDANCE_ABSENT"
+export type WhatsAppMessageType =
+  | "ATTENDANCE_MISSING"
+  | "ATTENDANCE_ABSENT"
+  /**
+   * Notifikasi kunjungan UKS ke wali kelas.
+   *
+   * BAWAAN TAPI TIDAK TERJADWAL. Ia dipicu peristiwa (petugas UKS menyimpan
+   * kunjungan), bukan jam, sehingga `defaultSlots` kosong dan
+   * `schedulable: false` — scheduler tidak boleh pernah melihatnya. Ia tetap
+   * menjadi kartu agar templatenya disunting di layar yang sama dengan pesan
+   * otomatis lain, bukan lewat mekanisme kedua yang harus dipelajari terpisah.
+   */
+  | "EUKS_VISIT_NOTIFICATION"
 
 export type WhatsAppScheduleDefinition = {
   type: WhatsAppMessageType
   /** Label bahasa Indonesia untuk UI. */
   label: string
   description: string
+  /**
+   * Apakah jenis ini dijalankan oleh jadwal.
+   *
+   * Jenis yang dipicu peristiwa bernilai `false`; kartu miliknya tidak pernah
+   * masuk daftar slot jatuh tempo maupun kartu jadwal di layar.
+   */
+  schedulable: boolean
   /**
    * Jam bawaan saat jenis ini pertama kali dibuat.
    *
@@ -33,6 +52,7 @@ export const WHATSAPP_SCHEDULE: readonly WhatsAppScheduleDefinition[] = [
   {
     type: "ATTENDANCE_MISSING",
     label: "Kelas belum mengisi absensi",
+    schedulable: true,
     description:
       "Daftar kelas yang sampai jam tersebut belum mengisi atau belum melengkapi absensi hari itu.",
     defaultSlots: ["08:00", "10:00"],
@@ -40,9 +60,18 @@ export const WHATSAPP_SCHEDULE: readonly WhatsAppScheduleDefinition[] = [
   {
     type: "ATTENDANCE_ABSENT",
     label: "Rekap siswa tidak hadir",
+    schedulable: true,
     description:
       "Rekap siswa berstatus Sakit, Izin, Alfa, atau Dispensasi pada hari itu.",
     defaultSlots: ["12:00"],
+  },
+  {
+    type: "EUKS_VISIT_NOTIFICATION",
+    label: "Notifikasi kunjungan UKS ke wali kelas",
+    description:
+      "Pesan pribadi ke wali kelas saat petugas UKS mencatat kunjungan siswanya. Dikirim atas permintaan petugas, bukan menurut jadwal.",
+    schedulable: false,
+    defaultSlots: [],
   },
 ] as const
 

@@ -51,6 +51,7 @@ import {
   type DefaultDestination,
   type DestinationMode,
   type ReportDestination,
+  type TargetState,
 } from "@/lib/whatsapp-target"
 import {
   WhatsAppSendError,
@@ -377,7 +378,13 @@ export async function composeMessage(
   date: SchoolDate,
   slot: string,
 ): Promise<string> {
-  if (message.kind !== "BUILTIN" || !message.builtinType) {
+  // Kartu bawaan yang dipicu peristiwa membawa teksnya sendiri (dirender
+  // pemanggil dari data peristiwa) dan tidak pernah sampai ke sini.
+  if (
+    message.kind !== "BUILTIN" ||
+    !message.builtinType ||
+    message.builtinType === "EUKS_VISIT_NOTIFICATION"
+  ) {
     // Kartu manual membawa teksnya sendiri dan tidak pernah sampai ke sini;
     // kartu buatan admin belum dapat dibuat lewat jalur mana pun pada tahap
     // ini. Gagal keras lebih baik daripada mengirim teks kosong ke grup.
@@ -421,6 +428,15 @@ export type SendRequest = {
   trigger: "SCHEDULED" | "MANUAL"
   initiatedById?: string | null
   date?: SchoolDate
+  /**
+   * Penerima perorangan, menggantikan grup tujuan kartu.
+   *
+   * Dipakai notifikasi kunjungan UKS: penerimanya adalah wali kelas siswa yang
+   * bersangkutan, jadi tujuannya ditentukan peristiwa, bukan konfigurasi kartu.
+   * Bila diisi, resolusi grup TIDAK dijalankan — menjatuhkannya kembali ke grup
+   * sekolah akan menyiarkan data kesehatan seorang siswa ke seluruh guru.
+   */
+  recipient?: { jid: string; name: string }
   /**
    * Teks persis untuk kartu "Pesan manual".
    *
@@ -472,10 +488,12 @@ export async function sendWhatsAppMessage(
     }
   }
 
-  const target = resolveDestination(
-    destinationOf(message),
-    defaultDestinationOf(await readWhatsAppSetting()),
-  )
+  const target: TargetState = request.recipient
+    ? { status: "RESOLVED", jid: request.recipient.jid, name: request.recipient.name }
+    : resolveDestination(
+        destinationOf(message),
+        defaultDestinationOf(await readWhatsAppSetting()),
+      )
   if (target.status === "NOT_RESOLVED") {
     return { status: "SKIPPED", reason: "NO_TARGET", detail: "Grup tujuan belum dipilih." }
   }
@@ -501,13 +519,20 @@ export async function sendWhatsAppMessage(
   // Kartu manual tidak punya template dan tidak boleh melewati renderer:
   // placeholder yang kebetulan ditulis admin (`{tanggal}`) adalah teks biasa
   // baginya, dan merendernya akan mengubah pesan yang ia setujui di layar.
+  //
+  // Aturan yang sama berlaku bagi pesan berbasis peristiwa (notifikasi
+  // kunjungan UKS): teksnya sudah dirender pemanggil dari template kartu
+  // beserta data kunjungan, dan merendernya kembali di sini hanya akan
+  // memindai ulang isi keluhan yang ditulis manusia.
   const messageText =
-    message.kind === "MANUAL"
-      ? (request.text ?? "")
-      : await composeMessage(message, date, slot ?? "")
+    request.text !== undefined
+      ? request.text
+      : message.kind === "MANUAL"
+        ? ""
+        : await composeMessage(message, date, slot ?? "")
 
-  if (message.kind === "MANUAL" && messageText.trim().length === 0) {
-    throw new Error("Teks pesan manual tidak boleh kosong.")
+  if (messageText.trim().length === 0) {
+    throw new Error("Teks pesan tidak boleh kosong.")
   }
 
   // GUARD AKTIVITAS ABSENSI DIJALANKAN SETELAH KLAIM-KLAIM MURAH, SEBELUM KIRIM.

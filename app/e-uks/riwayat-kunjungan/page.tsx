@@ -5,10 +5,11 @@ import { readEuksComplaintOptions, readEuksStudentOptions, readEuksVisits } from
 
 export default async function EuksRiwayatKunjunganPage() {
   await requirePagePermission("euks.visits.read")
-  const [canCreate, canUpdate, canDelete, canReadComplaints] = await Promise.all([
+  const [canCreate, canUpdate, canDelete, canNotify, canReadComplaints] = await Promise.all([
     pageCan("euks.visits.create"),
     pageCan("euks.visits.update"),
     pageCan("euks.visits.delete"),
+    pageCan("euks.visits.notify"),
     pageCan("euks.complaint_options.read"),
   ])
 
@@ -32,6 +33,7 @@ export default async function EuksRiwayatKunjunganPage() {
         canCreate={canCreate}
         canUpdate={canUpdate}
         canDelete={canDelete}
+        canNotify={canNotify}
       />
     </PageContainer>
   )

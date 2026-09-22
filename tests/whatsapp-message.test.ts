@@ -34,6 +34,12 @@ test("kartu manual tidak dapat dijadwalkan", () => {
   assert.equal(isSchedulable({ kind: "MANUAL" }), false)
   assert.equal(isSchedulable({ kind: "BUILTIN" }), true)
   assert.equal(isSchedulable({ kind: "CUSTOM" }), true)
+  // Kartu bawaan yang dipicu peristiwa juga tidak punya occurrence terjadwal.
+  assert.equal(
+    isSchedulable({ kind: "BUILTIN", builtinType: "EUKS_VISIT_NOTIFICATION" }),
+    false,
+  )
+  assert.equal(isSchedulable({ kind: "BUILTIN", builtinType: "ATTENDANCE_MISSING" }), true)
 })
 
 test("hanya kartu buatan admin yang boleh dihapus", () => {

@@ -2,6 +2,7 @@ import { Prisma } from "@/app/generated/prisma/client"
 import { databaseSchema } from "@/lib/database-config"
 import { prisma } from "@/lib/prisma"
 import type { EuksStudentOption, HealthMeasurement } from "@/lib/euks"
+import type { EuksNotifyStatus } from "@/lib/euks-notification"
 import type { ClassStudentInput } from "@/lib/euks-class-monitoring"
 import {
   bucketByClass,
@@ -29,6 +30,11 @@ export type EuksVisitRow = {
   treatment: string
   followUp: string | null
   recordedByName: string | null
+  /** Hasil notifikasi WhatsApp terakhir; NULL berarti belum pernah dicoba. */
+  notifyStatus: EuksNotifyStatus | null
+  notifySentAt: Date | null
+  notifyRecipientName: string | null
+  notifyError: string | null
 }
 
 /** Newest visits first; the table shows the whole log. */
@@ -41,6 +47,10 @@ export async function readEuksVisits(): Promise<EuksVisitRow[]> {
       complaint: true,
       treatment: true,
       followUp: true,
+      notifyStatus: true,
+      notifySentAt: true,
+      notifyRecipientName: true,
+      notifyError: true,
       student: { select: { name: true, schoolClass: { select: { name: true } } } },
       recordedBy: { select: { name: true } },
     },
@@ -57,6 +67,10 @@ export async function readEuksVisits(): Promise<EuksVisitRow[]> {
     treatment: visit.treatment,
     followUp: visit.followUp,
     recordedByName: visit.recordedBy?.name ?? null,
+    notifyStatus: visit.notifyStatus,
+    notifySentAt: visit.notifySentAt,
+    notifyRecipientName: visit.notifyRecipientName,
+    notifyError: visit.notifyError,
   }))
 }
 
@@ -306,6 +320,10 @@ export async function readStudentMonitoring(
         complaint: true,
         treatment: true,
         followUp: true,
+        notifyStatus: true,
+        notifySentAt: true,
+        notifyRecipientName: true,
+        notifyError: true,
         recordedBy: { select: { name: true } },
       },
       orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
@@ -369,6 +387,10 @@ export async function readStudentMonitoring(
       treatment: visit.treatment,
       followUp: visit.followUp,
       recordedByName: visit.recordedBy?.name ?? null,
+      notifyStatus: visit.notifyStatus,
+      notifySentAt: visit.notifySentAt,
+      notifyRecipientName: visit.notifyRecipientName,
+      notifyError: visit.notifyError,
     })),
   }
 }

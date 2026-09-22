@@ -14,7 +14,7 @@
  * apa adanya, sehingga yang ditampilkan di layar adalah aturan yang sama
  * dengan yang ditegakkan server.
  */
-import type { WhatsAppMessageType } from "@/lib/whatsapp-schedule"
+import { scheduleFor, type WhatsAppMessageType } from "@/lib/whatsapp-schedule"
 
 /** Sinkron dengan enum Prisma `WhatsAppMessageKind`, tanpa mengimpor klien. */
 export type WhatsAppMessageKind = "BUILTIN" | "CUSTOM" | "MANUAL"
@@ -23,6 +23,7 @@ export type WhatsAppMessageKind = "BUILTIN" | "CUSTOM" | "MANUAL"
 export const BUILTIN_MESSAGE_IDS: Readonly<Record<WhatsAppMessageType, string>> = {
   ATTENDANCE_MISSING: "wa-msg-attendance-missing",
   ATTENDANCE_ABSENT: "wa-msg-attendance-absent",
+  EUKS_VISIT_NOTIFICATION: "wa-msg-euks-visit-notification",
 }
 
 export const MANUAL_MESSAGE_ID = "wa-msg-manual"
@@ -54,8 +55,18 @@ export type WhatsAppMessageIdentity = {
  * melihatnya, karena satu-satunya cara kartu manual mengirim adalah admin
  * menekan tombol dengan teks yang ia tulis saat itu.
  */
-export function isSchedulable(message: Pick<WhatsAppMessageIdentity, "kind">): boolean {
-  return message.kind !== "MANUAL"
+export function isSchedulable(
+  message: Pick<WhatsAppMessageIdentity, "kind"> &
+    Partial<Pick<WhatsAppMessageIdentity, "builtinType">>,
+): boolean {
+  if (message.kind === "MANUAL") return false
+  // Kartu bawaan yang dipicu peristiwa (notifikasi kunjungan UKS) juga tidak
+  // punya occurrence terjadwal. Jawabannya diambil dari definisi jenis, bukan
+  // ditulis ulang sebagai daftar nama di sini.
+  if (message.kind === "BUILTIN" && message.builtinType) {
+    return scheduleFor(message.builtinType).schedulable
+  }
+  return true
 }
 
 /** Apakah kartu ini boleh dihapus admin? Hanya kartu buatan admin. */

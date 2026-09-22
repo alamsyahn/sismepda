@@ -41,6 +41,13 @@ export type WhatsAppTemplateKey =
    * membuat pembaca menyimpulkan keadaan yang belum tentu benar.
    */
   | "ABSENT_INCOMPLETE"
+  /**
+   * F — notifikasi satu kunjungan UKS kepada wali kelas.
+   *
+   * Hanya satu kondisi, karena peristiwanya memang satu: seorang siswa
+   * berkunjung. Tidak ada cabang "ada"/"nihil" seperti rekap harian.
+   */
+  | "EUKS_VISIT"
 
 export const TEMPLATE_KEYS: readonly WhatsAppTemplateKey[] = [
   "MISSING_PENDING",
@@ -48,6 +55,7 @@ export const TEMPLATE_KEYS: readonly WhatsAppTemplateKey[] = [
   "ABSENT_PRESENT",
   "ABSENT_NONE",
   "ABSENT_INCOMPLETE",
+  "EUKS_VISIT",
 ]
 
 /**
@@ -66,6 +74,7 @@ export const TEMPLATE_KEYS: readonly WhatsAppTemplateKey[] = [
 const TYPE_TEMPLATE_KEYS: Record<WhatsAppMessageType, readonly WhatsAppTemplateKey[]> = {
   ATTENDANCE_MISSING: ["MISSING_PENDING", "MISSING_COMPLETE"],
   ATTENDANCE_ABSENT: ["ABSENT_PRESENT", "ABSENT_NONE", "ABSENT_INCOMPLETE"],
+  EUKS_VISIT_NOTIFICATION: ["EUKS_VISIT"],
 }
 
 export function templateKeysForType(
@@ -80,6 +89,7 @@ export const TEMPLATE_LABELS: Record<WhatsAppTemplateKey, string> = {
   ABSENT_PRESENT: "Rekap Kehadiran — Ada yang Tidak Hadir",
   ABSENT_NONE: "Rekap Kehadiran — NIHIL",
   ABSENT_INCOMPLETE: "Rekap Kehadiran — Belum Lengkap",
+  EUKS_VISIT: "Kunjungan UKS — Notifikasi Wali Kelas",
 }
 
 export const TEMPLATE_DESCRIPTIONS: Record<WhatsAppTemplateKey, string> = {
@@ -93,6 +103,8 @@ export const TEMPLATE_DESCRIPTIONS: Record<WhatsAppTemplateKey, string> = {
     "Dikirim pada jam rekap kehadiran bila tidak ada satu pun siswa tercatat tidak hadir.",
   ABSENT_INCOMPLETE:
     "Dikirim pada jam rekap kehadiran bila pada saat itu masih ada kelas yang belum melengkapi absensi. Kondisi ini DIDAHULUKAN: selama masih ada kelas belum lengkap, angka ketidakhadiran belum final.",
+  EUKS_VISIT:
+    "Dikirim ke nomor WhatsApp wali kelas siswa yang bersangkutan ketika petugas UKS meminta notifikasi atas sebuah kunjungan. Tidak terjadwal dan tidak pernah terkirim sendiri.",
 }
 
 /**
@@ -205,6 +217,26 @@ const SCALAR_PLACEHOLDERS: Record<string, string> = {
 }
 
 /**
+ * Placeholder khusus notifikasi kunjungan UKS.
+ *
+ * Dipisahkan dari placeholder absensi karena datanya berasal dari satu baris
+ * kunjungan, bukan dari laporan harian: menggabungkannya akan menawarkan
+ * `{{jumlah_alfa}}` pada pesan yang tidak punya angka itu.
+ */
+const EUKS_VISIT_PLACEHOLDERS: Record<string, string> = {
+  tanggal: "Tanggal kunjungan, misalnya Senin, 16 September 2026",
+  nama_sekolah: "Nama sekolah dari Pengaturan Sekolah",
+  nama_siswa: "Nama siswa yang berkunjung",
+  nama_kelas: "Kelas siswa tersebut",
+  wali_kelas: "Nama wali kelas penerima pesan",
+  keluhan: "Keluhan yang dicatat petugas UKS",
+  tindakan: "Tindakan yang diberikan",
+  tindak_lanjut:
+    "Tindak lanjut bila diisi; berisi tanda hubung bila petugas mengosongkannya",
+  petugas: "Nama petugas yang mencatat kunjungan; tanda hubung bila tidak diketahui",
+}
+
+/**
  * Placeholder `bagian_*` — gabungan judul, jumlah, dan daftar satu status.
  *
  * MENGAPA ADA
@@ -243,6 +275,14 @@ const TEMPLATE_COLLECTIONS: Record<WhatsAppTemplateKey, WhatsAppCollectionKey[]>
   // siswa: yang perlu ditindak saat itu adalah kelasnya. Angka per status tetap
   // tersedia sebagai skalar, karena memang masih bisa berubah.
   ABSENT_INCOMPLETE: ["daftar_kelas_belum_rekap"],
+  // Notifikasi kunjungan berbicara tentang SATU siswa; tidak ada daftar apa pun
+  // yang masuk akal di dalamnya.
+  EUKS_VISIT: [],
+}
+
+/** Apakah kondisi ini milik notifikasi kunjungan UKS? */
+function isEuksVisit(key: WhatsAppTemplateKey): boolean {
+  return key === "EUKS_VISIT"
 }
 
 /** Bagian status yang berlaku pada satu kondisi. */
@@ -261,6 +301,10 @@ export function collectionsFor(key: WhatsAppTemplateKey): readonly WhatsAppColle
 
 /** Semua nama placeholder yang sah untuk satu template. */
 export function allowedPlaceholders(key: WhatsAppTemplateKey): Set<string> {
+  // Notifikasi kunjungan memakai registry-nya sendiri: variabel absensi tidak
+  // punya nilai pada peristiwa ini, dan menawarkannya hanya akan menghasilkan
+  // pesan berisi angka nol yang menyesatkan wali kelas.
+  if (isEuksVisit(key)) return new Set<string>(Object.keys(EUKS_VISIT_PLACEHOLDERS))
   return new Set<string>([
     ...Object.keys(SCALAR_PLACEHOLDERS),
     ...TEMPLATE_COLLECTIONS[key],
@@ -277,6 +321,22 @@ export function allowedPlaceholders(key: WhatsAppTemplateKey): Set<string> {
  */
 export function placeholderGroups(key: WhatsAppTemplateKey): PlaceholderGroup[] {
   const entry = (name: string, description: string) => ({ name, description })
+
+  if (isEuksVisit(key)) {
+    const euks = (name: string) => entry(name, EUKS_VISIT_PLACEHOLDERS[name])
+    return [
+      { label: "Umum", entries: [euks("tanggal"), euks("nama_sekolah")] },
+      {
+        label: "Siswa",
+        entries: [euks("nama_siswa"), euks("nama_kelas"), euks("wali_kelas")],
+      },
+      {
+        label: "Kunjungan",
+        entries: [euks("keluhan"), euks("tindakan"), euks("tindak_lanjut"), euks("petugas")],
+      },
+    ]
+  }
+
   const groups: PlaceholderGroup[] = [
     {
       label: "Umum",

@@ -3,6 +3,7 @@ import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
 import { euksErrorResponse, requireEuksPermission } from "@/lib/euks-access"
+import { notifyEuksVisit } from "@/lib/server-euks-notification"
 import { parseSchoolDate, toPrismaDate } from "@/lib/school-date"
 
 const payload = z.object({
@@ -16,6 +17,15 @@ const payload = z.object({
     .max(500)
     .optional()
     .transform((value) => value || null),
+  /**
+   * "Simpan & Kirim Notifikasi".
+   *
+   * Sengaja bagian dari permintaan SIMPAN, bukan panggilan kedua dari layar:
+   * kunjungan yang tersimpan lalu gagal dinotifikasi harus tetap tersimpan,
+   * dan petugas harus melihat satu hasil, bukan dua yang bisa bertentangan.
+   * Permission-nya tetap diperiksa terpisah di bawah.
+   */
+  notify: z.boolean().optional().default(false),
 })
 
 /** Record one UKS visit. Requires euks.edit. */
@@ -69,7 +79,21 @@ export async function POST(request: Request) {
       return visit
     })
 
-    return NextResponse.json(created, { status: 201 })
+    // NOTIFIKASI DI LUAR TRANSAKSI, SETELAH KUNJUNGAN TERSIMPAN.
+    //
+    // Pengiriman WhatsApp memanggil layanan luar yang bisa lambat atau gagal;
+    // menahannya di dalam transaksi berarti kunjungan yang sah ikut dibatalkan
+    // hanya karena worker sedang tidak terhubung.
+    let notification: Awaited<ReturnType<typeof notifyEuksVisit>> | null = null
+    if (body.notify) {
+      // Permission notifikasi diperiksa TERSENDIRI: hak mencatat kunjungan
+      // tidak dengan sendirinya memberi hak mengirim data kesehatan siswa ke
+      // nomor pribadi seorang guru.
+      await requireEuksPermission("euks.visits.notify")
+      notification = await notifyEuksVisit({ visitId: created.id, actorId: viewer.id })
+    }
+
+    return NextResponse.json({ ...created, notification }, { status: 201 })
   } catch (error) {
     const { error: message, status } = euksErrorResponse(error)
     return NextResponse.json({ error: message }, { status })

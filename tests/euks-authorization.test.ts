@@ -33,6 +33,41 @@ test("landing content is isolated from optional overview health queries", () => 
   assert.match(source, /const range = canOverview \? await readEuksVisitDateRange\(\) : null/)
 })
 
+test("notifikasi kunjungan menuntut permission-nya sendiri, bukan hak menyunting", () => {
+  const route = read("app/api/e-uks/visits/[visitId]/notify/route.ts")
+  assert.match(route, /requireEuksPermission\("euks\.visits\.notify"\)/)
+  // Guard berjalan SEBELUM service dipanggil; permintaan langsung ke API tanpa
+  // hak notifikasi tidak boleh pernah menyentuh jalur pengiriman.
+  const guard = route.indexOf("euks.visits.notify")
+  const send = route.indexOf("notifyEuksVisit(")
+  assert.ok(guard >= 0 && send > guard)
+})
+
+test("Simpan & Kirim memeriksa hak notifikasi terpisah dari hak mencatat", () => {
+  const route = read("app/api/e-uks/visits/route.ts")
+  assert.match(route, /requireEuksPermission\("euks\.visits\.create"\)/)
+  assert.match(route, /requireEuksPermission\("euks\.visits\.notify"\)/)
+  // Pemeriksaan kedua berada di dalam cabang `body.notify`, sehingga pencatatan
+  // biasa tidak ikut menuntut hak mengirim.
+  const branch = route.indexOf("if (body.notify)")
+  assert.ok(branch >= 0)
+  assert.ok(route.indexOf('requireEuksPermission("euks.visits.notify")') > branch)
+})
+
+test("PATCH kunjungan tidak pernah mengirim pesan sebagai efek samping", () => {
+  const route = read("app/api/e-uks/visits/[visitId]/route.ts")
+  assert.doesNotMatch(route, /notifyEuksVisit|euks\.visits\.notify/)
+})
+
+test("service notifikasi memakai relasi wali kelas resmi, bukan mapping sendiri", () => {
+  const source = read("lib/server-euks-notification.ts")
+  assert.match(source, /homeroomUser/)
+  // Nomor dibaca dari User.phone lewat relasi kelas; tidak ada tabel atau kolom
+  // nomor khusus E-UKS.
+  assert.doesNotMatch(source, /euksHomeroom|homeroomPhone:|EuksRecipient/)
+  assert.match(source, /normalizeIndonesianPhone/)
+})
+
 test("measurement delete requires its exact permission", () => {
   assert.match(read("app/api/e-uks/measurements/[measurementId]/route.ts"), /euks\.measurements\.delete/)
 })

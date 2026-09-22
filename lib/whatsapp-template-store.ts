@@ -101,6 +101,7 @@ export function effectiveTemplateSet(stored: StoredTemplates): WhatsAppTemplateS
     ABSENT_PRESENT: effectiveTemplate("ABSENT_PRESENT", stored),
     ABSENT_NONE: effectiveTemplate("ABSENT_NONE", stored),
     ABSENT_INCOMPLETE: effectiveTemplate("ABSENT_INCOMPLETE", stored),
+    EUKS_VISIT: effectiveTemplate("EUKS_VISIT", stored),
   }
 }
 

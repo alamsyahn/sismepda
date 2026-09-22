@@ -19,7 +19,7 @@ Everything the page sends is a row in `WhatsAppMessage`, ordered by
 
 | `kind` | `builtinType` | Schedulable | Text |
 |---|---|---|---|
-| `BUILTIN` | set | yes | templates + placeholders |
+| `BUILTIN` | set | yes, unless the type is event-driven | templates + placeholders |
 | `CUSTOM` | null | yes | templates + placeholders |
 | `MANUAL` | null | **no** | free text supplied per send |
 
@@ -31,7 +31,26 @@ render the same report to different groups and a custom card has no type at all.
 
 The rules that decide *whether a card may be scheduled* and *what its
 idempotency key is* live in `lib/whatsapp-message.ts`, which touches no
-database and is therefore testable directly.
+database and is therefore testable directly. `isSchedulable()` answers the
+first question from the type definition (`WhatsAppScheduleDefinition.schedulable`),
+not from a list of names repeated per call site.
+
+### Event-driven built-in cards
+
+`EUKS_VISIT_NOTIFICATION` is a built-in card that is **never scheduled**. It is
+triggered by an event — a UKS officer recording a student visit — and its
+recipient is one homeroom teacher's personal number, not the school group. It
+therefore has no default slots, never appears among due slots, and the
+scheduler never sees it. It is still a card so that its text is edited on the
+same screen as every other automatic message rather than through a second
+mechanism. See `docs/features/e-uks.md` for the feature itself.
+
+`SendRequest.recipient` carries that personal destination. When it is set, group
+resolution is skipped entirely: falling back to the school group would broadcast
+one student's health data to every teacher. `SendRequest.text` is likewise
+passed through untouched — the caller has already rendered it from the card's
+template plus the event data, and re-rendering would rescan human-written
+complaint text as if it were a template.
 
 Order is persisted, not derived from a frontend array. `moveMessage()` shifts a
 card one position and rewrites the whole canonical order in a single
@@ -111,9 +130,11 @@ the exception: it has no templates at all. Templates are
 data, not code: there is no expression language, no conditionals and no
 evaluation — only placeholder substitution against an explicit registry.
 
-### Five conditions, chosen by the system
+### Six conditions, chosen by the system
 
-The admin never writes a condition. `templateKeyFor()` picks one of five:
+The admin never writes a condition. `templateKeyFor()` picks one of five for
+attendance; the sixth belongs to the event-driven E-UKS card and has no
+alternative to choose between:
 
 | Key | Chosen when |
 |---|---|
@@ -122,6 +143,14 @@ The admin never writes a condition. `templateKeyFor()` picks one of five:
 | `ABSENT_INCOMPLETE` | Attendance report, and at least one class is still incomplete |
 | `ABSENT_PRESENT` | Attendance report, every class complete, at least one student absent |
 | `ABSENT_NONE` | Attendance report, every class complete, nobody absent (NIHIL) |
+| `EUKS_VISIT` | A UKS officer asks for a visit notification (one condition; one event) |
+
+`EUKS_VISIT` has its own placeholder registry (`nama_siswa`, `nama_kelas`,
+`wali_kelas`, `keluhan`, `tindakan`, `tindak_lanjut`, `petugas`, `tanggal`,
+`nama_sekolah`) and no collections at all. Attendance placeholders are
+deliberately *not* offered on it: `{{jumlah_alfa}}` has no value during a single
+visit, and a placeholder that is always zero misleads the reader more than a
+missing one would.
 
 The attendance order is a business rule, not the order of the tabs on screen.
 Completeness is tested first: while a class is still missing, the absence counts

@@ -133,6 +133,35 @@ export const DEFAULT_TEMPLATES: WhatsAppTemplateSet = {
       daftar_kelas_belum_rekap: { format: "• {{nama_kelas}}", separator: NEWLINE },
     },
   },
+  /**
+   * Kondisi F — notifikasi kunjungan UKS ke wali kelas.
+   *
+   * Nadanya sengaja INFORMATIF, bukan instruksi: UKS memberi tahu wali kelas
+   * apa yang terjadi pada siswanya, dan wali kelas yang menentukan tindak
+   * lanjutnya. `{{tindak_lanjut}}` sudah berisi tanda hubung bila kosong,
+   * sehingga barisnya tidak pernah menggantung tanpa isi.
+   */
+  EUKS_VISIT: {
+    body: [
+      "*NOTIFIKASI KUNJUNGAN UKS*",
+      "{{tanggal}}",
+      "",
+      "Yth. Bapak/Ibu {{wali_kelas}},",
+      "",
+      "Siswa berikut memeriksakan diri ke UKS hari ini:",
+      "",
+      "Nama: {{nama_siswa}}",
+      "Kelas: {{nama_kelas}}",
+      "Keluhan: {{keluhan}}",
+      "Tindakan: {{tindakan}}",
+      "Tindak lanjut: {{tindak_lanjut}}",
+      "",
+      "Dicatat oleh: {{petugas}}",
+      "",
+      "{{nama_sekolah}}",
+    ].join("\n"),
+    items: {},
+  },
   ABSENT_NONE: {
     body: [
       "*REKAP SISWA TIDAK HADIR*",
@@ -160,5 +189,6 @@ export function defaultTemplateSet(): WhatsAppTemplateSet {
     ABSENT_PRESENT: defaultTemplate("ABSENT_PRESENT"),
     ABSENT_NONE: defaultTemplate("ABSENT_NONE"),
     ABSENT_INCOMPLETE: defaultTemplate("ABSENT_INCOMPLETE"),
+    EUKS_VISIT: defaultTemplate("EUKS_VISIT"),
   }
 }

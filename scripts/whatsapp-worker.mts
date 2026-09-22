@@ -197,10 +197,23 @@ const server = createServer((request, response) => {
           }
           // Slot boleh kosong: kiriman manual tidak terikat jam. Teks hanya
           // dipakai kartu manual, dan diteruskan tanpa diubah sedikit pun.
+          // Penerima perorangan hanya diterima dalam bentuk lengkap (jid dan
+          // nama). Menerima separuhnya berarti menulis riwayat yang tidak dapat
+          // menjawab ke siapa pesan dikirim.
+          const recipient = body.recipient
+          const personal =
+            typeof recipient === "object" &&
+            recipient !== null &&
+            typeof (recipient as { jid?: unknown }).jid === "string" &&
+            typeof (recipient as { name?: unknown }).name === "string"
+              ? (recipient as { jid: string; name: string })
+              : undefined
+
           const outcome = await sendWhatsAppMessage(transport, {
             messageId,
             slot: typeof body.slot === "string" ? body.slot : null,
             text: typeof body.text === "string" ? body.text : undefined,
+            recipient: personal,
             trigger: "MANUAL",
             initiatedById: typeof body.initiatedById === "string" ? body.initiatedById : null,
           })

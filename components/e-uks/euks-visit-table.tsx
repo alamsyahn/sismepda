@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { HeartPulse, Pencil, Plus, Trash2 } from "lucide-react"
+import { HeartPulse, Pencil, Plus, Send, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -13,6 +13,12 @@ import { tableRowNumber } from "@/lib/table-row-number"
 import { formatSchoolDate, fromPrismaDate } from "@/lib/school-date"
 import type { EuksStudentOption } from "@/lib/euks"
 import type { EuksVisitRow } from "@/lib/server-euks"
+import {
+  notifyActionLabel,
+  notifyStatusLabel,
+  requiresResendConfirmation,
+  resendConfirmationMessage,
+} from "@/lib/euks-notification"
 
 type Props = {
   visits: EuksVisitRow[]
@@ -21,6 +27,8 @@ type Props = {
   canCreate: boolean
   canUpdate: boolean
   canDelete: boolean
+  /** Hak mengirim notifikasi WhatsApp ke wali kelas (`euks.visits.notify`). */
+  canNotify?: boolean
 }
 
 /** School dates are stored as @db.Date, so they format in UTC like every other date column. */
@@ -46,12 +54,14 @@ export function EuksVisitTable({
   canCreate,
   canUpdate,
   canDelete,
+  canNotify = false,
 }: Props) {
   const { today } = useSchoolTimeZone()
   const router = useRouter()
   const [formOpen, setFormOpen] = useState(false)
   const [draft, setDraft] = useState<VisitDraft>(() => emptyVisitDraft(today()))
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [notifyingId, setNotifyingId] = useState<string | null>(null)
 
   const hasVisits = visits.length > 0
 
@@ -64,6 +74,40 @@ export function EuksVisitTable({
     if (!canUpdate) return
     setDraft(toDraft(visit))
     setFormOpen(true)
+  }
+
+  /**
+   * Kirim atau kirim ulang notifikasi ke wali kelas.
+   *
+   * KONFIRMASI HANYA UNTUK KIRIM ULANG, dan aturannya tidak ditulis di sini:
+   * `requiresResendConfirmation` adalah satu-satunya tempat keputusan itu
+   * hidup, sehingga tombol dan konfirmasi tidak pernah berbeda pendapat.
+   */
+  async function notify(visit: EuksVisitRow) {
+    if (!canNotify || notifyingId) return
+    if (requiresResendConfirmation(visit.notifyStatus)) {
+      const confirmed = window.confirm(
+        resendConfirmationMessage({
+          studentName: visit.studentName,
+          recipientName: visit.notifyRecipientName,
+        }),
+      )
+      if (!confirmed) return
+    }
+
+    setNotifyingId(visit.id)
+    try {
+      const response = await fetch(`/api/e-uks/visits/${visit.id}/notify`, { method: "POST" })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error ?? "Notifikasi gagal dikirim")
+      if (data.status === "SENT") toast.success(data.message)
+      else toast.error(data.message)
+      router.refresh()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Notifikasi gagal dikirim")
+    } finally {
+      setNotifyingId(null)
+    }
   }
 
   async function remove(visit: EuksVisitRow) {
@@ -111,13 +155,24 @@ export function EuksVisitTable({
                   <TableHead className="min-w-40">Keluhan</TableHead>
                   <TableHead className="min-w-48">Tindakan yang Diberikan</TableHead>
                   <TableHead className="min-w-40">Tindak Lanjut</TableHead>
-                  {canDelete ? <TableHead className="w-20 text-right">Aksi</TableHead> : null}
+                  {canNotify ? (
+                    <TableHead className="min-w-36">Notifikasi</TableHead>
+                  ) : null}
+                  {canNotify || canDelete ? (
+                    <TableHead className="w-32 text-right">Aksi</TableHead>
+                  ) : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {!hasVisits ? (
                   <TableRow>
-                    <TableCell colSpan={canDelete ? 8 : 7} className="h-40">
+                    {/* Jumlah kolom dihitung dari kolom yang benar-benar
+                        dirender; angka tetap akan meleset begitu satu kolom
+                        bersyarat ditambahkan. */}
+                    <TableCell
+                      colSpan={7 + (canNotify ? 1 : 0) + (canNotify || canDelete ? 1 : 0)}
+                      className="h-40"
+                    >
                       <div className="flex flex-col items-center justify-center gap-2 text-center">
                         <span className="flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
                           <HeartPulse className="size-5" />
@@ -183,20 +238,67 @@ export function EuksVisitTable({
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      {canDelete ? (
+                      {canNotify ? (
+                        <TableCell className="max-w-44">
+                          <span className="flex flex-col gap-0.5">
+                            <span
+                              className={
+                                visit.notifyStatus === "SENT"
+                                  ? "text-foreground"
+                                  : "text-muted-foreground"
+                              }
+                            >
+                              {notifyStatusLabel(visit.notifyStatus)}
+                            </span>
+                            {/* Penerima dan alasan gagal ikut tampil: tanpa
+                                keduanya petugas hanya tahu "gagal" dan tidak
+                                tahu apa yang harus diperbaiki. */}
+                            {visit.notifyStatus === "SENT" && visit.notifyRecipientName ? (
+                              <span className="line-clamp-1 text-xs text-muted-foreground">
+                                {visit.notifyRecipientName}
+                              </span>
+                            ) : null}
+                            {visit.notifyStatus !== "SENT" && visit.notifyError ? (
+                              <span className="line-clamp-2 text-xs text-muted-foreground">
+                                {visit.notifyError}
+                              </span>
+                            ) : null}
+                          </span>
+                        </TableCell>
+                      ) : null}
+                      {canNotify || canDelete ? (
                         <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            aria-label={`Hapus kunjungan ${visit.studentName}`}
-                            disabled={deletingId === visit.id}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              void remove(visit)
-                            }}
-                          >
-                            <Trash2 className="size-4 text-destructive" />
-                          </Button>
+                          <span className="flex items-center justify-end gap-1">
+                            {canNotify ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={notifyingId === visit.id}
+                                aria-label={`${notifyActionLabel(visit.notifyStatus)} notifikasi kunjungan ${visit.studentName}`}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void notify(visit)
+                                }}
+                              >
+                                <Send className="size-4" />
+                                {notifyActionLabel(visit.notifyStatus)}
+                              </Button>
+                            ) : null}
+                            {canDelete ? (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                aria-label={`Hapus kunjungan ${visit.studentName}`}
+                                disabled={deletingId === visit.id}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void remove(visit)
+                                }}
+                              >
+                                <Trash2 className="size-4 text-destructive" />
+                              </Button>
+                            ) : null}
+                          </span>
                         </TableCell>
                       ) : null}
                     </TableRow>
@@ -215,6 +317,7 @@ export function EuksVisitTable({
           draft={draft}
           students={students}
           complaintOptions={complaintOptions}
+          canNotify={canNotify}
           onSaved={() => router.refresh()}
         />
       ) : null}

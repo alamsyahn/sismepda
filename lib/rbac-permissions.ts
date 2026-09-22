@@ -505,6 +505,18 @@ export const PERMISSIONS: readonly PermissionDefinition[] = [
   def({ key: "euks.visits.create", resource: "euks.visits", action: "create", module: "euks", label: "Catat kunjungan UKS", dependsOn: ["euks.visits.read", "euks.complaint_options.read"] }),
   def({ key: "euks.visits.update", resource: "euks.visits", action: "update", module: "euks", label: "Ubah kunjungan UKS", dependsOn: ["euks.visits.read", "euks.complaint_options.read"] }),
   def({ key: "euks.visits.delete", resource: "euks.visits", action: "delete", module: "euks", label: "Hapus kunjungan UKS", dependsOn: ["euks.visits.read"] }),
+  def({
+    key: "euks.visits.notify",
+    resource: "euks.visits",
+    action: "notify",
+    module: "euks",
+    label: "Kirim notifikasi kunjungan UKS ke wali kelas",
+    description:
+      "Mengirim pesan WhatsApp berisi keluhan dan tindakan seorang siswa ke nomor pribadi wali kelasnya. Pesan benar-benar terkirim dan tidak dapat ditarik kembali.",
+    dependsOn: ["euks.visits.read"],
+    // Sensitif: memuat data kesehatan seorang siswa dan keluar dari sistem.
+    sensitive: true,
+  }),
   def({ key: "euks.monitoring.read", resource: "euks.monitoring", action: "read", module: "euks", label: "Buka pantauan kesehatan" }),
   def({ key: "euks.measurements.read", resource: "euks.measurements", action: "read", module: "euks", label: "Lihat pengukuran kesehatan", dependsOn: ["euks.monitoring.read"] }),
   def({ key: "euks.measurements.create", resource: "euks.measurements", action: "create", module: "euks", label: "Catat pengukuran kesehatan", dependsOn: ["euks.monitoring.read", "euks.measurements.read"] }),
