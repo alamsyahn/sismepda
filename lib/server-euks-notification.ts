@@ -120,8 +120,11 @@ async function recordAttempt(
   })
 }
 
-function blocked(reason: NotifyBlockReason): { status: "SKIPPED"; message: string } {
-  return { status: "SKIPPED", message: notifyBlockMessage(reason) }
+function blocked(
+  reason: NotifyBlockReason,
+  className: string,
+): { status: "SKIPPED"; message: string } {
+  return { status: "SKIPPED", message: notifyBlockMessage(reason, className) }
 }
 
 /**
@@ -148,7 +151,7 @@ export async function notifyEuksVisit(input: {
   // tidak ada penerima yang sah; memilih guru lain sebagai pengganti akan
   // mengirim data kesehatan siswa kepada orang yang tidak berkepentingan.
   if (!homeroom || !homeroom.active) {
-    const result = blocked("NO_HOMEROOM")
+    const result = blocked("NO_HOMEROOM", schoolClass.name)
     await recordAttempt(visit.id, {
       status: "SKIPPED",
       error: result.message,
@@ -161,7 +164,10 @@ export async function notifyEuksVisit(input: {
   // NOMOR DIBACA ULANG DI SINI, BUKAN DARI SNAPSHOT.
   const phone = normalizeIndonesianPhone(homeroom.phone)
   if (!phone.valid) {
-    const result = blocked(phone.reason === "EMPTY" ? "NO_PHONE" : "INVALID_PHONE")
+    const result = blocked(
+      phone.reason === "EMPTY" ? "NO_PHONE" : "INVALID_PHONE",
+      schoolClass.name,
+    )
     await recordAttempt(visit.id, {
       status: "SKIPPED",
       error: result.message,

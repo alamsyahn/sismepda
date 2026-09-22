@@ -72,8 +72,23 @@ test("penjagaan hari aktif dijelaskan kepada admin", () => {
 test("kartu manual tidak menampilkan jadwal maupun toggle otomatis", () => {
   // Pesan manual tidak pernah dikirim penjadwal; menampilkan jadwal untuknya
   // menjanjikan perilaku yang tidak ada.
-  assert.match(source, /\{canManageConnection && !isManual \? \(/)
-  assert.match(source, /\{isManual \? null : canManageConnection \? \(/)
+  assert.match(source, /\{canManageConnection && !isManual && !isEventTriggered \? \(/)
+  assert.match(source, /\{isManual \|\| isEventTriggered \? null : canManageConnection \? \(/)
+})
+
+test("kartu bawaan berbasis peristiwa tidak menampilkan grup, jadwal, maupun kirim manual", () => {
+  // Notifikasi kunjungan UKS dipicu tindakan petugas atas satu siswa dan pergi
+  // ke nomor pribadi wali kelas. Grup tujuan, jam jadwal, toggle otomatis,
+  // penjaga hari aktif, dan "Kirim sekarang" semuanya mengandaikan satu tujuan
+  // tetap pada jam tertentu — pengaturan yang tidak pernah dibaca jalur
+  // pengirimannya, sehingga menampilkannya menjanjikan kendali yang tidak ada.
+  assert.match(source, /const isEventTriggered = message\.kind === "BUILTIN" && !isSchedulable\(message\)/)
+  // Pemilih grup diganti keterangan penerima, bukan sekadar disembunyikan.
+  assert.match(source, /\{isEventTriggered \? \(/)
+  assert.match(source, /Dikirim pribadi ke nomor WhatsApp wali kelas/)
+  // Tombol kirim generik dan penjaga hari aktif ikut ditiadakan.
+  assert.match(source, /\{canSend && !isManual && !isEventTriggered \? \(/)
+  assert.match(source, /\{isManual \|\| isEventTriggered \|\| !canManageConnection \? null : \(/)
 })
 
 test("pesan manual dikirim persis seperti yang diketik, tanpa awalan", () => {

@@ -45,6 +45,20 @@ scheduler never sees it. It is still a card so that its text is edited on the
 same screen as every other automatic message rather than through a second
 mechanism. See `docs/features/e-uks.md` for the feature itself.
 
+Because such a card has no schedule, no fixed destination and no automatic
+trigger, the panel hides every control that would imply otherwise: the group
+selector (replaced by a line naming the private recipient), the *Otomatis*
+toggle, the *Hari aktif* guard, the slot editor with *Tambah waktu*, and the
+generic *Kirim sekarang* button. The rule is `kind === "BUILTIN"` and not
+`isSchedulable()`, so a future event-driven card inherits it without new code.
+
+`WhatsAppSendLog.type` must stay NULL for these cards. That legacy column still
+carries a foreign key to `WhatsAppConfiguration.type` — the *schedule* table,
+which only ever holds scheduled types. Writing an event-driven type there makes
+PostgreSQL reject the history row, and the rejection surfaces to the officer as
+though the WhatsApp service were down even though the message was delivered.
+`legacyLogTypeFor()` is the single place that decides this.
+
 `SendRequest.recipient` carries that personal destination. When it is set, group
 resolution is skipped entirely: falling back to the school group would broadcast
 one student's health data to every teacher. `SendRequest.text` is likewise
@@ -270,6 +284,15 @@ as production. The sample deliberately contains several SAKIT, one IZIN, one
 DISPENSASI, zero ALFA and some unsubmitted classes, so the zero-count heading and
 the completeness note are both visible before saving. It is not an endpoint and
 has no path to the transport, so it cannot send anything.
+
+Student names and lists stay fictional — that is what makes the *shape* of the
+message visible. The **school name is not sample data**: the configuration
+endpoint returns `schoolName` from the school settings and `sampleContextFor()`
+substitutes it, so the one line an admin can verify at a glance reads the same
+in the preview as in the delivered message. A blank setting (fresh database)
+falls back to `SAMPLE_SCHOOL_NAME`. Every placeholder a card can use must also
+have a value in the sample context; one without a value renders as raw
+`{{nama_siswa}}` and reads as a broken template.
 
 ## Architecture
 

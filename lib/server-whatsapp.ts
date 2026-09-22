@@ -41,6 +41,7 @@ import {
   MANUAL_MESSAGE_ID,
   MANUAL_MESSAGE_TITLE,
   isSchedulable,
+  legacyLogTypeFor,
   messageIdempotencyKey,
   reorderMessages,
   type ReorderDirection,
@@ -700,10 +701,19 @@ async function recordLog(input: LogInput): Promise<{ id: string | null; duplicat
     const log = await prisma.whatsAppSendLog.create({
       data: {
         messageId: message.id,
-        // Kolom `type` legacy tetap diisi untuk kartu bawaan selama riwayat
-        // lama dan kolomnya belum dipensiunkan; kartu tanpa padanan enum
-        // menulis NULL, bukan nilai enum yang mengada-ada.
-        type: message.builtinType,
+        // Kolom `type` legacy tetap diisi untuk kartu bawaan TERJADWAL selama
+        // riwayat lama dan kolomnya belum dipensiunkan; kartu tanpa padanan
+        // enum menulis NULL, bukan nilai enum yang mengada-ada.
+        //
+        // KARTU BAWAAN BERBASIS PERISTIWA JUGA MENULIS NULL.
+        //
+        // `type` masih ber-foreign-key ke `WhatsAppConfiguration.type`, dan
+        // tabel itu hanya berisi jenis TERJADWAL — ia memang tabel jadwal.
+        // Menulis enum jenis yang tidak punya baris jadwal di sana membuat
+        // setiap pengiriman notifikasi UKS ditolak database sebagai
+        // pelanggaran FK, lalu muncul di layar sebagai kegagalan layanan
+        // WhatsApp — padahal transport-nya sehat dan pesannya sudah terkirim.
+        type: legacyLogTypeFor(message),
         trigger: input.request.trigger,
         status: input.status,
         idempotencyKey: input.idempotencyKey,

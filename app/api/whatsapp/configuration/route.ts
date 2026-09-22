@@ -10,6 +10,7 @@ import {
   readBuiltinMessage,
   readMessage,
   readMessages,
+  readSchoolName,
   readWhatsAppSetting,
   updateMessage,
   updateDefaultDestination,
@@ -115,9 +116,14 @@ export async function GET() {
   try {
     await requireWhatsAppViewer()
 
-    const [messages, setting] = await Promise.all([
+    const [messages, setting, schoolName] = await Promise.all([
       readMessages(),
       readWhatsAppSetting(),
+      // Nama sekolah ikut dikirim agar PRATINJAU memakai identitas sekolah yang
+      // sebenarnya. Isi siswa boleh berupa contoh — bentuk pesanlah yang sedang
+      // ditinjau — tetapi nama sekolah yang salah di pratinjau membuat admin
+      // menyunting template untuk memperbaiki sesuatu yang bukan template.
+      readSchoolName(),
     ])
 
     // Daftar grup hanya bisa dibaca saat WhatsApp terhubung. Keadaan "belum
@@ -142,6 +148,7 @@ export async function GET() {
       {
         messages,
         groups,
+        schoolName,
         defaultDestination: {
           jid: setting.defaultGroupJid,
           name: setting.defaultGroupName,

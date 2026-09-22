@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { SAMPLE_CONTEXT } from "@/lib/whatsapp-template-sample"
+import { sampleContextFor } from "@/lib/whatsapp-template-sample"
 import type { WhatsAppMessageType } from "@/lib/whatsapp-schedule"
 import {
   COLLECTION_LABELS,
@@ -54,6 +54,14 @@ type Props = {
   templates: WhatsAppTemplateSet
   /** Kondisi yang benar-benar tersimpan; sisanya masih memakai bawaan. */
   customized: readonly WhatsAppTemplateKey[]
+  /**
+   * Nama sekolah dari setelan, untuk pratinjau.
+   *
+   * Diturunkan dari halaman, bukan dibaca ulang di sini: komponen ini dirender
+   * satu kali per kartu, dan membiarkan masing-masing memanggil server sendiri
+   * menghasilkan permintaan berlipat untuk satu nilai yang sama.
+   */
+  schoolName: string | null
   disabled: boolean
   onSaved: () => void
 }
@@ -62,6 +70,7 @@ export function WhatsAppTemplateEditor({
   type,
   templates,
   customized,
+  schoolName,
   disabled,
   onSaved,
 }: Props) {
@@ -89,11 +98,11 @@ export function WhatsAppTemplateEditor({
   // dibiarkan terlihat apa adanya supaya admin melihat persis di mana salahnya.
   const preview = useMemo(() => {
     try {
-      return renderTemplate(active, template, SAMPLE_CONTEXT)
+      return renderTemplate(active, template, sampleContextFor(schoolName))
     } catch {
       return ""
     }
-  }, [active, template])
+  }, [active, template, schoolName])
 
   function updateBody(body: string) {
     setDraft((current) => ({ ...current, [active]: { ...current[active], body } }))

@@ -69,6 +69,28 @@ export function isSchedulable(
   return true
 }
 
+/**
+ * Nilai untuk kolom legacy `WhatsAppSendLog.type`.
+ *
+ * KOLOM INI BUKAN SEKADAR PENANDA JENIS.
+ *
+ * Ia masih ber-foreign-key ke `WhatsAppConfiguration.type` — tabel JADWAL,
+ * yang hanya berisi jenis terjadwal. Karena itu satu-satunya nilai yang sah
+ * di sini adalah jenis bawaan yang benar-benar punya baris jadwal; jenis
+ * bawaan berbasis peristiwa (notifikasi kunjungan UKS) harus menulis NULL,
+ * persis seperti kartu manual dan kartu buatan admin.
+ *
+ * Menuliskan enumnya karena "kartunya bawaan, jadi kolomnya diisi" membuat
+ * database menolak setiap pengiriman dengan pelanggaran FK, dan kegagalan itu
+ * sampai ke admin sebagai seolah-olah layanan WhatsApp sedang mati.
+ */
+export function legacyLogTypeFor(
+  message: Pick<WhatsAppMessageIdentity, "kind" | "builtinType">,
+): WhatsAppMessageType | null {
+  if (message.kind !== "BUILTIN" || !message.builtinType) return null
+  return scheduleFor(message.builtinType).schedulable ? message.builtinType : null
+}
+
 /** Apakah kartu ini boleh dihapus admin? Hanya kartu buatan admin. */
 export function isDeletable(message: Pick<WhatsAppMessageIdentity, "kind">): boolean {
   return message.kind === "CUSTOM"

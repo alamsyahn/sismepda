@@ -130,6 +130,27 @@ export const NOTIFY_BLOCK_MESSAGES: Record<NotifyBlockReason, string> = {
     "WhatsApp sekolah sedang tidak terhubung. Hubungkan kembali lalu kirim ulang notifikasi ini.",
 }
 
-export function notifyBlockMessage(reason: NotifyBlockReason): string {
-  return NOTIFY_BLOCK_MESSAGES[reason]
+/**
+ * Pesan blokir, disebutkan bersama kelas yang bersangkutan bila diketahui.
+ *
+ * Nama kelas dimasukkan karena petugas UKS mencatat banyak siswa berturut-turut
+ * dan pesan tanpa kelas memaksa mereka menebak baris mana yang harus dibenahi.
+ * Alasan koneksi sengaja TIDAK diberi nama kelas: penyebabnya ada pada sambungan
+ * sekolah, dan menyebut satu kelas di situ mengarahkan orang memperbaiki data
+ * yang sebenarnya sudah benar.
+ */
+export function notifyBlockMessage(
+  reason: NotifyBlockReason,
+  className?: string | null,
+): string {
+  const base = NOTIFY_BLOCK_MESSAGES[reason]
+  const name = className?.trim()
+  if (!name || reason === "NOT_CONNECTED") return base
+  if (reason === "NO_HOMEROOM") {
+    return `Kelas ${name} belum memiliki wali kelas, sehingga notifikasi tidak dapat dikirim.`
+  }
+  // Kalimat dasar sudah berawalan "Wali kelas"; nama kelas disisipkan ke dalam
+  // frasa itu, bukan ditempel di depannya, supaya tidak terbaca ganda seperti
+  // "Wali kelas 8A: wali kelas belum memiliki nomor".
+  return base.replace(/^Wali kelas /, `Wali kelas ${name} `)
 }

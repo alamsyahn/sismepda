@@ -61,6 +61,7 @@ import {
   destinationDisplay,
   type DestinationMode,
 } from "@/lib/whatsapp-target"
+import { isSchedulable } from "@/lib/whatsapp-message"
 import type { WhatsAppGroup } from "@/lib/whatsapp-transport"
 
 /**
@@ -207,6 +208,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
     jid: null,
     name: null,
   })
+  const [schoolName, setSchoolName] = useState<string | null>(null)
   const [refreshingGroups, setRefreshingGroups] = useState(false)
   const [qr, setQr] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -231,6 +233,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
         // ulang di browser.
         setMessages(data.messages ?? [])
         setDefaultDestination(data.defaultDestination ?? { jid: null, name: null })
+        setSchoolName(data.schoolName ?? null)
         // Daftar grup hanya ditimpa bila server benar-benar mengirim daftar.
         // Pengambilan yang gagal mengirim `null`, dan menimpakannya akan
         // mengosongkan pilihan yang sedang dilihat admin.
@@ -709,6 +712,16 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
           {messages.map((message, index) => {
             const slots = schedule.filter((row) => row.messageId === message.id)
             const isManual = message.kind === "MANUAL"
+            // Kartu bawaan yang dipicu PERISTIWA, bukan jam.
+            //
+            // Notifikasi kunjungan UKS lahir dari tindakan petugas atas satu
+            // siswa dan pergi ke nomor pribadi wali kelas siswa itu. Grup,
+            // jadwal, toggle otomatis, penjaga hari aktif, dan "Kirim sekarang"
+            // semuanya mengandaikan satu tujuan tetap pada jam tertentu —
+            // pengandaian yang tidak berlaku di sini. Kontrol seperti itu bukan
+            // sekadar tidak berguna: ia menjanjikan pengaturan yang tidak
+            // pernah dibaca jalur pengirimannya.
+            const isEventTriggered = message.kind === "BUILTIN" && !isSchedulable(message)
             const reportDestination = {
               mode: message.destinationMode,
               jid: message.targetGroupJid,
@@ -772,7 +785,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                         </Button>
                       </div>
                     ) : null}
-                    {isManual ? null : canManageConnection ? (
+                    {isManual || isEventTriggered ? null : canManageConnection ? (
                       <label className="flex items-center gap-2 text-sm">
                         <Switch
                           checked={message.enabled}
@@ -788,7 +801,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                         {message.enabled ? "Otomatis aktif" : "Otomatis nonaktif"}
                       </Badge>
                     )}
-                    {isManual || !canManageConnection ? null : (
+                    {isManual || isEventTriggered || !canManageConnection ? null : (
                       <label
                         className="flex items-center gap-2 text-sm"
                         title="Jika aktif, pesan otomatis tidak dikirim pada hari ketika tidak ada aktivitas absensi sekolah."
@@ -803,7 +816,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                         Hari aktif
                       </label>
                     )}
-                    {canSend && !isManual ? (
+                    {canSend && !isManual && !isEventTriggered ? (
                       <Button
                         size="sm"
                         variant="outline"
@@ -860,7 +873,13 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                   </div>
                 ) : null}
 
-                {canManageConnection ? (
+                {isEventTriggered ? (
+                  <p className="text-muted-foreground text-sm">
+                    Dikirim pribadi ke nomor WhatsApp wali kelas siswa yang bersangkutan,
+                    saat petugas UKS mengirim notifikasi dari halaman Riwayat Kunjungan UKS.
+                    Pesan ini tidak pernah dikirim ke grup.
+                  </p>
+                ) : canManageConnection ? (
                   <div className="space-y-1">
                     <Select
                       value={
@@ -901,7 +920,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                   </div>
                 ) : null}
 
-                {canManageConnection && !isManual ? (
+                {canManageConnection && !isManual && !isEventTriggered ? (
                   <div className="space-y-2">
                     <p className="text-sm font-medium">Jadwal</p>
                     <div className="flex flex-wrap items-center gap-2">
@@ -986,6 +1005,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                         customized={customizedKeys(
                           parseStoredTemplates(message.messageTemplates),
                         )}
+                        schoolName={schoolName}
                         disabled={busy !== null}
                         onSaved={() => void refresh()}
                       />

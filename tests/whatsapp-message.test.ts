@@ -20,6 +20,7 @@ import {
   canonicalOrder,
   isDeletable,
   isSchedulable,
+  legacyLogTypeFor,
   messageIdempotencyKey,
   messageTitleErrorMessage,
   normalizeMessageTitle,
@@ -40,6 +41,28 @@ test("kartu manual tidak dapat dijadwalkan", () => {
     false,
   )
   assert.equal(isSchedulable({ kind: "BUILTIN", builtinType: "ATTENDANCE_MISSING" }), true)
+})
+
+test("kolom type legacy hanya diisi jenis yang punya baris jadwal", () => {
+  // Kolom `WhatsAppSendLog.type` masih ber-foreign-key ke tabel JADWAL
+  // (`WhatsAppConfiguration`), yang hanya berisi jenis terjadwal. Mengisinya
+  // dengan jenis berbasis peristiwa membuat database menolak setiap baris
+  // riwayat, dan penolakan itu muncul kepada petugas sebagai seolah-olah
+  // layanan WhatsApp sedang mati — padahal pesannya sudah terkirim.
+  assert.equal(
+    legacyLogTypeFor({ kind: "BUILTIN", builtinType: "ATTENDANCE_MISSING" }),
+    "ATTENDANCE_MISSING",
+  )
+  assert.equal(
+    legacyLogTypeFor({ kind: "BUILTIN", builtinType: "ATTENDANCE_ABSENT" }),
+    "ATTENDANCE_ABSENT",
+  )
+  assert.equal(
+    legacyLogTypeFor({ kind: "BUILTIN", builtinType: "EUKS_VISIT_NOTIFICATION" }),
+    null,
+  )
+  assert.equal(legacyLogTypeFor({ kind: "MANUAL", builtinType: null }), null)
+  assert.equal(legacyLogTypeFor({ kind: "CUSTOM", builtinType: null }), null)
 })
 
 test("hanya kartu buatan admin yang boleh dihapus", () => {

@@ -51,11 +51,39 @@ const DISPENSASI = [
   },
 ]
 
+/**
+ * Nama sekolah yang dipakai HANYA bila setelan sekolah belum terisi.
+ *
+ * Bukan nilai yang ditampilkan dalam keadaan normal: `sampleContextFor()`
+ * menggantinya dengan nama dari setelan sekolah. Ia ada sebagai jaring
+ * pengaman untuk database yang baru dipasang, di mana kolom namanya masih
+ * kosong dan pratinjau tanpa nama apa pun justru lebih membingungkan.
+ */
+export const SAMPLE_SCHOOL_NAME = "SMP Negeri 1 Contoh"
+
 export const SAMPLE_CONTEXT: TemplateContext = {
   scalars: {
     tanggal: "Senin, 16 September 2026",
     waktu: "08.00",
-    nama_sekolah: "SMP Negeri 1 Contoh",
+    nama_sekolah: SAMPLE_SCHOOL_NAME,
+    // Placeholder milik notifikasi kunjungan UKS.
+    //
+    // WAJIB ADA DI SINI, bukan hanya di registry placeholder: pratinjau
+    // merender dengan konteks ini, dan nama yang tidak punya nilai dibiarkan
+    // tampil apa adanya sebagai `{{nama_siswa}}`. Admin yang melihat token
+    // mentah di pratinjau wajar menyimpulkan templatenya rusak, lalu
+    // memperbaiki sesuatu yang sebenarnya benar.
+    //
+    // Nilai siswa sengaja fiktif; hanya identitas sekolah yang memakai data
+    // sungguhan, karena itulah satu-satunya bagian yang tidak boleh berbeda
+    // antara pratinjau dan pesan yang benar-benar terkirim.
+    nama_siswa: "Ahmad Fauzi",
+    nama_kelas: "7A",
+    wali_kelas: "Bu Ani",
+    keluhan: "Pusing dan demam",
+    tindakan: "Istirahat di UKS, diberi minum hangat",
+    tindak_lanjut: "Dirujuk ke Puskesmas",
+    petugas: "Bu Sari",
     jumlah_kelas: "27",
     jumlah_kelas_sudah_rekap: "24",
     jumlah_kelas_belum_rekap: "3",
@@ -81,4 +109,26 @@ export const SAMPLE_CONTEXT: TemplateContext = {
     // Daftar gabungan mengikuti urutan status yang sama dengan pesan nyata.
     daftar_siswa_tidak_hadir: [...SAKIT, ...IZIN, ...ALFA, ...DISPENSASI],
   },
+}
+
+/**
+ * Data contoh dengan identitas sekolah yang SUNGGUHAN.
+ *
+ * Pratinjau memang harus memakai data contoh untuk siswa dan daftar — itulah
+ * yang membuat bentuk pesan terlihat. Tetapi nama sekolah bukan bagian dari
+ * "bentuk": ia identitas organisasi yang sudah tersimpan di setelan sekolah,
+ * dan menampilkannya berbeda dari pesan yang benar-benar terkirim membuat
+ * pratinjau berbohong tentang satu-satunya baris yang paling mudah diperiksa
+ * admin.
+ *
+ * Nama kosong (database baru) jatuh kembali ke nama contoh, bukan ke string
+ * kosong yang membuat baris judul pesan tampak rusak.
+ */
+export function sampleContextFor(schoolName: string | null | undefined): TemplateContext {
+  const resolved = schoolName?.trim()
+  if (!resolved) return SAMPLE_CONTEXT
+  return {
+    ...SAMPLE_CONTEXT,
+    scalars: { ...SAMPLE_CONTEXT.scalars, nama_sekolah: resolved },
+  }
 }
