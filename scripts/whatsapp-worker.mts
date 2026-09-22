@@ -29,7 +29,7 @@ import { readHolidayRules } from "../lib/server-holidays.js"
 import { readSchoolTimeZone } from "../lib/server-school-time-zone.js"
 import { schoolMinutesOfDay, todayInSchoolTimeZone } from "../lib/school-date.js"
 import { BaileysWhatsAppTransport } from "../lib/whatsapp-baileys.mjs"
-import { readConfigurations, sendWhatsAppMessage } from "../lib/server-whatsapp.js"
+import { readMessages, sendWhatsAppMessage } from "../lib/server-whatsapp.js"
 import {
   LOCK_HEARTBEAT_MS,
   acquireSessionLock,
@@ -74,13 +74,20 @@ async function tick(): Promise<void> {
 
     // Jadwal dibaca ulang setiap putaran: admin dapat menyunting jamnya kapan
     // saja, dan perubahan itu harus berlaku tanpa me-restart worker.
-    const configurations = await readConfigurations()
-    const schedule = configurations.map((row) => ({ type: row.type, slots: row.slots }))
+    // Kartu manual sengaja tidak punya jam, sehingga tidak pernah masuk daftar
+    // jatuh tempo; penyaringan tambahan di sini hanya akan menduplikasi aturan
+    // yang sudah dipegang datanya sendiri.
+    const messages = await readMessages()
+    const schedule = messages.map((row) => ({ messageId: row.id, slots: row.slots }))
 
-    for (const { type, slot } of dueSlots(schedule, schoolMinutesOfDay(now, timeZone))) {
-      const outcome = await sendWhatsAppMessage(transport, { type, slot, trigger: "SCHEDULED" })
+    for (const { messageId, slot } of dueSlots(schedule, schoolMinutesOfDay(now, timeZone))) {
+      const outcome = await sendWhatsAppMessage(transport, {
+        messageId,
+        slot,
+        trigger: "SCHEDULED",
+      })
       if (outcome.status === "FAILED") {
-        console.error(`[whatsapp] ${type} ${slot} gagal: ${outcome.code}`)
+        console.error(`[whatsapp] ${messageId} ${slot} gagal: ${outcome.code}`)
       }
     }
   } catch (error) {
@@ -183,15 +190,17 @@ const server = createServer((request, response) => {
 
         case "POST /send": {
           const body = await readJson(request)
-          const type = body.type
-          const slot = body.slot
-          if (typeof type !== "string" || typeof slot !== "string") {
-            send(response, 400, { error: "Jenis pesan dan slot wajib diisi." })
+          const messageId = body.messageId
+          if (typeof messageId !== "string") {
+            send(response, 400, { error: "Kartu pesan wajib disebutkan." })
             return
           }
+          // Slot boleh kosong: kiriman manual tidak terikat jam. Teks hanya
+          // dipakai kartu manual, dan diteruskan tanpa diubah sedikit pun.
           const outcome = await sendWhatsAppMessage(transport, {
-            type: type as never,
-            slot,
+            messageId,
+            slot: typeof body.slot === "string" ? body.slot : null,
+            text: typeof body.text === "string" ? body.text : undefined,
             trigger: "MANUAL",
             initiatedById: typeof body.initiatedById === "string" ? body.initiatedById : null,
           })

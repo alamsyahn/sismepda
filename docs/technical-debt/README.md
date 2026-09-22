@@ -181,3 +181,13 @@ Only verified, unresolved engineering liabilities are listed here.
 - **Reason:** Sengaja dibiarkan pada tugas ini. Teks keduanya adalah rujukan yang dipakai menyusun template bawaan, dan menghapusnya bersamaan dengan perubahan perilaku akan mencampur dua hal di satu diff.
 - **Direction:** Hapus kedua fungsi beserta tesnya setelah template bawaan terbukti benar di produksi, dan pertahankan `incompleteClasses()`/`slotLabel()` yang masih dipakai.
 - **Exit criteria:** `lib/whatsapp-messages.ts` hanya berisi pembantu yang benar-benar dipanggil kode produksi, dan tidak ada tes yang menjaga teks pesan yang sudah tidak pernah dikirim.
+
+## TD-022 — Tabel `WhatsAppConfiguration` dan kolom `WhatsAppSendLog.type` tinggal sebagai peninggalan
+
+- **Area / severity:** WhatsApp automation / schema — **Low**
+- **Current condition:** Konfigurasi pesan pindah ke `WhatsAppMessage`, tetapi tabel `WhatsAppConfiguration` beserta isinya masih ada dan tidak lagi dibaca kode produksi mana pun. Kolom `WhatsAppSendLog.type` kini nullable dan hanya terisi pada riwayat sebelum migrasi; jalur baru menulis `messageId`.
+- **Evidence:** Migrasi `20260922093000_add_whatsapp_message_cards` membuat `WhatsAppMessage` dan memetakan riwayat lama ke `messageId`; migrasi `20260922114500_relax_whatsapp_send_log_type` melonggarkan kolom lama. `grep whatsAppConfiguration lib app scripts` tidak menemukan pembacaan produksi.
+- **Impact:** Tidak merusak. Risikonya menyesatkan: pembaca berikutnya dapat menyunting baris di tabel lama dan mengira jadwal berubah.
+- **Reason:** Sengaja aditif. Menghapus tabel dan kolom pada migrasi yang sama akan membuat rollback produksi mustahil bila kartu pesan ternyata bermasalah, dan riwayat pengiriman sebelum migrasi akan kehilangan jenisnya.
+- **Direction:** Setelah kartu pesan terbukti benar di produksi melewati beberapa siklus kirim, hapus tabel `WhatsAppConfiguration`. Kolom `WhatsAppSendLog.type` dipertahankan selama riwayat pra-migrasi masih bernilai, dan hanya dihapus bersamaan dengan kebijakan retensi riwayat.
+- **Exit criteria:** `WhatsAppConfiguration` tidak ada lagi di skema maupun database produksi, dan tidak ada kode yang menyebutnya.

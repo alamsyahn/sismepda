@@ -101,6 +101,28 @@ type HistoryRow = {
   initiatedBy: { name: string | null; email: string } | null
 }
 
+/**
+ * Kartu pesan sebagaimana dikirim server.
+ *
+ * `builtinType` bernilai null untuk kartu manual dan kartu buatan admin; layar
+ * ini masih menampilkan kartu bawaan saja, sehingga kartu tanpa jenis disaring
+ * di satu tempat (`builtinConfigurations`) alih-alih di setiap pemakaian.
+ */
+type MessageRow = {
+  id: string
+  kind: "BUILTIN" | "CUSTOM" | "MANUAL"
+  builtinType: WhatsAppMessageType | null
+  title: string
+  description: string | null
+  sortOrder: number
+  enabled: boolean
+  destinationMode: DestinationMode
+  targetGroupJid: string | null
+  targetGroupName: string | null
+  slots: string[]
+  messageTemplates?: unknown
+}
+
 type ConfigurationRow = {
   type: WhatsAppMessageType
   enabled: boolean
@@ -191,7 +213,25 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
       }
       if (configResponse.ok) {
         const data = await configResponse.json()
-        setConfigurations(data.configurations ?? [])
+        // Server kini mengirim kartu pesan. Kartu bawaan dipetakan ke bentuk
+        // yang dipakai layar ini; kartu manual dan kartu buatan admin belum
+        // ditampilkan di sini.
+        const messages: MessageRow[] = data.messages ?? []
+        setConfigurations(
+          messages
+            .filter((row): row is MessageRow & { builtinType: WhatsAppMessageType } =>
+              row.builtinType !== null,
+            )
+            .map((row) => ({
+              type: row.builtinType,
+              enabled: row.enabled,
+              destinationMode: row.destinationMode,
+              targetGroupJid: row.targetGroupJid,
+              targetGroupName: row.targetGroupName,
+              slots: row.slots,
+              messageTemplates: row.messageTemplates,
+            })),
+        )
         setDefaultDestination(data.defaultDestination ?? { jid: null, name: null })
         // Daftar grup hanya ditimpa bila server benar-benar mengirim daftar.
         // Pengambilan yang gagal mengirim `null`, dan menimpakannya akan

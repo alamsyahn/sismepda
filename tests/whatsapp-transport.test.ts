@@ -156,8 +156,8 @@ test("slot masih jatuh tempo dalam tenggang", () => {
 // Jadwal yang dahulu berupa konstanta kini datang dari konfigurasi admin.
 // Tes ini memakai jam lama agar perilaku jatuh-tempo tetap terjaga.
 const SCHEDULE = [
-  { type: "ATTENDANCE_MISSING" as const, slots: ["08:00", "10:00"] },
-  { type: "ATTENDANCE_ABSENT" as const, slots: ["12:00"] },
+  { messageId: "ATTENDANCE_MISSING", slots: ["08:00", "10:00"] },
+  { messageId: "ATTENDANCE_ABSENT", slots: ["12:00"] },
 ]
 
 test("slot yang lewat jauh TIDAK dikirim belakangan", () => {
@@ -178,12 +178,12 @@ test("slot terlewat tetap dapat dilaporkan untuk pemantauan", () => {
 
 test("pada 08.00 hanya slot 08.00 yang jatuh tempo", () => {
   const due = dueSlots(SCHEDULE, 8 * 60)
-  assert.deepEqual(due, [{ type: "ATTENDANCE_MISSING", slot: "08:00" }])
+  assert.deepEqual(due, [{ messageId: "ATTENDANCE_MISSING", slot: "08:00" }])
 })
 
 test("pada 12.00 hanya rekap siswa tidak hadir yang jatuh tempo", () => {
   const due = dueSlots(SCHEDULE, 12 * 60)
-  assert.deepEqual(due, [{ type: "ATTENDANCE_ABSENT", slot: "12:00" }])
+  assert.deepEqual(due, [{ messageId: "ATTENDANCE_ABSENT", slot: "12:00" }])
 })
 
 test("tengah malam dan dini hari tidak menjatuhtempokan slot apa pun", () => {

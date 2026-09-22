@@ -890,6 +890,29 @@ enum WhatsAppSendStatus {
   SKIPPED
 }
 
+/// Asal-usul sebuah kartu pesan. Menentukan APA yang boleh disunting, bukan
+/// sekadar label tampilan.
+///
+/// MENGAPA PERLU DIBEDAKAN
+///
+/// Ketiganya hidup dalam satu daftar yang dapat diurutkan admin, tetapi
+/// kemampuannya berbeda secara mendasar: hanya BUILTIN punya kondisi template
+/// bawaan (A–E) dan sumber data laporan; MANUAL tidak punya jadwal maupun
+/// template sama sekali; CUSTOM punya jadwal dan satu teks bebas dengan
+/// variabel. Menyimpan perbedaan ini sebagai kolom membuat aturannya dapat
+/// ditegakkan di server, bukan diandaikan oleh UI.
+enum WhatsAppMessageKind {
+  /// Dua pesan otomatis asli: kelas belum mengisi absensi & rekap tidak hadir.
+  /// Identitasnya tetap dikenali lewat `builtinType`, karena kode penyusun
+  /// pesannya memang khusus per jenis.
+  BUILTIN
+  /// Pesan otomatis yang dibuat admin: jadwal sendiri, teks sendiri.
+  CUSTOM
+  /// Kartu "Pesan manual". Tidak pernah terjadwal; hanya jalur "Kirim sekarang"
+  /// dengan teks yang diketik admin saat itu.
+  MANUAL
+}
+
 /// Dari mana sebuah jenis pesan mengambil grup tujuannya.
 ///
 /// Sengaja enum dua nilai, bukan "JID kosong berarti default": tujuan yang
@@ -921,12 +944,69 @@ model WhatsAppSetting {
   updatedAt DateTime @updatedAt
 }
 
+/// Satu kartu pesan pada halaman "WhatsApp Otomatis".
+///
+/// MENGAPA TABEL BARU, BUKAN MEMPERLUAS WhatsAppConfiguration
+///
+/// `WhatsAppConfiguration` memakai enum `WhatsAppMessageType` sebagai primary
+/// key, dan `WhatsAppSendLog.type` adalah foreign key ke enum yang sama. Pesan
+/// buatan admin tidak punya nilai enum — menampungnya berarti mengubah tipe
+/// kolom primary key sekaligus kolom yang sedang di-FK pada tabel riwayat yang
+/// berisi data produksi. Tabel baru membuat seluruh migrasi bersifat aditif:
+/// tidak ada kolom yang berubah tipe, tidak ada baris lama yang ditulis ulang,
+/// dan versi aplikasi lama masih dapat membaca tabel lamanya bila perlu
+/// dikembalikan.
+///
+/// `WhatsAppConfiguration` menjadi peninggalan yang TIDAK LAGI DIBACA setelah
+/// migrasi ini, tetapi sengaja tidak di-drop; lihat catatan utang teknis.
+model WhatsAppMessage {
+  id String @id @default(cuid())
+  kind WhatsAppMessageKind
+  /// Identitas jenis bawaan. UNIQUE dan hanya terisi untuk `kind = BUILTIN`:
+  /// penyusun pesan bawaan memang bercabang berdasarkan nilai ini, dan
+  /// idempotency key lama (`attendance_missing:...`) diturunkan darinya
+  /// sehingga occurrence yang sudah terkirim sebelum migrasi tetap terkunci.
+  builtinType WhatsAppMessageType? @unique
+  /// Judul kartu. Untuk BUILTIN/MANUAL diisi migrasi dengan nama yang sudah
+  /// dikenal admin; untuk CUSTOM diisi admin.
+  title String
+  description String
+  /// Urutan tampil, menaik. Sengaja kolom, bukan urutan array di frontend:
+  /// urutan harus bertahan setelah refresh, login ulang, dan deploy.
+  sortOrder Int
+  /// Toggle pengiriman OTOMATIS. Tidak pernah menghalangi "Kirim sekarang".
+  /// Selalu `false` untuk MANUAL, yang tidak punya jadwal.
+  enabled Boolean @default(false)
+  /// Jika `true`, pengiriman terjadwal dibatalkan pada hari yang belum punya
+  /// aktivitas absensi sama sekali. Default `false` agar migrasi tidak
+  /// mengubah perilaku instalasi yang sudah berjalan.
+  requireAttendanceActivity Boolean @default(false)
+  destinationMode WhatsAppDestinationMode @default(DEFAULT)
+  targetGroupJid String?
+  targetGroupName String?
+  targetResolvedAt DateTime?
+  /// Jam pengiriman `HH:mm` zona waktu sekolah, menaik dan tanpa kembar.
+  /// Kosong berarti pesan ini tidak dijadwalkan.
+  slots String[]
+  /// BUILTIN: template per kondisi (`WhatsAppTemplateKey`), NULL = pakai bawaan.
+  /// CUSTOM: satu template tunggal. Divalidasi zod pada setiap pembacaan.
+  messageTemplates Json?
+  /// Variabel yang dipilih admin untuk pesan CUSTOM, mis. `jumlah_alfa`.
+  /// Kosong untuk BUILTIN/MANUAL.
+  selectedVariables String[]
+  lastSentAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sendLogs WhatsAppSendLog[]
+
+  @@index([sortOrder])
+}
+
 /// Konfigurasi per jenis pesan otomatis. Satu baris per `type`.
 ///
-/// Jam jadwal TIDAK disimpan di sini: ia tinggal di satu tempat di kode
-/// (`lib/whatsapp-schedule.ts`) supaya tidak tersebar sebagai magic number.
-/// Baris ini menyimpan hal yang memang milik operator: aktif/nonaktif dan
-/// tujuan yang sudah di-resolve.
+/// LEGACY — TIDAK LAGI DIBACA APLIKASI. Digantikan `WhatsAppMessage`. Sengaja
+/// dipertahankan sampai produksi terverifikasi berjalan pada tabel baru; lihat
+/// `docs/technical-debt/README.md`. Jangan menambah kolom baru di sini.
 model WhatsAppConfiguration {
   /// Satu baris per jenis pesan, jadi jenisnya sekaligus primary key.
   type WhatsAppMessageType @id
@@ -978,7 +1058,12 @@ model WhatsAppConfiguration {
 /// teks yang berbeda dari yang benar-benar dibaca orang di grup.
 model WhatsAppSendLog {
   id String @id @default(cuid())
-  type WhatsAppMessageType
+  /// Jenis pesan bawaan. LEGACY: dipertahankan agar baris riwayat lama tetap
+  /// terbaca dan agar FK lamanya tidak perlu dibongkar. Untuk pesan CUSTOM dan
+  /// MANUAL kolom ini tidak punya nilai yang bermakna, karena itu baris baru
+  /// selalu mengisi `messageId`; pembacaan riwayat memakai `messageId`.
+  /// NULL untuk kartu tanpa padanan enum (manual dan buatan admin).
+  type WhatsAppMessageType?
   trigger WhatsAppSendTrigger
   status WhatsAppSendStatus
   /// Kunci logis slot terjadwal, mis. `attendance_missing:2026-09-15:08:00`.
@@ -1007,10 +1092,21 @@ model WhatsAppSendLog {
   sentAt DateTime?
   /// Admin yang menekan "Kirim sekarang". NULL untuk kiriman terjadwal.
   initiatedById String?
+  /// Kartu pesan yang mengirim baris ini. NULLABLE hanya karena baris riwayat
+  /// yang ada sebelum migrasi harus tetap valid; migrasi mengisinya untuk
+  /// seluruh baris lama, dan semua penulisan baru selalu mengisinya.
+  messageId String?
   initiatedBy User? @relation(fields: [initiatedById], references: [id], onDelete: SetNull)
-  configuration WhatsAppConfiguration @relation(fields: [type], references: [type], onDelete: Cascade)
+  /// `SetNull`: menghapus kartu pesan tidak boleh ikut menghapus bukti bahwa
+  /// pesan pernah terkirim ke grup sekolah. Baris riwayatnya tetap ada,
+  /// tautannya saja yang terlepas.
+  message WhatsAppMessage? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  /// SetNull, bukan Cascade: riwayat pengiriman adalah bukti bahwa sebuah pesan
+  /// sampai ke grup sekolah dan tidak boleh ikut terhapus bersama konfigurasi.
+  configuration WhatsAppConfiguration? @relation(fields: [type], references: [type], onDelete: SetNull)
   @@index([attemptedAt])
   @@index([type, attemptedAt])
+  @@index([messageId, attemptedAt])
   @@index([schoolDate])
 }
 

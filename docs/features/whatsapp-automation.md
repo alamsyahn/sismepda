@@ -12,10 +12,63 @@ an unofficial WhatsApp Web client. It is pinned to the exact version
 `7.0.0-rc14`, not a caret range: the package has no stable release, so `latest`
 is itself a release candidate and a caret would silently pull a breaking RC.
 
+## Message cards
+
+Everything the page sends is a row in `WhatsAppMessage`, ordered by
+`sortOrder`. A card is one of three kinds:
+
+| `kind` | `builtinType` | Schedulable | Text |
+|---|---|---|---|
+| `BUILTIN` | set | yes | templates + placeholders |
+| `CUSTOM` | null | yes | templates + placeholders |
+| `MANUAL` | null | **no** | free text supplied per send |
+
+The card is the unit of identity everywhere downstream: `SendRequest.messageId`,
+`ConfiguredSchedule.messageId`, `WhatsAppSendLog.messageId`. The
+`WhatsAppMessageType` enum survives only as `builtinType`, naming which report a
+built-in card renders — it is no longer a primary key, because two cards may
+render the same report to different groups and a custom card has no type at all.
+
+The rules that decide *whether a card may be scheduled* and *what its
+idempotency key is* live in `lib/whatsapp-message.ts`, which touches no
+database and is therefore testable directly.
+
+Order is persisted, not derived from a frontend array. `moveMessage()` shifts a
+card one position and rewrites the whole canonical order in a single
+transaction; a half-written order would look random on screen and could not be
+repaired by the admin without guessing. `POST /api/whatsapp/messages/reorder`
+takes `{ messageId, direction }` rather than a full list, so two admins
+reordering at the same time cannot silently overwrite each other.
+
+`WhatsAppConfiguration` is legacy and still present; see
+`docs/technical-debt/README.md`.
+
+### The manual card
+
+"Pesan manual" carries no template and no schedule. Its text is whatever the
+admin typed and is transmitted byte-for-byte: no prefix, no marker, no
+timestamp, no sender name, newlines preserved. It never enters the scheduled
+idempotency mechanism — `trigger: "MANUAL"` leaves `idempotencyKey` NULL, so an
+operator who deliberately sends twice gets two messages. Every attempt is
+written to the audit log with the sender and the destination group, whatever
+the outcome.
+
+### Attendance-activity guard
+
+A card may set `requireAttendanceActivity`. On a **scheduled** send the message
+is skipped unless at least one class has opened attendance that day
+(`SKIPPED` / `NO_ATTENDANCE_ACTIVITY`). The school calendar is never complete —
+a sudden holiday or an empty day is not recorded — and a report claiming every
+class failed to submit is worse than no report. One class opening attendance is
+enough; the number of students present is irrelevant, because a real school day
+can legitimately have nobody present. Manual sends bypass the guard: the
+operator pressing the button knows what day it is. The decision itself is pure
+(`lib/whatsapp-attendance-activity.ts`); only reading the day is server-side.
+
 ## Schedule
 
-Times are operator configuration, stored per message type in
-`WhatsAppConfiguration.slots` and edited from the WhatsApp page. School hours
+Times are operator configuration, stored per card in
+`WhatsAppMessage.slots` and edited from the WhatsApp page. School hours
 move — exam weeks, Ramadan, a new start time — and requiring a release for each
 shift made the on-screen schedule slowly drift from what was actually sent.
 
@@ -53,7 +106,8 @@ factually wrong.
 ## Message templates
 
 The text of every automatic message is editable by an admin on the WhatsApp page
-and stored in `WhatsAppConfiguration.messageTemplates` (`Json?`). Templates are
+and stored in `WhatsAppMessage.messageTemplates` (`Json?`). The manual card is
+the exception: it has no templates at all. Templates are
 data, not code: there is no expression language, no conditionals and no
 evaluation — only placeholder substitution against an explicit registry.
 
@@ -317,10 +371,11 @@ import graph transitively and fails if `auth.ts`, `rbac-access.ts` or any
 | `GET /api/whatsapp` | `whatsapp.read` | Status, today's schedule, history. A dead worker is reported as a readable error state, not a 500 — an offline worker is a normal operational condition that must be visible on screen |
 | `GET /api/whatsapp/qr` | `whatsapp.connection.manage` | QR as a PNG data URL; never persisted, never logged |
 | `POST /api/whatsapp/connection` | `whatsapp.connection.manage` | `connect` / `reconnect` / `relogin` / `logout` |
-| `GET /api/whatsapp/configuration` | `whatsapp.read` | Config plus group list when connected |
-| `PATCH /api/whatsapp/configuration` | `whatsapp.connection.manage` | Toggle, destination mode, per-type group, schedule slots, message templates |
+| `GET /api/whatsapp/configuration` | `whatsapp.read` | Message cards plus group list when connected |
+| `PATCH /api/whatsapp/configuration` | `whatsapp.connection.manage` | Toggle, destination mode, per-card group, schedule slots, message templates |
 | `PUT /api/whatsapp/configuration` | `whatsapp.connection.manage` | Default destination group |
-| `POST /api/whatsapp/send` | `whatsapp.send` | Manual send |
+| `POST /api/whatsapp/messages/reorder` | `whatsapp.connection.manage` | `{ messageId, direction }`; one position per call |
+| `POST /api/whatsapp/send` | `whatsapp.send` | Manual send; `{ messageId }` (or `type` for a built-in card) plus `text` for the manual card |
 
 Schedule times are writable through `PATCH`, and the server re-runs
 `normalizeSlots()` on whatever arrives. The client is not a guard: a request can
@@ -328,7 +383,11 @@ reach the route without passing through the screen.
 
 Message templates use the same `PATCH` with `scope: "templates"`. The server
 re-validates every placeholder and rejects an unknown one with `400`. Sending
-`templates: null` restores the built-in text for that message type.
+`templates: null` restores the built-in text for that card.
+
+The manual card rejects an empty or whitespace-only `text` with `400`. The
+screen already disables the button, but a button is not a guard, and an empty
+message delivered to a school group cannot be recalled.
 
 The destination is chosen by JID, never by name. A duplicate group name used to
 return `409`; that error class no longer exists, because the operator picks from
@@ -565,7 +624,7 @@ Two levels, both stored in PostgreSQL:
 
 - `WhatsAppSetting` (singleton row, id `default`) holds the default destination:
   `defaultGroupJid` plus `defaultGroupName` as a display snapshot.
-- `WhatsAppConfiguration.destinationMode` is `DEFAULT` or `OVERRIDE`. Under
+- `WhatsAppMessage.destinationMode` is `DEFAULT` or `OVERRIDE`. Under
   `OVERRIDE` the row's own `targetGroupJid` wins.
 
 `resolveDestination()` in `lib/whatsapp-target.ts` is the only place that

@@ -29,12 +29,23 @@ import {
   type StoredTemplates,
 } from "@/lib/whatsapp-template-store"
 import {
-  WHATSAPP_MESSAGE_TYPES,
   WHATSAPP_SCHEDULE,
-  idempotencyKeyFor,
-  scheduleFor,
   type WhatsAppMessageType,
 } from "@/lib/whatsapp-schedule"
+import {
+  attendanceActivityDecision,
+} from "@/lib/whatsapp-attendance-activity"
+import {
+  BUILTIN_MESSAGE_IDS,
+  MANUAL_MESSAGE_DESCRIPTION,
+  MANUAL_MESSAGE_ID,
+  MANUAL_MESSAGE_TITLE,
+  isSchedulable,
+  messageIdempotencyKey,
+  reorderMessages,
+  type ReorderDirection,
+  type WhatsAppMessageKind,
+} from "@/lib/whatsapp-message"
 import {
   resolveDestination,
   type DefaultDestination,
@@ -47,9 +58,21 @@ import {
   type WhatsAppTransport,
 } from "@/lib/whatsapp-transport"
 
-export type WhatsAppConfigurationRow = {
-  type: WhatsAppMessageType
+/**
+ * Satu kartu pesan sebagaimana dibaca aplikasi.
+ *
+ * Menggantikan `WhatsAppConfigurationRow` sebagai unit konfigurasi: kartu punya
+ * `id` bebas, sehingga pesan buatan admin tidak perlu nilai enum.
+ */
+export type WhatsAppMessageRow = {
+  id: string
+  kind: WhatsAppMessageKind
+  builtinType: WhatsAppMessageType | null
+  title: string
+  description: string
+  sortOrder: number
   enabled: boolean
+  requireAttendanceActivity: boolean
   destinationMode: DestinationMode
   targetGroupJid: string | null
   targetGroupName: string | null
@@ -57,6 +80,7 @@ export type WhatsAppConfigurationRow = {
   slots: string[]
   /** JSON mentah; SELALU lewat `parseStoredTemplates` sebelum dipakai. */
   messageTemplates: unknown
+  selectedVariables: string[]
   lastSentAt: Date | null
   updatedAt: Date
 }
@@ -128,25 +152,26 @@ export async function readSchoolName(): Promise<string> {
 }
 
 /**
- * Ubah template satu jenis pesan.
+ * Ubah template satu kartu pesan.
  *
  * Menerima set yang SUDAH divalidasi pemanggil (route). Nilai `null` berarti
  * kembali ke bawaan sepenuhnya: barisnya dikosongkan, bukan diisi salinan
  * template bawaan — lihat alasannya di `serializeTemplates`.
  */
 export async function updateMessageTemplates(
-  type: WhatsAppMessageType,
+  messageId: string,
   templates: StoredTemplates | null,
-): Promise<WhatsAppConfigurationRow> {
-  await readConfigurations()
-  return prisma.whatsAppConfiguration.update({
-    where: { type },
+): Promise<WhatsAppMessageRow> {
+  return prisma.whatsAppMessage.update({
+    where: { id: messageId },
     data: { messageTemplates: templates === null ? Prisma.DbNull : templates },
   })
 }
 
-/** Bentuk yang dimengerti resolver, dari satu baris konfigurasi. */
-export function destinationOf(row: WhatsAppConfigurationRow): ReportDestination {
+/** Bentuk yang dimengerti resolver, dari satu kartu pesan. */
+export function destinationOf(
+  row: Pick<WhatsAppMessageRow, "destinationMode" | "targetGroupJid" | "targetGroupName">,
+): ReportDestination {
   return {
     mode: row.destinationMode,
     jid: row.targetGroupJid,
@@ -160,59 +185,106 @@ export function defaultDestinationOf(row: WhatsAppSettingRow): DefaultDestinatio
 }
 
 /**
- * Baca konfigurasi seluruh jenis pesan, membuat baris yang belum ada.
+ * Baca seluruh kartu pesan, urut tampil.
  *
- * Default `enabled: false` berasal dari schema: mengaktifkan pengiriman ke grup
- * sekolah adalah keputusan manusia, bukan efek samping migrasi database.
+ * MENGAPA KARTU BAWAAN DIPASTIKAN ADA DI SINI
+ *
+ * Migrasi sudah membuatnya, tetapi database yang dibangun dengan cara lain,
+ * atau baris yang terhapus tangan, akan membuat halaman kehilangan kartu
+ * bawaannya — dan kehilangan kartu berarti jadwal yang sebelumnya berjalan
+ * diam-diam berhenti. Karena itu ketiadaannya diperbaiki saat dibaca, dengan
+ * `id` deterministik yang sama seperti migrasi sehingga tidak pernah lahir
+ * kartu kedua untuk jenis yang sama.
+ *
+ * Kartu yang dibuat di sini lahir nonaktif: mengaktifkan pengiriman ke grup
+ * sekolah adalah keputusan manusia, bukan efek samping sebuah pembacaan.
  */
-export async function readConfigurations(): Promise<WhatsAppConfigurationRow[]> {
-  const existing = await prisma.whatsAppConfiguration.findMany()
-  const missing = WHATSAPP_MESSAGE_TYPES.filter(
-    (type) => !existing.some((row) => row.type === type),
-  )
+export async function readMessages(): Promise<WhatsAppMessageRow[]> {
+  const existing = await prisma.whatsAppMessage.findMany({
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+  })
+
+  const missing: Prisma.WhatsAppMessageCreateManyInput[] = []
+  let nextOrder = existing.reduce((max, row) => Math.max(max, row.sortOrder + 1), 0)
+
+  for (const definition of WHATSAPP_SCHEDULE) {
+    if (existing.some((row) => row.builtinType === definition.type)) continue
+    missing.push({
+      id: BUILTIN_MESSAGE_IDS[definition.type],
+      kind: "BUILTIN",
+      builtinType: definition.type,
+      title: definition.label,
+      description: definition.description,
+      sortOrder: nextOrder++,
+      // Kartu bawaan yang lahir tanpa jam tidak akan pernah terkirim.
+      slots: [...definition.defaultSlots],
+    })
+  }
+
+  if (!existing.some((row) => row.kind === "MANUAL")) {
+    missing.push({
+      id: MANUAL_MESSAGE_ID,
+      kind: "MANUAL",
+      title: MANUAL_MESSAGE_TITLE,
+      description: MANUAL_MESSAGE_DESCRIPTION,
+      sortOrder: nextOrder++,
+      // Sengaja tanpa jam: scheduler tidak boleh pernah melihat kartu manual.
+      slots: [],
+    })
+  }
 
   if (missing.length > 0) {
-    await prisma.whatsAppConfiguration.createMany({
-      // Baris baru dibenihi jam bawaan jenisnya. Tanpa ini, jenis pesan baru
-      // lahir tanpa jadwal dan diam-diam tidak pernah terkirim.
-      data: missing.map((type) => ({ type, slots: [...scheduleFor(type).defaultSlots] })),
-      skipDuplicates: true,
+    await prisma.whatsAppMessage.createMany({ data: missing, skipDuplicates: true })
+    return prisma.whatsAppMessage.findMany({
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     })
-    return prisma.whatsAppConfiguration.findMany()
   }
   return existing
 }
 
-export async function readConfiguration(
-  type: WhatsAppMessageType,
-): Promise<WhatsAppConfigurationRow> {
-  const rows = await readConfigurations()
-  const row = rows.find((entry) => entry.type === type)
-  if (!row) throw new Error(`Konfigurasi WhatsApp tidak ditemukan untuk ${type}`)
+export async function readMessage(messageId: string): Promise<WhatsAppMessageRow> {
+  const rows = await readMessages()
+  const row = rows.find((entry) => entry.id === messageId)
+  if (!row) throw new Error(`Kartu pesan WhatsApp tidak ditemukan: ${messageId}`)
+  return row
+}
+
+/** Kartu bawaan menurut jenisnya, untuk jalur yang masih bicara dalam enum. */
+export async function readBuiltinMessage(type: WhatsAppMessageType): Promise<WhatsAppMessageRow> {
+  const rows = await readMessages()
+  const row = rows.find((entry) => entry.builtinType === type)
+  if (!row) throw new Error(`Kartu pesan bawaan tidak ditemukan untuk ${type}`)
   return row
 }
 
 /**
- * Ubah konfigurasi satu jenis pesan.
+ * Ubah satu kartu pesan.
  *
  * Termasuk jam jadwal: jam sekolah bergeser (ujian, bulan puasa, jam masuk
  * baru), dan menuntut rilis untuk setiap pergeseran membuat jadwal di layar
  * perlahan berbohong tentang apa yang benar-benar dikirim.
  */
-export async function updateConfiguration(
-  type: WhatsAppMessageType,
+export async function updateMessage(
+  messageId: string,
   changes: {
+    title?: string
+    description?: string
     enabled?: boolean
+    requireAttendanceActivity?: boolean
     destinationMode?: DestinationMode
     targetGroupJid?: string | null
     targetGroupName?: string | null
     slots?: string[]
+    selectedVariables?: string[]
   },
-): Promise<WhatsAppConfigurationRow> {
-  await readConfigurations()
-
-  const data: Record<string, unknown> = {}
+): Promise<WhatsAppMessageRow> {
+  const data: Prisma.WhatsAppMessageUpdateInput = {}
+  if (changes.title !== undefined) data.title = changes.title
+  if (changes.description !== undefined) data.description = changes.description
   if (changes.enabled !== undefined) data.enabled = changes.enabled
+  if (changes.requireAttendanceActivity !== undefined) {
+    data.requireAttendanceActivity = changes.requireAttendanceActivity
+  }
   if (changes.destinationMode !== undefined) data.destinationMode = changes.destinationMode
   if (changes.targetGroupJid !== undefined) {
     data.targetGroupJid = changes.targetGroupJid
@@ -222,8 +294,61 @@ export async function updateConfiguration(
     data.targetResolvedAt = changes.targetGroupJid ? new Date() : null
   }
   if (changes.slots !== undefined) data.slots = changes.slots
+  if (changes.selectedVariables !== undefined) data.selectedVariables = changes.selectedVariables
 
-  return prisma.whatsAppConfiguration.update({ where: { type }, data })
+  return prisma.whatsAppMessage.update({ where: { id: messageId }, data })
+}
+
+/**
+ * Geser satu kartu satu posisi dan tulis urutan kanonik.
+ *
+ * SATU TRANSAKSI, BUKAN DUA UPDATE. Urutan yang separuh tertulis akan tampak
+ * acak di layar dan, lebih buruk, tidak dapat diperbaiki admin tanpa menebak.
+ * Keputusan urutannya sendiri dihitung modul murni `reorderMessages`, sehingga
+ * aturannya dapat diuji tanpa database.
+ *
+ * Mengembalikan `false` bila pergeseran tidak mungkin (kartu sudah di ujung):
+ * pemanggil harus dapat menjawab "tidak ada yang berubah", bukan melaporkan
+ * keberhasilan yang tidak terjadi.
+ */
+export async function moveMessage(
+  messageId: string,
+  direction: ReorderDirection,
+): Promise<boolean> {
+  const messages = await readMessages()
+  const next = reorderMessages(
+    messages.map((row) => row.id),
+    messageId,
+    direction,
+  )
+  if (!next) return false
+
+  await prisma.$transaction(
+    next.map((entry) =>
+      prisma.whatsAppMessage.update({
+        where: { id: entry.id },
+        data: { sortOrder: entry.sortOrder },
+      }),
+    ),
+  )
+  return true
+}
+
+/**
+ * Apakah hari itu sudah ada kelas yang mengisi absensi?
+ *
+ * `AttendanceDay` punya UNIQUE `(classId, date)`, jadi pertanyaan ini dijawab
+ * indeks: satu baris saja cukup, dan pencariannya berhenti di baris pertama.
+ * Tidak menghitung jumlah siswa hadir — hari yang berjalan pun bisa nihil
+ * kehadiran, dan menghitung kehadiran akan membatalkan pesan pada hari yang
+ * justru paling perlu dilaporkan.
+ */
+export async function hasAttendanceActivity(date: SchoolDate): Promise<boolean> {
+  const row = await prisma.attendanceDay.findFirst({
+    where: { date: toPrismaDate(date) },
+    select: { id: true },
+  })
+  return row !== null
 }
 
 export type SkipReason =
@@ -233,6 +358,8 @@ export type SkipReason =
   | "NO_TARGET"
   | "INVALID_TARGET"
   | "NO_SLOT"
+  | "NO_ATTENDANCE_ACTIVITY"
+  | "NOT_SCHEDULABLE"
 
 export type SendOutcome =
   | { status: "SENT"; logId: string }
@@ -240,16 +367,23 @@ export type SendOutcome =
   | { status: "FAILED"; code: WhatsAppErrorCode; message: string; logId: string | null }
 
 /**
- * Susun teks pesan untuk satu jenis dan satu tanggal sekolah.
+ * Susun teks pesan untuk satu kartu dan satu tanggal sekolah.
  *
  * Memakai sumber data yang sama dengan halaman /laporan-whatsapp, sehingga
  * angka yang dikirim ke grup tidak mungkin berbeda dari angka di layar.
  */
 export async function composeMessage(
-  type: WhatsAppMessageType,
+  message: WhatsAppMessageRow,
   date: SchoolDate,
   slot: string,
 ): Promise<string> {
+  if (message.kind !== "BUILTIN" || !message.builtinType) {
+    // Kartu manual membawa teksnya sendiri dan tidak pernah sampai ke sini;
+    // kartu buatan admin belum dapat dibuat lewat jalur mana pun pada tahap
+    // ini. Gagal keras lebih baik daripada mengirim teks kosong ke grup.
+    throw new Error(`Kartu pesan ${message.id} tidak menyusun teks otomatis`)
+  }
+
   // Data laporan dibaca lewat fungsi data-only: jalur ini juga dijalankan
   // worker latar yang tidak punya sesi pengguna. Guard permission untuk
   // pemanggil web ada di `lib/whatsapp-access.ts`.
@@ -263,9 +397,8 @@ export async function composeMessage(
   // Template tidak mengenal percabangan; yang memilih antara "masih ada yang
   // belum rekap" dan "semua sudah" adalah data, di satu tempat, sehingga
   // template yang dipilih tidak pernah bertentangan dengan angka di dalamnya.
-  const templateKey = templateKeyFor(type, classes)
-  const configuration = await readConfiguration(type)
-  const stored = parseStoredTemplates(configuration.messageTemplates)
+  const templateKey = templateKeyFor(message.builtinType, classes)
+  const stored = parseStoredTemplates(message.messageTemplates)
 
   return renderTemplate(
     templateKey,
@@ -280,13 +413,22 @@ export async function composeMessage(
 }
 
 export type SendRequest = {
-  type: WhatsAppMessageType
+  /** Kartu pesan yang mengirim. */
+  messageId: string
   /** Slot `HH:mm` untuk kiriman terjadwal; NULL untuk manual. */
   slot: string | null
   /** SCHEDULED dijaga idempoten; MANUAL sengaja boleh diulang operator. */
   trigger: "SCHEDULED" | "MANUAL"
   initiatedById?: string | null
   date?: SchoolDate
+  /**
+   * Teks persis untuk kartu "Pesan manual".
+   *
+   * Dikirim APA ADANYA. Tidak ada header, penanda "[MANUAL]", stempel waktu,
+   * nama pengirim, atau tautan yang ditambahkan: admin menulis pesan untuk
+   * dibaca orang di grup, dan sisipan otomatis mengubah pesan yang ia setujui.
+   */
+  text?: string
 }
 
 /**
@@ -301,9 +443,19 @@ export async function sendWhatsAppMessage(
 ): Promise<SendOutcome> {
   const timeZone = await readSchoolTimeZone()
   const date = request.date ?? todayInSchoolTimeZone(new Date(), timeZone)
-  const configuration = await readConfiguration(request.type)
+  const message = await readMessage(request.messageId)
 
-  if (request.trigger === "SCHEDULED" && !configuration.enabled) {
+  if (request.trigger === "SCHEDULED" && !isSchedulable(message)) {
+    // Kartu manual tidak punya occurrence: memaksanya lewat jalur terjadwal
+    // akan menulis klaim idempotensi untuk sesuatu yang tidak pernah dijadwalkan.
+    return {
+      status: "SKIPPED",
+      reason: "NOT_SCHEDULABLE",
+      detail: "Kartu pesan ini tidak dapat dijadwalkan.",
+    }
+  }
+
+  if (request.trigger === "SCHEDULED" && !message.enabled) {
     return {
       status: "SKIPPED",
       reason: "AUTOMATIC_DISABLED",
@@ -321,7 +473,7 @@ export async function sendWhatsAppMessage(
   }
 
   const target = resolveDestination(
-    destinationOf(configuration),
+    destinationOf(message),
     defaultDestinationOf(await readWhatsAppSetting()),
   )
   if (target.status === "NOT_RESOLVED") {
@@ -335,16 +487,57 @@ export async function sendWhatsAppMessage(
     }
   }
 
-  const slot = request.slot ?? configuration.slots[0]
-  if (!slot) {
+  const slot = request.slot ?? message.slots[0] ?? null
+  if (request.trigger === "SCHEDULED" && !slot) {
     return {
       status: "SKIPPED",
       reason: "NO_SLOT",
-      detail: "Jadwal pengiriman belum diatur untuk jenis laporan ini.",
+      detail: "Jadwal pengiriman belum diatur untuk kartu pesan ini.",
     }
   }
 
-  const messageText = await composeMessage(request.type, date, slot)
+  // TEKS MANUAL DIKIRIM APA ADANYA.
+  //
+  // Kartu manual tidak punya template dan tidak boleh melewati renderer:
+  // placeholder yang kebetulan ditulis admin (`{tanggal}`) adalah teks biasa
+  // baginya, dan merendernya akan mengubah pesan yang ia setujui di layar.
+  const messageText =
+    message.kind === "MANUAL"
+      ? (request.text ?? "")
+      : await composeMessage(message, date, slot ?? "")
+
+  if (message.kind === "MANUAL" && messageText.trim().length === 0) {
+    throw new Error("Teks pesan manual tidak boleh kosong.")
+  }
+
+  // GUARD AKTIVITAS ABSENSI DIJALANKAN SETELAH KLAIM-KLAIM MURAH, SEBELUM KIRIM.
+  //
+  // Verdict-nya bisa berubah dalam masa grace 20 menit: jam 07.00 belum ada
+  // kelas yang mengisi, jam 07.15 sudah. Karena itu keputusannya dicatat
+  // sebagai baris SKIPPED ber-idempotencyKey — occurrence-nya dipakai habis,
+  // sehingga tick berikutnya tidak mengirim laporan untuk hari yang, menurut
+  // pemeriksaan pertama, memang tidak berjalan.
+  if (request.trigger === "SCHEDULED" && message.requireAttendanceActivity) {
+    const decision = attendanceActivityDecision({
+      trigger: request.trigger,
+      required: message.requireAttendanceActivity,
+      hasActivity: await hasAttendanceActivity(date),
+    })
+    if (decision.blocked) {
+      await recordLog({
+        request,
+        slot: slot!,
+        date,
+        idempotencyKey: messageIdempotencyKey(message, date, slot!),
+        target,
+        messageText,
+        status: "SKIPPED",
+        errorCode: decision.reason,
+        errorMessage: decision.detail,
+      })
+      return { status: "SKIPPED", reason: "NO_ATTENDANCE_ACTIVITY", detail: decision.detail }
+    }
+  }
 
   // KLAIM DULU, BARU KIRIM.
   //
@@ -362,9 +555,9 @@ export async function sendWhatsAppMessage(
   if (request.trigger === "SCHEDULED") {
     claim = await recordLog({
       request,
-      slot,
+      slot: slot!,
       date,
-      idempotencyKey: idempotencyKeyFor(request.type, date, slot),
+      idempotencyKey: messageIdempotencyKey(message, date, slot!),
       target,
       messageText,
       status: "PROCESSING",
@@ -424,8 +617,8 @@ export async function sendWhatsAppMessage(
         providerMessageId: sendResult.providerMessageId,
       })
 
-  await prisma.whatsAppConfiguration.update({
-    where: { type: request.type },
+  await prisma.whatsAppMessage.update({
+    where: { id: message.id },
     data: { lastSentAt: new Date() },
   })
 
@@ -458,7 +651,7 @@ async function markLog(
 
 type LogInput = {
   request: SendRequest
-  slot: string
+  slot: string | null
   date: SchoolDate
   idempotencyKey: string | null
   target: { jid: string; name: string }
@@ -477,10 +670,15 @@ type LogInput = {
  * restart atau dua worker berjalan bersamaan.
  */
 async function recordLog(input: LogInput): Promise<{ id: string | null; duplicate: boolean }> {
+  const message = await readMessage(input.request.messageId)
   try {
     const log = await prisma.whatsAppSendLog.create({
       data: {
-        type: input.request.type,
+        messageId: message.id,
+        // Kolom `type` legacy tetap diisi untuk kartu bawaan selama riwayat
+        // lama dan kolomnya belum dipensiunkan; kartu tanpa padanan enum
+        // menulis NULL, bukan nilai enum yang mengada-ada.
+        type: message.builtinType,
         trigger: input.request.trigger,
         status: input.status,
         idempotencyKey: input.idempotencyKey,
@@ -521,7 +719,7 @@ export async function schoolMinutesNow(now: Date = new Date()): Promise<number> 
 }
 
 export type ScheduleSlotStatus = {
-  type: WhatsAppMessageType
+  messageId: string
   label: string
   slot: string
   status: "PROCESSING" | "SENT" | "FAILED" | "SKIPPED" | "NOT_YET"
@@ -537,22 +735,26 @@ export type ScheduleSlotStatus = {
  * dari `sekarang >= jadwal` akan menyatakan sukses untuk slot yang justru gagal.
  */
 export async function readScheduleStatus(date: SchoolDate): Promise<ScheduleSlotStatus[]> {
-  const [logs, configurations] = await Promise.all([
+  const [logs, messages] = await Promise.all([
     prisma.whatsAppSendLog.findMany({
       where: { schoolDate: toPrismaDate(date), trigger: "SCHEDULED" },
       orderBy: { attemptedAt: "desc" },
     }),
-    readConfigurations(),
+    readMessages(),
   ])
 
   const statuses: ScheduleSlotStatus[] = []
-  for (const definition of WHATSAPP_SCHEDULE) {
-    const configuration = configurations.find((row) => row.type === definition.type)
-    for (const slot of configuration?.slots ?? []) {
-      const log = logs.find((entry) => entry.type === definition.type && entry.scheduledSlot === slot)
+  // Urutan mengikuti urutan kartu di layar: daftar jadwal dan daftar kartu
+  // tidak boleh tampil dalam urutan yang berbeda.
+  for (const message of messages) {
+    if (!isSchedulable(message)) continue
+    for (const slot of message.slots) {
+      const log = logs.find(
+        (entry) => entry.messageId === message.id && entry.scheduledSlot === slot,
+      )
       statuses.push({
-        type: definition.type,
-        label: definition.label,
+        messageId: message.id,
+        label: message.title,
         slot,
         status: log ? log.status : "NOT_YET",
         sentAt: log?.sentAt ?? null,
@@ -570,6 +772,7 @@ export async function readSendHistory(limit = 50) {
     take: limit,
     select: {
       id: true,
+      messageId: true,
       type: true,
       trigger: true,
       status: true,
@@ -580,6 +783,9 @@ export async function readSendHistory(limit = 50) {
       errorMessage: true,
       attemptedAt: true,
       sentAt: true,
+      // Judul kartu ikut dibaca agar riwayat tetap terbaca untuk kartu yang
+      // tidak punya padanan enum.
+      message: { select: { title: true } },
       initiatedBy: { select: { name: true, email: true } },
     },
   })

@@ -83,8 +83,10 @@ export async function workerGroups(): Promise<{ groups: WhatsAppGroup[] }> {
 }
 
 export function workerSend(body: {
-  type: string
-  slot: string
+  messageId: string
+  slot: string | null
+  /** Teks kartu manual, diteruskan apa adanya. */
+  text?: string
   initiatedById: string | null
 }): Promise<{ status: string; code?: string; message?: string; reason?: string; detail?: string }> {
   return call("/send", { method: "POST", body })

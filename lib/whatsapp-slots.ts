@@ -5,15 +5,17 @@
  * Tidak membaca jam sistem, tidak menyentuh database — sehingga perilaku pada
  * batas tengah malam WIB maupun setelah worker mati dapat diuji secara pasti.
  */
-import type { WhatsAppMessageType } from "@/lib/whatsapp-schedule"
-
 /**
  * Jadwal yang sedang berlaku, sebagaimana tersimpan di database.
  *
  * Diterima sebagai argumen, tidak dibaca dari konstanta: jam dapat disunting
  * admin, dan modul ini harus menjawab menurut pengaturan yang berlaku saat itu.
+ *
+ * Identitasnya `messageId`, bukan jenis pesan: sejak kartu pesan ada, dua
+ * kartu dapat berbagi jenis yang sama, dan kartu buatan admin tidak punya
+ * jenis sama sekali.
  */
-export type ConfiguredSchedule = { type: WhatsAppMessageType; slots: readonly string[] }
+export type ConfiguredSchedule = { messageId: string; slots: readonly string[] }
 
 /**
  * Seberapa lama setelah jamnya sebuah slot masih pantas dikirim.
@@ -26,7 +28,7 @@ export type ConfiguredSchedule = { type: WhatsAppMessageType; slots: readonly st
 export const SLOT_GRACE_MINUTES = 20
 
 export type SlotDecision =
-  | { due: true; type: WhatsAppMessageType; slot: string }
+  | { due: true; messageId: string; slot: string }
   | { due: false; reason: "NOT_YET" | "EXPIRED" }
 
 /** Ubah `HH:mm` menjadi menit sejak tengah malam. */
@@ -65,12 +67,12 @@ export function dueSlots(
   schedule: readonly ConfiguredSchedule[],
   nowMinutes: number,
   graceMinutes: number = SLOT_GRACE_MINUTES,
-): { type: WhatsAppMessageType; slot: string }[] {
-  const due: { type: WhatsAppMessageType; slot: string }[] = []
+): { messageId: string; slot: string }[] {
+  const due: { messageId: string; slot: string }[] = []
   for (const definition of schedule) {
     for (const slot of definition.slots) {
       if (slotDecision(slot, nowMinutes, graceMinutes).due) {
-        due.push({ type: definition.type, slot })
+        due.push({ messageId: definition.messageId, slot })
       }
     }
   }
@@ -82,12 +84,12 @@ export function missedSlots(
   schedule: readonly ConfiguredSchedule[],
   nowMinutes: number,
   graceMinutes: number = SLOT_GRACE_MINUTES,
-): { type: WhatsAppMessageType; slot: string }[] {
-  const missed: { type: WhatsAppMessageType; slot: string }[] = []
+): { messageId: string; slot: string }[] {
+  const missed: { messageId: string; slot: string }[] = []
   for (const definition of schedule) {
     for (const slot of definition.slots) {
       if (slotDecision(slot, nowMinutes, graceMinutes).reason === "EXPIRED") {
-        missed.push({ type: definition.type, slot })
+        missed.push({ messageId: definition.messageId, slot })
       }
     }
   }

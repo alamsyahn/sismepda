@@ -123,10 +123,10 @@ test("daftar kosong sah: itu berarti laporan ini tidak dijadwalkan", () => {
 // --- 3. jadwal runtime berasal dari konfigurasi -----------------------------
 
 test("scheduler memakai jam hasil suntingan admin, bukan jam bawaan", () => {
-  const schedule = [{ type: "ATTENDANCE_MISSING" as const, slots: ["07:30"] }]
+  const schedule = [{ messageId: "ATTENDANCE_MISSING", slots: ["07:30"] }]
 
   assert.deepEqual(dueSlots(schedule, 7 * 60 + 30), [
-    { type: "ATTENDANCE_MISSING", slot: "07:30" },
+    { messageId: "ATTENDANCE_MISSING", slot: "07:30" },
   ])
   // 08:00 adalah jam bawaan lama; ia tidak boleh lagi berpengaruh.
   assert.deepEqual(dueSlots(schedule, 8 * 60), [])
@@ -220,7 +220,7 @@ test("tick 09:59 belum mengirim; 10:00 mengirim sekali; 10:01 dan 10:02 tidak me
   const database = createFakeDatabase()
   let sends = 0
   const transport = { send: () => void sends++ }
-  const schedule = [{ type: "ATTENDANCE_MISSING" as const, slots: ["10:00"] }]
+  const schedule = [{ messageId: "ATTENDANCE_MISSING", slots: ["10:00"] }]
 
   // 09:59 — belum jatuh tempo, scheduler tidak memanggil transport sama sekali.
   assert.deepEqual(dueSlots(schedule, 9 * 60 + 59), [])
@@ -229,7 +229,7 @@ test("tick 09:59 belum mengirim; 10:00 mengirim sekali; 10:01 dan 10:02 tidak me
   for (const minute of [10 * 60, 10 * 60 + 1, 10 * 60 + 2]) {
     for (const due of dueSlots(schedule, minute)) {
       dispatch(database, transport, {
-        type: due.type,
+        type: due.messageId as "ATTENDANCE_MISSING",
         date: "2026-09-16",
         slot: due.slot,
         trigger: "SCHEDULED",

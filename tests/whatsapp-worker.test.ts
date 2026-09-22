@@ -577,7 +577,10 @@ test("hanya pengiriman terjadwal yang memakai idempotency key", () => {
   // berulang kali — juga setelah occurrence otomatis hari itu terkirim.
   const claim = server.slice(server.indexOf("let claim"), server.indexOf("transport.sendMessage("))
   assert.ok(claim.includes('request.trigger === "SCHEDULED"'), "klaim hanya untuk jadwal")
-  assert.ok(claim.includes("idempotencyKeyFor("), "occurrence terjadwal wajib berkunci")
+  assert.ok(
+    claim.includes("messageIdempotencyKey("),
+    "occurrence terjadwal wajib berkunci",
+  )
   assert.ok(
     claim.includes("claim = { id: null, duplicate: false }"),
     "kirim manual harus tetap bisa diulang operator",

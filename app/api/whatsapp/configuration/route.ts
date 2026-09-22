@@ -7,10 +7,11 @@ import { recordAuditLog } from "@/lib/audit-log"
 import {
   defaultDestinationOf,
   destinationOf,
-  readConfiguration,
-  readConfigurations,
+  readBuiltinMessage,
+  readMessage,
+  readMessages,
   readWhatsAppSetting,
-  updateConfiguration,
+  updateMessage,
   updateDefaultDestination,
   updateMessageTemplates,
 } from "@/lib/server-whatsapp"
@@ -26,7 +27,7 @@ import {
   type StoredTemplates,
 } from "@/lib/whatsapp-template-store"
 import { workerGroups } from "@/lib/server-whatsapp-worker-client"
-import { WHATSAPP_MESSAGE_TYPES, scheduleFor } from "@/lib/whatsapp-schedule"
+import { WHATSAPP_MESSAGE_TYPES } from "@/lib/whatsapp-schedule"
 import { WhatsAppSendError, type WhatsAppGroup } from "@/lib/whatsapp-transport"
 import {
   AUTOMATIC_BLOCK_MESSAGES,
@@ -50,8 +51,16 @@ const destinationSchema = z.object({
   name: z.string().trim().min(1).optional(),
 })
 
+/**
+ * Kartu ditunjuk dengan `messageId`.
+ *
+ * `type` masih diterima sebagai penunjuk kartu BAWAAN supaya pemanggil lama
+ * (dan uji yang menjaga perilakunya) tidak patah di tengah peralihan; ia
+ * diterjemahkan ke `messageId` di satu tempat, bukan menjadi jalur kedua.
+ */
 const patchSchema = z.object({
-  type: z.enum(WHATSAPP_MESSAGE_TYPES as unknown as [string, ...string[]]),
+  messageId: z.string().min(1).optional(),
+  type: z.enum(WHATSAPP_MESSAGE_TYPES as unknown as [string, ...string[]]).optional(),
   enabled: z.boolean().optional(),
   destinationMode: z.enum(["DEFAULT", "OVERRIDE"]).optional(),
   destination: destinationSchema.nullable().optional(),
@@ -72,7 +81,8 @@ const defaultSchema = z.object({
  */
 const templatesSchema = z.object({
   scope: z.literal("templates"),
-  type: z.enum(WHATSAPP_MESSAGE_TYPES as unknown as [string, ...string[]]),
+  messageId: z.string().min(1).optional(),
+  type: z.enum(WHATSAPP_MESSAGE_TYPES as unknown as [string, ...string[]]).optional(),
   templates: z
     .record(
       z.string(),
@@ -97,8 +107,8 @@ export async function GET() {
   try {
     await requireWhatsAppViewer()
 
-    const [configurations, setting] = await Promise.all([
-      readConfigurations(),
+    const [messages, setting] = await Promise.all([
+      readMessages(),
       readWhatsAppSetting(),
     ])
 
@@ -122,7 +132,7 @@ export async function GET() {
 
     return NextResponse.json(
       {
-        configurations,
+        messages,
         groups,
         defaultDestination: {
           jid: setting.defaultGroupJid,
@@ -184,7 +194,11 @@ export async function PATCH(request: Request) {
     // teks rusak ke grup sekolah setiap hari sampai ada yang menyadarinya.
     const asTemplates = templatesSchema.safeParse(body)
     if (asTemplates.success) {
-      const type = asTemplates.data.type as (typeof WHATSAPP_MESSAGE_TYPES)[number]
+      const target = asTemplates.data.messageId
+        ? await readMessage(asTemplates.data.messageId)
+        : await readBuiltinMessage(
+            asTemplates.data.type as (typeof WHATSAPP_MESSAGE_TYPES)[number],
+          )
 
       let stored: StoredTemplates | null = null
       if (asTemplates.data.templates !== null) {
@@ -204,13 +218,13 @@ export async function PATCH(request: Request) {
         stored = serializeTemplates(candidate)
       }
 
-      const after = await updateMessageTemplates(type, stored)
+      const after = await updateMessageTemplates(target.id, stored)
 
       await recordAuditLog({
         actorId: context.user.id,
         action: "WHATSAPP_SCHEDULE_TOGGLED",
         entity: "WhatsAppConnection",
-        entityId: type,
+        entityId: target.id,
         summary:
           stored === null
             ? "Template pesan dikembalikan ke bawaan"
@@ -220,7 +234,7 @@ export async function PATCH(request: Request) {
       })
 
       return NextResponse.json(
-        { configuration: after },
+        { message: after },
         { headers: { "Cache-Control": "private, no-store" } },
       )
     }
@@ -233,8 +247,19 @@ export async function PATCH(request: Request) {
       )
     }
 
-    const type = parsed.data.type as (typeof WHATSAPP_MESSAGE_TYPES)[number]
-    const before = await readConfiguration(type)
+    // Satu penunjuk kartu, dua cara menyebutnya. Menerjemahkan di sini
+    // membuat sisa handler tidak perlu tahu bentuk mana yang dipakai.
+    const before = parsed.data.messageId
+      ? await readMessage(parsed.data.messageId)
+      : parsed.data.type
+        ? await readBuiltinMessage(parsed.data.type as (typeof WHATSAPP_MESSAGE_TYPES)[number])
+        : null
+    if (!before) {
+      return NextResponse.json(
+        { message: "Kartu pesan tidak disebutkan." },
+        { status: 400 },
+      )
+    }
 
     const targetGroupJid =
       parsed.data.destination === undefined
@@ -247,7 +272,7 @@ export async function PATCH(request: Request) {
 
     // Keadaan SETELAH perubahan diperiksa, bukan keadaan sebelumnya: admin
     // boleh memilih grup dan mengaktifkan otomatis dalam satu permintaan.
-    const nextConfiguration = {
+    const nextMessage = {
       ...before,
       destinationMode: parsed.data.destinationMode ?? before.destinationMode,
       targetGroupJid: targetGroupJid === undefined ? before.targetGroupJid : targetGroupJid,
@@ -258,7 +283,7 @@ export async function PATCH(request: Request) {
     // tetapi UI bukan penjaga: permintaan dapat datang dari mana saja.
     if (parsed.data.enabled === true) {
       const block = automaticBlockFor(
-        destinationOf(nextConfiguration),
+        destinationOf(nextMessage),
         defaultDestinationOf(await readWhatsAppSetting()),
       )
       if (block) {
@@ -277,7 +302,7 @@ export async function PATCH(request: Request) {
       slots = normalized.slots
     }
 
-    const after = await updateConfiguration(type, {
+    const after = await updateMessage(before.id, {
       enabled: parsed.data.enabled,
       destinationMode: parsed.data.destinationMode,
       targetGroupJid,
@@ -289,8 +314,8 @@ export async function PATCH(request: Request) {
       actorId: context.user.id,
       action: "WHATSAPP_SCHEDULE_TOGGLED",
       entity: "WhatsAppConnection",
-      entityId: type,
-      summary: `Konfigurasi ${scheduleFor(type).label} diubah`,
+      entityId: before.id,
+      summary: `Konfigurasi ${before.title} diubah`,
       before: {
         enabled: before.enabled,
         destinationMode: before.destinationMode,
@@ -306,7 +331,7 @@ export async function PATCH(request: Request) {
     })
 
     return NextResponse.json(
-      { configuration: after },
+      { message: after },
       { headers: { "Cache-Control": "private, no-store" } },
     )
   } catch (error) {
