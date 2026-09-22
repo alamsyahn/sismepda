@@ -10,6 +10,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   Table,
   TableBody,
   TableCell,
@@ -77,18 +86,27 @@ import type { WhatsAppGroup } from "@/lib/whatsapp-transport"
  */
 type StatusPayload = Omit<WhatsAppStatus, "qr">
 
+/**
+ * Status satu slot hari ini.
+ *
+ * Identitasnya `messageId`, bukan jenis pesan: sejak kartu pesan ada, kartu
+ * buatan admin tidak punya jenis sama sekali, dan mencocokkan badge status
+ * lewat `type` akan membuat kartu tersebut selalu tampak tanpa jadwal.
+ */
 type ScheduleRow = {
-  type: WhatsAppMessageType
+  messageId: string
   label: string
   slot: string
-  status: "SENT" | "FAILED" | "SKIPPED" | "NOT_YET"
+  status: "PROCESSING" | "SENT" | "FAILED" | "SKIPPED" | "NOT_YET"
   sentAt: string | null
   errorMessage: string | null
 }
 
 type HistoryRow = {
   id: string
-  type: WhatsAppMessageType
+  messageId: string | null
+  message: { title: string } | null
+  type: WhatsAppMessageType | null
   trigger: "SCHEDULED" | "MANUAL"
   status: "SENT" | "FAILED" | "SKIPPED"
   scheduledSlot: string | null
@@ -104,9 +122,10 @@ type HistoryRow = {
 /**
  * Kartu pesan sebagaimana dikirim server.
  *
- * `builtinType` bernilai null untuk kartu manual dan kartu buatan admin; layar
- * ini masih menampilkan kartu bawaan saja, sehingga kartu tanpa jenis disaring
- * di satu tempat (`builtinConfigurations`) alih-alih di setiap pemakaian.
+ * Layar ini menampilkan SELURUH kartu apa adanya, dalam urutan yang dikirim
+ * server. Tidak ada daftar jenis pesan yang ditulis di klien: begitu urutan
+ * atau daftar kartu ditentukan di dua tempat, kartu buatan admin akan hilang
+ * dari layar tanpa ada yang menyadarinya.
  */
 type MessageRow = {
   id: string
@@ -116,21 +135,11 @@ type MessageRow = {
   description: string | null
   sortOrder: number
   enabled: boolean
+  requireAttendanceActivity: boolean
   destinationMode: DestinationMode
   targetGroupJid: string | null
   targetGroupName: string | null
   slots: string[]
-  messageTemplates?: unknown
-}
-
-type ConfigurationRow = {
-  type: WhatsAppMessageType
-  enabled: boolean
-  destinationMode: DestinationMode
-  targetGroupJid: string | null
-  targetGroupName: string | null
-  slots: string[]
-  /** JSON mentah dari server; selalu lewat `parseStoredTemplates`. */
   messageTemplates?: unknown
 }
 
@@ -186,7 +195,11 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
   const [status, setStatus] = useState<StatusPayload | null>(null)
   const [schedule, setSchedule] = useState<ScheduleRow[]>([])
   const [history, setHistory] = useState<HistoryRow[]>([])
-  const [configurations, setConfigurations] = useState<ConfigurationRow[]>([])
+  const [messages, setMessages] = useState<MessageRow[]>([])
+  /** Teks kartu "Pesan manual", per kartu: satu halaman dapat punya lebih dari satu. */
+  const [manualText, setManualText] = useState<Record<string, string>>({})
+  /** Kartu manual yang sedang menunggu konfirmasi kirim. */
+  const [manualConfirm, setManualConfirm] = useState<MessageRow | null>(null)
   // `null` = daftar grup tidak diketahui (belum terhubung / fetch gagal).
   // Dibedakan dari `[]` yang berarti benar-benar tidak ada grup.
   const [groups, setGroups] = useState<WhatsAppGroup[] | null>(null)
@@ -213,25 +226,10 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
       }
       if (configResponse.ok) {
         const data = await configResponse.json()
-        // Server kini mengirim kartu pesan. Kartu bawaan dipetakan ke bentuk
-        // yang dipakai layar ini; kartu manual dan kartu buatan admin belum
-        // ditampilkan di sini.
-        const messages: MessageRow[] = data.messages ?? []
-        setConfigurations(
-          messages
-            .filter((row): row is MessageRow & { builtinType: WhatsAppMessageType } =>
-              row.builtinType !== null,
-            )
-            .map((row) => ({
-              type: row.builtinType,
-              enabled: row.enabled,
-              destinationMode: row.destinationMode,
-              targetGroupJid: row.targetGroupJid,
-              targetGroupName: row.targetGroupName,
-              slots: row.slots,
-              messageTemplates: row.messageTemplates,
-            })),
-        )
+        // Kartu dipakai apa adanya, termasuk urutannya: `sortOrder` adalah
+        // keputusan admin yang tersimpan, bukan sesuatu yang boleh disusun
+        // ulang di browser.
+        setMessages(data.messages ?? [])
         setDefaultDestination(data.defaultDestination ?? { jid: null, name: null })
         // Daftar grup hanya ditimpa bila server benar-benar mengirim daftar.
         // Pengambilan yang gagal mengirim `null`, dan menimpakannya akan
@@ -298,35 +296,79 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
     }
   }
 
-  const sendNow = async (type: WhatsAppMessageType) => {
-    setBusy(`send:${type}`)
+  /**
+   * "Kirim sekarang" dan kirim manual memakai jalur yang sama.
+   *
+   * `text` hanya diisi kartu manual; kartu lain menyusun teksnya di server dari
+   * template. Menyatukan keduanya menjaga agar penjagaan tujuan, audit, dan
+   * penerjemahan hasil tidak punya dua versi yang dapat berbeda.
+   */
+  const sendNow = async (message: MessageRow, text?: string) => {
+    setBusy(`send:${message.id}`)
     try {
       const response = await fetch("/api/whatsapp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type }),
+        body: JSON.stringify({ messageId: message.id, ...(text === undefined ? {} : { text }) }),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) {
         toast.error(data.message ?? "Pengiriman gagal.")
         return
       }
-      if (data.status === "SENT") toast.success("Pesan terkirim ke grup.")
-      else if (data.status === "SKIPPED") toast.warning(data.detail ?? "Pengiriman dilewati.")
-      else toast.error(data.message ?? "Pengiriman gagal.")
+      if (data.status === "SENT") {
+        toast.success("Pesan terkirim ke grup.")
+        // Textarea baru dikosongkan SETELAH server memastikan terkirim. Kalau
+        // dikosongkan lebih dulu, kegagalan transport akan menghapus teks yang
+        // baru saja ditulis admin dan tidak dapat dikembalikan.
+        if (text !== undefined) {
+          setManualText((current) => ({ ...current, [message.id]: "" }))
+        }
+      } else if (data.status === "SKIPPED") {
+        toast.warning(data.detail ?? "Pengiriman dilewati.")
+      } else {
+        toast.error(data.message ?? "Pengiriman gagal.")
+      }
       await refresh()
     } finally {
       setBusy(null)
     }
   }
 
-  const toggleSchedule = async (type: WhatsAppMessageType, enabled: boolean) => {
-    setBusy(`toggle:${type}`)
+  /**
+   * Geser satu kartu satu posisi.
+   *
+   * Yang dikirim adalah perintah "naikkan/turunkan kartu ini", bukan urutan
+   * lengkap: dua admin yang menyusun ulang bersamaan tidak boleh saling
+   * menimpa, dan urutan hasilnya selalu dihitung server dari keadaan tersimpan.
+   */
+  const moveCard = async (message: MessageRow, direction: "UP" | "DOWN") => {
+    setBusy(`move:${message.id}`)
+    try {
+      const response = await fetch("/api/whatsapp/messages/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId: message.id, direction }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        toast.error(data.message ?? "Urutan gagal disimpan.")
+        return
+      }
+      if (data.messages) setMessages(data.messages)
+      await refresh()
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const toggleSchedule = async (message: MessageRow, enabled: boolean) => {
+    setBusy(`toggle:${message.id}`)
     try {
       const response = await fetch("/api/whatsapp/configuration", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, enabled }),
+        body: JSON.stringify({ messageId: message.id, enabled }),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) {
@@ -334,6 +376,36 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
         return
       }
       toast.success(enabled ? "Pengiriman otomatis diaktifkan." : "Pengiriman otomatis dinonaktifkan.")
+      await refresh()
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  /**
+   * Penjagaan hari tanpa aktivitas absensi.
+   *
+   * Hanya berlaku bagi pengiriman terjadwal; "Kirim sekarang" dan pesan manual
+   * tetap berjalan. Ditegakkan di server — tombol ini hanya menyimpan pilihan.
+   */
+  const toggleActivityGuard = async (message: MessageRow, required: boolean) => {
+    setBusy(`guard:${message.id}`)
+    try {
+      const response = await fetch("/api/whatsapp/configuration", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId: message.id, requireAttendanceActivity: required }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        toast.error(data.message ?? "Perubahan gagal disimpan.")
+        return
+      }
+      toast.success(
+        required
+          ? "Pesan hanya dikirim saat ada aktivitas absensi."
+          : "Pesan dikirim tanpa memeriksa aktivitas absensi.",
+      )
       await refresh()
     } finally {
       setBusy(null)
@@ -396,16 +468,16 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
    * pernah dipilih sengaja dibiarkan tersimpan, sehingga admin yang kembali ke
    * override tidak perlu memilih ulang dari awal.
    */
-  const saveReportDestination = async (type: WhatsAppMessageType, value: string) => {
+  const saveReportDestination = async (message: MessageRow, value: string) => {
     const useDefault = value === USE_DEFAULT
     const group = groups?.find((row) => row.jid === value) ?? null
-    setBusy(`destination:${type}`)
+    setBusy(`destination:${message.id}`)
     try {
       const response = await fetch("/api/whatsapp/configuration", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type,
+          messageId: message.id,
           destinationMode: useDefault ? "DEFAULT" : "OVERRIDE",
           ...(useDefault ? {} : { destination: { jid: value, name: group?.name } }),
         }),
@@ -429,19 +501,19 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
    * murni yang sama dengan yang dipakai server, sehingga yang terlihat di layar
    * setelah menyimpan sama dengan yang benar-benar tersimpan.
    */
-  const saveSlots = async (type: WhatsAppMessageType, slots: string[]) => {
+  const saveSlots = async (message: MessageRow, slots: string[]) => {
     const normalized = normalizeSlots(slots)
     if (!normalized.ok) {
       toast.error(slotsErrorMessage(normalized.error))
       return
     }
 
-    setBusy(`slots:${type}`)
+    setBusy(`slots:${message.id}`)
     try {
       const response = await fetch("/api/whatsapp/configuration", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, slots: normalized.slots }),
+        body: JSON.stringify({ messageId: message.id, slots: normalized.slots }),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) {
@@ -634,13 +706,13 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
 
           <Separator />
 
-          {WHATSAPP_SCHEDULE.map((definition) => {
-            const configuration = configurations.find((row) => row.type === definition.type)
-            const slots = schedule.filter((row) => row.type === definition.type)
+          {messages.map((message, index) => {
+            const slots = schedule.filter((row) => row.messageId === message.id)
+            const isManual = message.kind === "MANUAL"
             const reportDestination = {
-              mode: configuration?.destinationMode ?? "DEFAULT",
-              jid: configuration?.targetGroupJid ?? null,
-              name: configuration?.targetGroupName ?? null,
+              mode: message.destinationMode,
+              jid: message.targetGroupJid,
+              name: message.targetGroupName,
             }
             const display = destinationDisplay(
               reportDestination,
@@ -652,39 +724,86 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
             // menekan tombol yang sudah pasti gagal.
             const destinationReady = display.kind !== "MISSING"
             // Jadwal berasal dari database, bukan dari konstanta di kode.
-            const configuredSlots = configuration?.slots ?? []
+            const configuredSlots = message.slots
+            const draft = manualText[message.id] ?? ""
 
             return (
-              <div key={definition.type} className="space-y-3 rounded-md border p-4">
+              <div key={message.id} className="space-y-3 rounded-md border p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="font-medium">{definition.label}</p>
-                    <p className="text-muted-foreground text-sm">{definition.description}</p>
+                    <p className="font-medium">{message.title}</p>
+                    {message.description ? (
+                      <p className="text-muted-foreground text-sm">{message.description}</p>
+                    ) : null}
                     <p className="text-muted-foreground mt-1 text-xs">
-                      {configuredSlots.length > 0 ? formatSlots(configuredSlots) : "Jadwal belum diatur"} · Grup:{" "}
+                      {/* Kartu manual tidak pernah terjadwal, jadi menyebut
+                          "Jadwal belum diatur" hanya akan membingungkan. */}
+                      {isManual
+                        ? "Dikirim manual"
+                        : configuredSlots.length > 0
+                          ? formatSlots(configuredSlots)
+                          : "Jadwal belum diatur"}{" "}
+                      · Grup:{" "}
                       {display.kind === "DEFAULT"
                         ? `Gunakan grup default (${display.label})`
                         : display.label}
                     </p>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                     {canManageConnection ? (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`Naikkan ${message.title}`}
+                          disabled={busy !== null || index === 0}
+                          onClick={() => void moveCard(message, "UP")}
+                        >
+                          ↑
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`Turunkan ${message.title}`}
+                          disabled={busy !== null || index === messages.length - 1}
+                          onClick={() => void moveCard(message, "DOWN")}
+                        >
+                          ↓
+                        </Button>
+                      </div>
+                    ) : null}
+                    {isManual ? null : canManageConnection ? (
                       <label className="flex items-center gap-2 text-sm">
                         <Switch
-                          checked={configuration?.enabled ?? false}
-                          disabled={busy !== null || (!destinationReady && !configuration?.enabled)}
+                          checked={message.enabled}
+                          disabled={busy !== null || (!destinationReady && !message.enabled)}
                           onCheckedChange={(checked) =>
-                            void toggleSchedule(definition.type, checked === true)
+                            void toggleSchedule(message, checked === true)
                           }
                         />
                         Otomatis
                       </label>
                     ) : (
-                      <Badge variant={configuration?.enabled ? "default" : "secondary"}>
-                        {configuration?.enabled ? "Otomatis aktif" : "Otomatis nonaktif"}
+                      <Badge variant={message.enabled ? "default" : "secondary"}>
+                        {message.enabled ? "Otomatis aktif" : "Otomatis nonaktif"}
                       </Badge>
                     )}
-                    {canSend ? (
+                    {isManual || !canManageConnection ? null : (
+                      <label
+                        className="flex items-center gap-2 text-sm"
+                        title="Jika aktif, pesan otomatis tidak dikirim pada hari ketika tidak ada aktivitas absensi sekolah."
+                      >
+                        <Switch
+                          checked={message.requireAttendanceActivity}
+                          disabled={busy !== null}
+                          onCheckedChange={(checked) =>
+                            void toggleActivityGuard(message, checked === true)
+                          }
+                        />
+                        Hari aktif
+                      </label>
+                    )}
+                    {canSend && !isManual ? (
                       <Button
                         size="sm"
                         variant="outline"
@@ -692,13 +811,54 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                         title={
                           destinationReady ? undefined : "Pilih grup tujuan terlebih dahulu."
                         }
-                        onClick={() => void sendNow(definition.type)}
+                        onClick={() => void sendNow(message)}
                       >
-                        {busy === `send:${definition.type}` ? "Mengirim…" : "Kirim sekarang"}
+                        {busy === `send:${message.id}` ? "Mengirim…" : "Kirim sekarang"}
                       </Button>
                     ) : null}
                   </div>
                 </div>
+
+                {isManual ? (
+                  <div className="space-y-2">
+                    <textarea
+                      className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring min-h-32 w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:outline-none disabled:opacity-50"
+                      placeholder="Tulis pesan yang akan dikirim ke grup…"
+                      value={draft}
+                      disabled={!canSend || busy !== null}
+                      onChange={(event) =>
+                        setManualText((current) => ({
+                          ...current,
+                          [message.id]: event.target.value,
+                        }))
+                      }
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-muted-foreground text-xs">{draft.length} karakter</p>
+                      {canSend ? (
+                        <Button
+                          size="sm"
+                          disabled={
+                            busy !== null || !destinationReady || draft.trim().length === 0
+                          }
+                          title={
+                            destinationReady
+                              ? undefined
+                              : "Pilih grup tujuan terlebih dahulu."
+                          }
+                          onClick={() => setManualConfirm(message)}
+                        >
+                          {busy === `send:${message.id}` ? "Mengirim…" : "Kirim"}
+                        </Button>
+                      ) : null}
+                    </div>
+                    {connected ? null : (
+                      <p className="text-destructive text-xs">
+                        WhatsApp belum terhubung. Hubungkan perangkat sebelum mengirim pesan.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
 
                 {canManageConnection ? (
                   <div className="space-y-1">
@@ -710,7 +870,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                       }
                       disabled={!connected || busy !== null}
                       onValueChange={(value) =>
-                        void saveReportDestination(definition.type, String(value))
+                        void saveReportDestination(message, String(value))
                       }
                     >
                       <SelectTrigger className="w-full sm:w-72">
@@ -741,7 +901,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                   </div>
                 ) : null}
 
-                {canManageConnection ? (
+                {canManageConnection && !isManual ? (
                   <div className="space-y-2">
                     <p className="text-sm font-medium">Jadwal</p>
                     <div className="flex flex-wrap items-center gap-2">
@@ -755,7 +915,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                             onChange={(event) => {
                               const next = [...configuredSlots]
                               next[index] = event.target.value
-                              void saveSlots(definition.type, next)
+                              void saveSlots(message, next)
                             }}
                           />
                           <Button
@@ -764,7 +924,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                             disabled={busy !== null}
                             onClick={() =>
                               void saveSlots(
-                                definition.type,
+                                message,
                                 configuredSlots.filter((_, position) => position !== index),
                               )
                             }
@@ -777,7 +937,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                         size="sm"
                         variant="outline"
                         disabled={busy !== null}
-                        onClick={() => void saveSlots(definition.type, [...configuredSlots, "07:00"])}
+                        onClick={() => void saveSlots(message, [...configuredSlots, "07:00"])}
                       >
                         + Tambah waktu
                       </Button>
@@ -809,7 +969,7 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                   ))}
                 </div>
 
-                {canManageConnection ? (
+                {canManageConnection && message.builtinType ? (
                   <details className="rounded-md border p-3">
                     {/* Ditutup secara bawaan: editor template cukup panjang, dan
                         halaman ini terutama dipakai untuk memantau pengiriman,
@@ -819,12 +979,12 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                     </summary>
                     <div className="pt-3">
                       <WhatsAppTemplateEditor
-                        type={definition.type}
+                        type={message.builtinType}
                         templates={effectiveTemplateSet(
-                          parseStoredTemplates(configuration?.messageTemplates),
+                          parseStoredTemplates(message.messageTemplates),
                         )}
                         customized={customizedKeys(
-                          parseStoredTemplates(configuration?.messageTemplates),
+                          parseStoredTemplates(message.messageTemplates),
                         )}
                         disabled={busy !== null}
                         onSaved={() => void refresh()}
@@ -865,7 +1025,13 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                         {formatDateTime(row.sentAt ?? row.attemptedAt)}
                       </TableCell>
                       <TableCell>
-                        {WHATSAPP_SCHEDULE.find((d) => d.type === row.type)?.label ?? row.type}
+                        {/* Judul kartu adalah sumber yang benar; jenis bawaan
+                            hanya cadangan untuk riwayat lama yang belum
+                            tertaut ke kartu mana pun. */}
+                        {row.message?.title ??
+                          (row.type
+                            ? (WHATSAPP_SCHEDULE.find((d) => d.type === row.type)?.label ?? row.type)
+                            : "Pesan manual")}
                         {row.scheduledSlot ? (
                           <span className="text-muted-foreground"> · {row.scheduledSlot}</span>
                         ) : null}
@@ -906,6 +1072,52 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
           )}
         </CardContent>
       </Card>
+
+      {/*
+        Konfirmasi kirim untuk pesan manual.
+
+        Pesan manual tidak dapat ditarik kembali setelah sampai di grup, dan
+        isinya ditulis bebas, sehingga satu klik tak sengaja dapat mengirim
+        naskah setengah jadi ke seluruh guru.
+      */}
+      <Dialog
+        open={manualConfirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setManualConfirm(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Kirim pesan manual?</DialogTitle>
+            <DialogDescription>
+              Pesan berikut akan dikirim ke grup tujuan dan tidak dapat ditarik kembali.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="bg-muted max-h-60 overflow-y-auto rounded-md p-3 text-sm whitespace-pre-wrap">
+            {manualConfirm ? (manualText[manualConfirm.id] ?? "") : ""}
+          </p>
+          <DialogFooter>
+            <DialogClose
+              render={
+                <Button variant="outline" disabled={busy !== null}>
+                  Batal
+                </Button>
+              }
+            />
+            <Button
+              disabled={busy !== null}
+              onClick={() => {
+                const target = manualConfirm
+                if (!target) return
+                setManualConfirm(null)
+                void sendNow(target, manualText[target.id] ?? "")
+              }}
+            >
+              Kirim
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -415,6 +415,11 @@ imports only pure modules (`whatsapp-transport`, `whatsapp-schedule`). Importing
 a value from `lib/server-*` would pull `pg` into the browser bundle and break
 `next build` with `Can't resolve 'util/types'`; a test locks this boundary.
 
+The panel renders **every card the server returns, in the order it returns
+them** — there is no list of message types in the client. A client-side list
+would silently hide admin-created cards: they would still be scheduled and still
+be sent, while the page showed nothing, with no error anywhere.
+
 The panel shows:
 
 - the connection state in plain language ("Perlu login ulang"), never the
@@ -427,15 +432,33 @@ The panel shows:
   `whatsapp.connection.manage` only;
 - the QR code as a scannable image, polled every 5 s and **only** while the
   state is `WAITING_QR` and the viewer may manage the connection;
-- per-schedule toggle, per-slot delivery state, and "Kirim sekarang";
-- a collapsed "Format Pesan Otomatis" section per message type, holding the
+- per-card "Otomatis" and "Hari aktif" toggles, per-slot delivery state matched
+  by `messageId`, and "Kirim sekarang". Slot status is matched by card id, not
+  by message type, because an admin-created card has no type and would otherwise
+  always look unscheduled;
+- ↑ / ↓ buttons per card. They post a relative `{ messageId, direction }` move
+  rather than a full ordering, so two admins reordering at the same time cannot
+  overwrite each other; the resulting order is always computed by the server from
+  stored state and survives refresh and restart;
+- the manual card as a textarea with a character counter, a confirmation dialog
+  showing the exact text, and a "Kirim" button disabled while the text is empty
+  or the destination is unusable. The textarea is cleared **only after** the
+  server confirms `SENT` — clearing earlier would destroy a draft that failed to
+  send. Schedule controls and the "Otomatis" toggle are hidden for this card,
+  since the scheduler never sends it;
+- a collapsed "Format Pesan Otomatis" section per built-in card, holding the
   template editor for that type's conditions only (two per card), shown beside a
   live preview on wide screens and stacked on narrow ones, the contextual list of
   available variables,
   the per-item format for collections, a sample-data preview and "Kembalikan ke
   template bawaan"; shown only to `whatsapp.connection.manage`;
 - delivery history separating manual from scheduled sends, naming the operator
-  who triggered a manual send.
+  who triggered a manual send. Rows are labelled by card title, falling back to
+  the built-in type for older rows not yet linked to a card.
+
+Every card mutation addresses the card by `messageId`. Message type cannot
+identify an admin-created card, and the title can change, so the id is the only
+stable identity.
 
 Status is polled every 10 s because the connection changes without any user
 interaction — the socket drops, the worker reconnects, a scheduled send fires.

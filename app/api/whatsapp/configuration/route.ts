@@ -62,6 +62,14 @@ const patchSchema = z.object({
   messageId: z.string().min(1).optional(),
   type: z.enum(WHATSAPP_MESSAGE_TYPES as unknown as [string, ...string[]]).optional(),
   enabled: z.boolean().optional(),
+  /**
+   * Penjagaan "hanya kirim saat ada aktivitas absensi".
+   *
+   * Disimpan per kartu, bukan sebagai setelan global: satu sekolah dapat
+   * menghendaki pengingat absensi berhenti pada hari tanpa kegiatan sementara
+   * rekap lain tetap berjalan.
+   */
+  requireAttendanceActivity: z.boolean().optional(),
   destinationMode: z.enum(["DEFAULT", "OVERRIDE"]).optional(),
   destination: destinationSchema.nullable().optional(),
   slots: z.array(z.string()).optional(),
@@ -304,6 +312,7 @@ export async function PATCH(request: Request) {
 
     const after = await updateMessage(before.id, {
       enabled: parsed.data.enabled,
+      requireAttendanceActivity: parsed.data.requireAttendanceActivity,
       destinationMode: parsed.data.destinationMode,
       targetGroupJid,
       targetGroupName,
@@ -318,12 +327,14 @@ export async function PATCH(request: Request) {
       summary: `Konfigurasi ${before.title} diubah`,
       before: {
         enabled: before.enabled,
+        requireAttendanceActivity: before.requireAttendanceActivity,
         destinationMode: before.destinationMode,
         targetGroupName: before.targetGroupName,
         slots: before.slots,
       },
       after: {
         enabled: after.enabled,
+        requireAttendanceActivity: after.requireAttendanceActivity,
         destinationMode: after.destinationMode,
         targetGroupName: after.targetGroupName,
         slots: after.slots,

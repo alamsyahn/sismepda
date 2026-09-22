@@ -70,7 +70,7 @@ test("otomatis tidak dapat dinyalakan tanpa tujuan, tetapi selalu dapat dimatika
   // sedang bermasalah — kalau tidak, admin terkunci.
   assert.match(
     source,
-    /disabled=\{busy !== null \|\| \(!destinationReady && !configuration\?\.enabled\)\}/,
+    /disabled=\{busy !== null \|\| \(!destinationReady && !message\.enabled\)\}/,
   )
 })
 
