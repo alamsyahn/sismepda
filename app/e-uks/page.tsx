@@ -304,7 +304,7 @@ export default async function EuksHomePage() {
             </Card>
 
             {/* Keluhan dan tindakan disejajarkan sebagai dua kartu bersaudara,
-                tetapi digambar berbeda: batang berperingkat vs lollipop.
+                tetapi digambar berbeda: batang berperingkat vs waffle komposisi.
                 Bentuk yang identik membuat keduanya terbaca sebagai satu blok
                 berulang. */}
             <EuksComplaintTreatmentInsights

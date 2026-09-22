@@ -218,7 +218,7 @@ test("keluhan tanpa tindakan tercatat menghasilkan peringkat kosong", () => {
   ]
 
   const byComplaint = treatmentRankingByComplaint(visits, 10)
-  // Kosong, bukan lollipop rusak — komponen menampilkan empty state.
+  // Kosong, bukan grafik rusak — komponen menampilkan empty state.
   assert.deepEqual(byComplaint["pusing"], [])
   assert.equal(byComplaint["mual"].length, 1)
 })

@@ -5,7 +5,7 @@ import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { EuksComplaintRanking } from "@/components/e-uks/euks-complaint-ranking"
-import { EuksTreatmentRanking } from "@/components/e-uks/euks-treatment-ranking"
+import { EuksTreatmentComposition } from "@/components/e-uks/euks-treatment-composition"
 import { OTHER_TERMS_KEY, type TrendCount } from "@/lib/euks-trends"
 
 /** Tidak ada keluhan yang dipilih — panel tindakan memakai seluruh kunjungan. */
@@ -52,11 +52,11 @@ export function EuksComplaintTreatmentInsights({
     ? selectedRow.key === OTHER_TERMS_KEY
       ? "Tindakan pada kunjungan dengan keluhan di luar peringkat teratas."
       : `Tindakan pada kunjungan dengan keluhan ${selectedRow.label}.`
-    : "Titik menunjukkan posisi relatif terhadap tindakan terbanyak."
+    : "Porsi tiap tindakan terhadap seluruh tindakan yang tercatat."
 
-  const emptyLabel = selectedRow
-    ? "Belum ada tindakan yang tercatat untuk kunjungan dengan keluhan ini."
-    : "Belum ada tindakan tercatat."
+  // Satu kalimat untuk kedua keadaan: "pilihan ini" sudah mencakup penyaring
+  // keluhan maupun periode aktif, tanpa mengarang sebab yang tidak diketahui.
+  const emptyLabel = "Belum ada data tindakan pada pilihan ini."
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -79,10 +79,10 @@ export function EuksComplaintTreatmentInsights({
 
       <Card>
         <CardHeader>
-          {/* Kepala kartu dibiarkan membungkus: pada layar sempit penyaring
-              turun ke baris sendiri alih-alih terjepit di samping judul. */}
-          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-            <CardTitle>Tindakan Terbanyak</CardTitle>
+          {/* Kepala kartu vertikal pada layar sempit: penyaring turun ke bawah
+              judul dan memenuhi lebar, bukan terjepit di sampingnya. */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-x-4">
+            <CardTitle>Komposisi Tindakan</CardTitle>
             <Select
               value={selected}
               onValueChange={(value: string | null) => value && setSelected(value)}
@@ -114,8 +114,11 @@ export function EuksComplaintTreatmentInsights({
           {/* Panel ini berubah akibat aksi pengguna di tempat lain, jadi
               perubahannya diumumkan dengan sopan, bukan disela. */}
           <div aria-live="polite">
-            <EuksTreatmentRanking rows={rows} emptyLabel={emptyLabel} />
+            <EuksTreatmentComposition rows={rows} emptyLabel={emptyLabel} />
           </div>
+          <p className="text-muted-foreground mt-4 text-xs">
+            Komposisi dihitung berdasarkan tindakan yang dicatat pada setiap kunjungan.
+          </p>
         </CardContent>
       </Card>
     </div>

@@ -769,7 +769,7 @@ changed drawing only, not aggregation.
 | KPI band | three segments in one surface, small lucide icon each | how large |
 | Tren Kunjungan UKS | line + soft area, full width | movement over time |
 | Keluhan Terbanyak | ranked bars with `#n`, count and share | complaint ranking |
-| Tindakan Terbanyak | lollipop (neutral stem + accent dot) | treatment ranking |
+| Komposisi Tindakan | legend + 100-square waffle grid | treatment share of the whole |
 
 #### Complaint → treatment drill-down
 
@@ -807,10 +807,45 @@ than in the URL — this is a glance-level drill-down on a profile page, and the
 home page has no canonical query-param state to join.
 
 A complaint whose visits record no treatment shows an explicit empty state
-("Belum ada tindakan yang tercatat…") with the filter still usable, not a broken
-lollipop. Rows are real `<button>`s with `aria-pressed`, and selection is marked
-by a check icon, bolder label, tinted background and an accent edge — never by
-colour alone.
+("Belum ada data tindakan pada pilihan ini.") with the filter still usable, not
+an empty grid or a `NaN%`. Rows are real `<button>`s with `aria-pressed`, and
+selection is marked by a check icon, bolder label, tinted background and an
+accent edge — never by colour alone.
+
+#### Komposisi Tindakan
+
+The treatment card answers "how large is each share", not "which is largest",
+so it is drawn as a waffle: legend first, then a CSS-grid block of squares,
+then the note *Komposisi dihitung berdasarkan tindakan yang dicatat pada setiap
+kunjungan.* The earlier lollipop was replaced because a dot's position along a
+track reads as a level or a score, which treatment terms do not have. Layout is
+strictly vertical — title and filter, legend, waffle, note — because the card
+sits in a two-column grid and has no horizontal room for a side-by-side legend.
+
+The legend shows at most the **three** largest treatments; everything else is
+merged into one neutral **Tindakan lainnya** row carrying a `Gabungan N
+tindakan lain` subtitle. The merge is presentation only: `rankTerms()` output is
+untouched, and the slice counts still sum to the original total. Colour runs
+primary green → soft green → warm amber → neutral, with the greens taken from
+the `--euks-accent` tokens so both themes follow automatically.
+
+**Box allocation uses largest-remainder, and that is the point of the helper.**
+At most 100 squares are drawn so the card cannot grow taller as visits
+accumulate. Up to 100 entries one square is one visit; above that each square is
+about 1% and the note says so. Rounding each category independently would yield
+99 or 101 squares and a legend that contradicts the picture, so
+`allocateBoxes()` floors every share and hands the remaining squares to the
+largest fractional parts, breaking ties by index — deterministic, and exactly
+100 every time. `tests/euks-treatment-composition.test.ts` asserts the sum over
+adversarial splits (thirds, sevenths, 999999/1).
+
+Only the **first square of each category** is a tab stop; the rest are
+`tabindex="-1"` and `aria-hidden`, because 100 sequential stops would trap
+keyboard users inside one graphic while telling them nothing the first square
+does not. Legend rows are buttons that pin a highlight (working on touch, which
+has no hover), hover and focus raise it transiently, and a polite live region
+names the highlighted category in words so the reading never depends on colour
+alone.
 
 `monthlyVisitStats()` adds distinct visitors per month on top of the existing
 month series; its `count` values are asserted equal to `monthlyVisitCounts()`
