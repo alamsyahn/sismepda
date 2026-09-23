@@ -298,7 +298,7 @@ export function StudentPrintDocument({
           <article className="euks-print-card euks-print-chart-card">
             <h2>Grafik IMT</h2>
             <div className="euks-print-chart">
-              <EuksBmiChart points={data.series} />
+              <EuksBmiChart points={data.series} birthDate={data.birthDate} gender={data.gender} />
             </div>
             {data.series.length === 0 ? null : (
               <table className="euks-print-students">

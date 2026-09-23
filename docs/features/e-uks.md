@@ -583,6 +583,56 @@ moves it. Legends are interactive where they exist (donut and class bar): hover,
 focus or tap on a legend row emphasises the matching segment and opens its
 tooltip, which is how thin slices stay reachable.
 
+## IMT chart (BMI-for-age zones)
+
+`/e-uks/pantauan-kesehatan` plots the student's IMT over time on top of the
+**IMT/U nutrition zones** for that student. `lib/euks-bmi-chart.ts`
+(`buildBmiChart()`, pure, unit tested) turns the measurement series plus birth
+date and gender into chart points and zone segments;
+`components/e-uks/euks-bmi-chart.tsx` only draws them.
+
+**Child cut-offs are not constant, so the zones are a time series.** The
+-3/-2/+1/+2 SD boundaries depend on sex and on the age at each measurement
+date, therefore they are drawn as curves, never as fixed horizontal lines, and
+the adult 18.5/25/30 cut-offs appear nowhere.
+
+The zones are a **staircase, one step per age month**. Permenkes classifies on
+completed age in months, so the boundary genuinely holds for a whole month and
+jumps on the month anniversary. Interpolating between months would look
+smoother but would no longer be the exact threshold that judged the student —
+the one contradiction this chart exists to prevent.
+
+**One source of truth.** Point categories come from `nutritionStatus()` and the
+zone boundaries from `bmiThresholdsAt()` / `bmiReferenceCurves()`
+(`lib/bmi-for-age.ts`), both built on the same WHO L/M/S table and Permenkes
+cut-offs. The chart, its tooltip badge and the status card therefore cannot
+disagree about the same measurement. `BMI_SD_LINES` is the drawn-boundary list
+and mirrors `categorizeZScore()`.
+
+Zone fills use the shared `nutritionCategoryColor` tokens at 8-12% opacity, so
+the colours match the donut, the heatmap and the class bar, and the student's
+own line stays the dominant mark. Point markers take their category colour;
+a point without a category keeps the neutral primary colour rather than
+implying a status that was not computed. Boundaries are thin dashed lines
+labelled `-3/-2/+1/+2 SD` at the right edge, and the legend below the chart
+names all five categories — colour is never the only carrier of meaning. The
+legend wraps, and the labels scale with the `viewBox`, which is what keeps the
+chart usable on a phone.
+
+The tooltip shows date, IMT with its category, the z-score from the existing
+calculator (`formatZScore`), height/weight and age. The z-score row is omitted
+rather than approximated when the status is unknown.
+
+The Y domain spans every student point **and** every boundary with ~1.5 IMT of
+head- and foot-room, so the gizi buruk and obesitas zones are never clipped
+into a sliver.
+
+When birth date or gender is missing, or the age falls outside the 5-19 year
+reference, the IMT line still renders and a short note names the missing input
+(`zonesUnavailable` carries the same `NutritionUnknownReason` values used
+everywhere else). A single measurement is padded half a year each side so its
+zones have width.
+
 ## KMS chart (height-for-age)
 
 `/e-uks/pantauan-kesehatan` plots the student's height against the WHO

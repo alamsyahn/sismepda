@@ -21,9 +21,12 @@
  */
 
 import reference from "@/lib/data/bmi-for-age-reference.json"
-import { lmsRow, zScoreFromLms, type Gender } from "@/lib/lms"
+import { lmsRow, valueFromLms, zScoreFromLms, type Gender } from "@/lib/lms"
 
 export type { Gender }
+
+export const BMI_REFERENCE_MIN_MONTHS = reference.ageMonths.min
+export const BMI_REFERENCE_MAX_MONTHS = reference.ageMonths.max
 
 /** Kategori Permenkes 2/2020 untuk IMT/U anak 5-18 tahun. */
 export type NutritionCategory = "gizi_buruk" | "gizi_kurang" | "gizi_baik" | "gizi_lebih" | "obesitas"
@@ -75,4 +78,58 @@ export function categorizeZScore(z: number): NutritionCategory {
   if (z <= 1) return "gizi_baik"
   if (z <= 2) return "gizi_lebih"
   return "obesitas"
+}
+
+/**
+ * Garis batas kategori Permenkes yang digambar pada grafik IMT, dari bawah ke
+ * atas. Persis ambang yang dipakai `categorizeZScore`, jadi zona pada grafik
+ * tidak mungkin bergeser dari kategori yang dinilai kartu status.
+ */
+export const BMI_SD_LINES = [-3, -2, 1, 2] as const
+
+export type BmiSdLine = (typeof BMI_SD_LINES)[number]
+
+/** Nilai IMT tiap garis SD pada satu umur. */
+export type BmiReferencePoint = {
+  ageMonths: number
+  /** IMT (kg/m²) berurutan sesuai `BMI_SD_LINES`. */
+  values: number[]
+}
+
+/**
+ * Ambang IMT untuk satu umur tepat, atau null bila umur di luar tabel rujukan.
+ *
+ * Dipakai grafik untuk menempatkan batas zona pada tanggal pengukuran yang
+ * sebenarnya — ambang IMT/U bergantung umur dan jenis kelamin, sehingga garis
+ * horizontal tetap (18,5/25/30) tidak sahih untuk anak.
+ */
+export function bmiThresholdsAt(ageMonths: number, gender: Gender): number[] | null {
+  const row = lmsRow(reference, ageMonths, gender)
+  if (!row) return null
+  return BMI_SD_LINES.map((z) => valueFromLms(z, row))
+}
+
+/**
+ * Kurva ambang IMT/U satu titik per bulan pada rentang umur tertentu.
+ *
+ * Diambil dari L/M/S yang sama dengan `bmiZScore`, sehingga posisi titik siswa
+ * terhadap zona selalu konsisten dengan z-score-nya. Umur di luar tabel
+ * (5-19 tahun) dilewati, bukan diekstrapolasi.
+ */
+export function bmiReferenceCurves(
+  gender: Gender,
+  fromMonths: number,
+  toMonths: number,
+): BmiReferencePoint[] {
+  const start = Math.max(Math.ceil(fromMonths), BMI_REFERENCE_MIN_MONTHS)
+  const end = Math.min(Math.floor(toMonths), BMI_REFERENCE_MAX_MONTHS)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return []
+
+  const points: BmiReferencePoint[] = []
+  for (let ageMonths = start; ageMonths <= end; ageMonths += 1) {
+    const values = bmiThresholdsAt(ageMonths, gender)
+    if (!values) continue
+    points.push({ ageMonths, values })
+  }
+  return points
 }

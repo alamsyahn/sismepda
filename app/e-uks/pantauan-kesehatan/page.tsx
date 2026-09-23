@@ -236,7 +236,11 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
               <CardTitle>Grafik IMT</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <EuksBmiChart points={series} />
+              <EuksBmiChart
+                points={series}
+                birthDate={monitoring.student.birthDate}
+                gender={monitoring.student.gender}
+              />
               <EuksMeasurementTable
                 studentId={monitoring.student.id}
                 points={series}
