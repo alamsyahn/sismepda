@@ -10,6 +10,7 @@ import { EuksMeasurementTable } from "@/components/e-uks/euks-measurement-table"
 import { EuksSickAbsenceTable } from "@/components/e-uks/euks-sick-absence-table"
 import { EuksBmiChart } from "@/components/e-uks/euks-bmi-chart"
 import { EuksKmsCard } from "@/components/e-uks/euks-kms-card"
+import { EuksStudentPrintAction } from "@/components/e-uks/euks-student-print"
 import {
   ageInYears,
   formatBmi,
@@ -23,6 +24,7 @@ import {
 import { nutritionCategoryTone } from "@/lib/bmi-for-age"
 import { cn } from "@/lib/utils"
 import { readEuksClassOptions, readEuksStudentOptions, readStudentMonitoring } from "@/lib/server-euks"
+import { readSchoolName } from "@/lib/server-whatsapp"
 import { fromPrismaDate } from "@/lib/school-date"
 
 export const dynamic = "force-dynamic"
@@ -43,7 +45,11 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
   ])
 
   const { classId = "", studentId = "", returnTo = "" } = await searchParams
-  const [classes, students] = await Promise.all([readEuksClassOptions(), readEuksStudentOptions()])
+  const [classes, students, schoolName] = await Promise.all([
+    readEuksClassOptions(),
+    readEuksStudentOptions(),
+    readSchoolName(),
+  ])
   const monitoring = studentId ? await readStudentMonitoring(studentId, {
     measurements: canMeasurements,
     sickAbsences: canSickAbsences,
@@ -98,6 +104,39 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
       <PageHeading
         title="Pantauan Kesehatan Siswa"
         description="Status gizi, riwayat sakit, dan tren IMT per siswa."
+        action={
+          <EuksStudentPrintAction
+            data={
+              monitoring
+                ? {
+                    schoolName,
+                    studentName: monitoring.student.name,
+                    className: monitoring.student.className,
+                    birthDate: monitoring.student.birthDate,
+                    gender: monitoring.student.gender,
+                    status,
+                    ageYears: age,
+                    latestHeightCm: latest?.heightCm ?? null,
+                    latestWeightKg: latest?.weightKg ?? null,
+                    latestBmi,
+                    series,
+                    heightSeries,
+                    sickAbsences: monitoring.sickAbsences,
+                    visits: monitoring.visits.map((visit) => ({
+                      id: visit.id,
+                      occurredAt: fromPrismaDate(visit.occurredAt),
+                      complaint: visit.complaint,
+                      treatment: visit.treatment,
+                      followUp: visit.followUp,
+                    })),
+                    canMeasurements,
+                    canSickAbsences,
+                    canVisits,
+                  }
+                : null
+            }
+          />
+        }
       />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,20rem)_1fr]">

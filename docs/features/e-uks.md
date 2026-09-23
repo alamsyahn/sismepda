@@ -474,6 +474,33 @@ clearing the scope attribute. Access control is unchanged — the report is
 rendered from data the page already loaded under `euks.monitoring.read`, and no
 print endpoint exists.
 
+## Pantauan Kesehatan Siswa — printing
+
+`/e-uks/pantauan-kesehatan` prints one student's whole health record as **A4
+portrait** via `EuksStudentPrintAction`
+(`components/e-uks/euks-student-print.tsx`). The button lives in the page
+header and is not rendered while no student is selected, so an empty record
+cannot be printed. It reuses the `.euks-print-portal` scaffolding and the
+`euks-portrait` named page introduced for the class report.
+
+The printed document reuses `EuksBmiChart` and `EuksKmsChart` directly instead
+of redrawing them. Both are pure `viewBox` SVG, so they scale to the paper width
+with no rasterising and no library; `.euks-print-chart svg` caps their height so
+a chart cannot push its own card onto a second page, and
+`.euks-print-chart-card` keeps heading, curve and point table together.
+
+Every chart is followed by its own value table — measurement dates with height,
+weight and IMT, and KMS points with age, height, z-score and SD band. A curve
+alone is not a document: the reader of a printed record needs the numbers that
+produced it, and the table is also what keeps the report meaningful in
+grayscale.
+
+Permission flags (`canMeasurements`, `canSickAbsences`, `canVisits`) are passed
+into the print document and gate the same sections they gate on screen.
+Printing therefore cannot reveal a section the user is not allowed to see, and
+no print endpoint exists. The class and student selectors are never printed as
+controls; their values appear as the report identity instead.
+
 ## Chart tooltips
 
 Every E-UKS chart is hand-drawn SVG or CSS, so there is no library tooltip to

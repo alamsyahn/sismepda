@@ -745,4 +745,35 @@
   .euks-print-table-card {
     break-inside: auto;
   }
+
+  /* ---- Pantauan Kesehatan Siswa (A4 potret) ----
+     Memakai named page yang sama dengan laporan kelas. */
+  .euks-print-root[data-print-doc="student-monitoring"] {
+    page: euks-portrait;
+  }
+
+  /* Nilai status gizi berupa teks ("Gizi baik"), bukan angka, jadi ukurannya
+     diturunkan agar label sepanjang "Belum dapat dinilai" tidak terpotong. */
+  .euks-print-stat-text {
+    font-size: 11pt;
+    line-height: 1.2;
+  }
+
+  /* Kartu bergrafik harus utuh: judul, kurva, dan tabel titiknya dibaca
+     bersama-sama, dan SVG yang terbelah dua halaman tidak terbaca. */
+  .euks-print-chart-card {
+    break-inside: avoid;
+  }
+
+  .euks-print-chart {
+    margin-bottom: 3mm;
+  }
+
+  /* SVG grafik memakai viewBox, jadi cukup dibatasi lebarnya — tidak dipaksa
+     tinggi piksel layar, dan tidak dirasterkan. */
+  .euks-print-chart svg {
+    width: 100%;
+    height: auto;
+    max-height: 95mm;
+  }
 }
