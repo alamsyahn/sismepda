@@ -298,6 +298,13 @@
   display: none;
 }
 
+/* Kop dan kaki dokumen Panduan & Referensi: ada di DOM agar ikut tercetak,
+   tetapi tidak pernah terlihat di layar. Aturan cetaknya ada di @media print. */
+.euks-guide-print-head,
+.euks-guide-print-stamp {
+  display: none;
+}
+
 @media print {
   @page {
     size: A4 landscape;
@@ -863,5 +870,105 @@
     font-variant-numeric: tabular-nums;
     color: #444;
     white-space: nowrap;
+  }
+
+  /* ---- Panduan & Referensi E-UKS (A4 potret) ----
+     Halaman ini dicetak di tempat, bukan lewat portal: isinya panjang dan
+     statis, dan menyalinnya ke dokumen terpisah berarti memelihara dua versi
+     teks panduan yang sama. Karena itu yang disembunyikan di sini adalah
+     kerangka aplikasinya, bukan halamannya. */
+  html[data-euks-print-page="guide"] {
+    page: euks-portrait;
+    color-scheme: light;
+  }
+
+  /* Sidebar desktop, drawer, dan topbar ponsel tidak pernah jadi isi dokumen. */
+  html[data-euks-print-page="guide"] aside,
+  html[data-euks-print-page="guide"] header.sticky,
+  html[data-euks-print-page="guide"] [data-slot="sheet-overlay"],
+  html[data-euks-print-page="guide"] [data-slot="sheet-content"] {
+    display: none !important;
+  }
+
+  /* Lebar isi ditentukan kertas, bukan viewport layar. */
+  html[data-euks-print-page="guide"] main,
+  html[data-euks-print-page="guide"] main > div {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+    width: auto !important;
+  }
+
+  html[data-euks-print-page="guide"] body > div {
+    display: block !important;
+    min-height: 0 !important;
+  }
+
+  html[data-euks-print-page="guide"] [class*="lg:pl-64"] {
+    padding-left: 0 !important;
+  }
+
+  /* Kop dan kaki dokumen hanya ada di kertas. */
+  .euks-guide-print-head,
+  .euks-guide-print-stamp {
+    display: block;
+    text-align: center;
+  }
+
+  .euks-guide-print-head {
+    border-bottom: 0.8pt solid #333;
+    padding-bottom: 2mm;
+    margin-bottom: 4mm;
+  }
+
+  .euks-guide-print-kind {
+    font-size: 9pt;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #444;
+    margin: 0;
+  }
+
+  .euks-guide-print-stamp {
+    font-size: 8pt;
+    color: #555;
+    border-top: 0.4pt solid #ccc;
+    padding-top: 2mm;
+    margin-top: 4mm;
+  }
+
+  /* Judul tidak boleh tertinggal sendirian di kaki halaman. */
+  html[data-euks-print-page="guide"] h1,
+  html[data-euks-print-page="guide"] h2,
+  html[data-euks-print-page="guide"] h3 {
+    break-after: avoid;
+    break-inside: avoid;
+  }
+
+  /* Kartu, callout, dan langkah alur dibaca utuh atau tidak sama sekali. */
+  html[data-euks-print-page="guide"] section > div > div,
+  html[data-euks-print-page="guide"] li,
+  html[data-euks-print-page="guide"] details,
+  html[data-euks-print-page="guide"] tr {
+    break-inside: avoid;
+  }
+
+  /* Tabel panduan: header berulang, dan tidak digulir seperti di layar. */
+  html[data-euks-print-page="guide"] thead {
+    display: table-header-group;
+  }
+
+  html[data-euks-print-page="guide"] .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  html[data-euks-print-page="guide"] table {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Penanda buka/tutup panel tidak punya arti di atas kertas. */
+  html[data-euks-print-page="guide"] summary span[aria-hidden="true"] {
+    display: none !important;
   }
 }

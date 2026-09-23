@@ -13,6 +13,7 @@ import { PageContainer } from "@/components/layout/page-container"
 import { EuksGuideFlow } from "@/components/e-uks/euks-guide-flow"
 import { EuksGuideHero } from "@/components/e-uks/euks-guide-hero"
 import { EuksGuideNavigation } from "@/components/e-uks/euks-guide-navigation"
+import { EuksGuidePrintAction } from "@/components/e-uks/euks-guide-print"
 import {
   EuksGuideCallout,
   EuksGuideDetails,
@@ -21,6 +22,7 @@ import {
   EuksGuideTableWrap,
 } from "@/components/e-uks/euks-guide-section"
 import { requirePagePermission } from "@/lib/page-guards"
+import { readSchoolName } from "@/lib/server-whatsapp"
 import {
   EUKS_GUIDE_BMI_FORMULA,
   EUKS_GUIDE_BMI_WARNING,
@@ -71,9 +73,11 @@ export default async function EuksPanduanPage() {
   await requirePagePermission("euks.content.read")
 
   const example = guideBmiExample()
+  const schoolName = await readSchoolName()
 
   return (
     <PageContainer className="gap-10">
+      <EuksGuidePrintAction schoolName={schoolName} />
       <EuksGuideHero />
       <EuksGuideNavigation />
 

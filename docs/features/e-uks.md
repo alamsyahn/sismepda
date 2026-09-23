@@ -524,6 +524,33 @@ Operational columns are deliberately absent from the print: the notification
 status and the action buttons are tools for working the list, not part of the
 health record.
 
+## Printing the guide
+
+`/e-uks/panduan` prints as **A4 portrait** via `EuksGuidePrintAction`
+(`components/e-uks/euks-guide-print.tsx`). Unlike every other E-UKS report it
+does **not** build a separate print portal: the guide is long, static prose
+that is already laid out as a document, and copying it into a portal would mean
+maintaining two divergent copies of the same text. The page is printed in
+place, and the print CSS hides the application shell (`aside`, the sticky
+mobile header, sheet overlays) under `html[data-euks-print-page="guide"]`
+instead.
+
+`<details>` panels are opened from JavaScript on `beforeprint` and closed again
+on `afterprint`. This is not a stylistic choice: CSS cannot make the contents
+of a closed `<details>` print in Chrome — `display: block` on its children is
+ignored — and the technical calculation panel is part of the guide, not screen
+decoration. Only panels the code opened itself are closed again, so a panel the
+reader opened stays open.
+
+The print stamp is written straight into the DOM inside the `beforeprint`
+handler rather than through React state: the print dialog blocks before React
+can re-render, so a state update made there would never reach the paper. The
+header and stamp elements are `display: none` on screen and only revealed by
+the print stylesheet.
+
+Because the listeners are bound to `beforeprint`/`afterprint`, pressing Ctrl+P
+produces exactly the same document as the button.
+
 ## Chart tooltips
 
 Every E-UKS chart is hand-drawn SVG or CSS, so there is no library tooltip to
