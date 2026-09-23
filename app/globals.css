@@ -776,4 +776,92 @@
     height: auto;
     max-height: 95mm;
   }
+
+  /* ---- Riwayat Kunjungan UKS (A4 lanskap) ----
+     Tetap memakai `@page` global lanskap: tabelnya tujuh kolom teks bebas
+     (keluhan, tindakan, tindak lanjut) yang butuh lebar, bukan tinggi. */
+  .euks-print-visits {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8pt;
+    table-layout: fixed;
+  }
+
+  /* Header berulang di setiap lembar; riwayat penuh selalu berbilah banyak. */
+  .euks-print-visits thead {
+    display: table-header-group;
+  }
+
+  .euks-print-visits tbody tr {
+    break-inside: avoid;
+  }
+
+  .euks-print-visits th,
+  .euks-print-visits td {
+    border-bottom: 0.4pt solid #e2e2e2;
+    padding: 1.2mm 1.6mm;
+    text-align: left;
+    vertical-align: top;
+    /* Teks bebas yang panjang dibungkus, tidak melebar keluar kertas. */
+    overflow-wrap: anywhere;
+  }
+
+  .euks-print-visits thead th {
+    background: #f3f3f3;
+    font-weight: 600;
+    border-bottom: 0.7pt solid #c9c9c9;
+  }
+
+  .euks-print-visits .euks-print-col-no {
+    width: 10mm;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .euks-print-visits .euks-print-col-date {
+    width: 24mm;
+    white-space: nowrap;
+  }
+
+  .euks-print-visits .euks-print-col-name {
+    width: 42mm;
+  }
+
+  .euks-print-visits .euks-print-col-class {
+    width: 16mm;
+  }
+
+  .euks-print-visits .euks-print-col-officer {
+    width: 32mm;
+  }
+
+  .euks-print-empty-cell {
+    text-align: center;
+    color: #666;
+    padding: 6mm 0;
+  }
+
+  /* Daftar keluhan terbanyak: dua kolom agar tidak memakan satu lembar penuh. */
+  .euks-print-complaints {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    columns: 2;
+    column-gap: 8mm;
+    font-size: 8.5pt;
+  }
+
+  .euks-print-complaints li {
+    display: flex;
+    justify-content: space-between;
+    gap: 3mm;
+    padding: 0.6mm 0;
+    break-inside: avoid;
+  }
+
+  .euks-print-complaint-count {
+    font-variant-numeric: tabular-nums;
+    color: #444;
+    white-space: nowrap;
+  }
 }

@@ -501,6 +501,29 @@ Printing therefore cannot reveal a section the user is not allowed to see, and
 no print endpoint exists. The class and student selectors are never printed as
 controls; their values appear as the report identity instead.
 
+## Riwayat Kunjungan UKS — printing
+
+`/e-uks/riwayat-kunjungan` prints the visit log as **A4 landscape** via
+`EuksVisitPrintAction` (`components/e-uks/euks-visit-print.tsx`). It keeps the
+global landscape `@page` rather than the `euks-portrait` named page: the table
+carries three free-text columns (complaint, treatment, follow-up) that need
+width, not height.
+
+The report prints the **entire** log the page loaded, not a filtered or paged
+subset — an archived document must be complete. `readEuksVisits` already
+returns every visit newest-first, so the printed period label is derived from
+the first and last row rather than from a second query.
+
+The summary band and the top-complaint list are computed from the rows being
+printed, so the document and its own table can never disagree. `table-layout:
+fixed` with `overflow-wrap: anywhere` keeps long free text inside the paper,
+and `display: table-header-group` repeats the column header on every sheet —
+necessary here because a full log runs to dozens of pages.
+
+Operational columns are deliberately absent from the print: the notification
+status and the action buttons are tools for working the list, not part of the
+health record.
+
 ## Chart tooltips
 
 Every E-UKS chart is hand-drawn SVG or CSS, so there is no library tooltip to

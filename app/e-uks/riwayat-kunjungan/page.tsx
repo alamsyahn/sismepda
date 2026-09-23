@@ -1,7 +1,9 @@
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { EuksVisitTable } from "@/components/e-uks/euks-visit-table"
+import { EuksVisitPrintAction } from "@/components/e-uks/euks-visit-print"
 import { pageCan, requirePagePermission } from "@/lib/page-guards"
 import { readEuksComplaintOptions, readEuksStudentOptions, readEuksVisits } from "@/lib/server-euks"
+import { readSchoolName } from "@/lib/server-whatsapp"
 
 export default async function EuksRiwayatKunjunganPage() {
   await requirePagePermission("euks.visits.read")
@@ -13,10 +15,11 @@ export default async function EuksRiwayatKunjunganPage() {
     pageCan("euks.complaint_options.read"),
   ])
 
-  const [visits, students, complaintOptions] = await Promise.all([
+  const [visits, students, complaintOptions, schoolName] = await Promise.all([
     readEuksVisits(),
     canCreate || canUpdate ? readEuksStudentOptions() : Promise.resolve([]),
     canReadComplaints ? readEuksComplaintOptions() : Promise.resolve([]),
+    readSchoolName(),
   ])
 
   return (
@@ -24,6 +27,7 @@ export default async function EuksRiwayatKunjunganPage() {
       <PageHeading
         title="Riwayat Kunjungan UKS"
         description="Catatan keluhan, tindakan yang diberikan, dan tindak lanjut setiap kunjungan"
+        action={<EuksVisitPrintAction data={{ schoolName, visits }} />}
       />
 
       <EuksVisitTable
