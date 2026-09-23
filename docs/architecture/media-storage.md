@@ -129,9 +129,25 @@ volume tidak ikut berubah saat nama project Compose atau path direktori berubah.
 Rincian operasionalnya ada di
 [runbook rollout media](../operations/media-rollout.md).
 
-Dockerfile membuat `/app/media` dan meng-chown-nya ke `nextjs` sebelum `USER
-nextjs`. Volume Docker yang masih kosong mewarisi kepemilikan dari direktori
-mount point; tanpa langkah itu proses uid 1001 tidak dapat menulis unggahan.
+Dockerfile membuat `/app/media` **beserta seluruh sub-direktori scope**
+(`euks/hero-logo`, `users/avatar`, dst. — sejalan dengan `MEDIA_SCOPES` di
+`lib/media-keys.ts`) lalu meng-chown seluruh pohon itu ke `nextjs` sebelum
+`USER nextjs`. Volume Docker yang masih kosong mewarisi kepemilikan dari
+direktori mount point; tanpa langkah itu proses uid 1001 tidak dapat menulis
+unggahan.
+
+Sub-direktori scope sengaja TIDAK dibiarkan lahir saat runtime. `storeMedia()`
+membuatnya lewat `mkdir -p`, sehingga **penulis pertama ke sebuah scope
+menentukan kepemilikan direktori itu**. Bila proses root menulis lebih dulu —
+migrasi media legacy adalah kasus nyatanya — direktori scope menjadi
+`root:root` mode 0755, dan aplikasi (uid 1001) kemudian gagal menulis unggahan
+BARU ke scope tersebut dengan `EACCES`, walaupun `/app/media` sendiri sudah
+dimiliki `nextjs`. Karena itu service `migrate` di `compose.media.yaml`
+dipaksa berjalan sebagai `user: "1001:1001"`.
+
+Konsekuensi yang perlu diingat saat memulihkan/menyalin media secara manual:
+setiap direktori scope harus dimiliki uid 1001. Jangan menambal dengan
+`chmod 777` dan jangan menjalankan aplikasi sebagai root.
 
 Volume database tidak disentuh, tidak diganti nama, dan topologi PostgreSQL
 tidak berubah.

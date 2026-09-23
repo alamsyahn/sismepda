@@ -45,6 +45,16 @@ services:
   # `compose run --rm`. Menambahkan mount di sini tidak mengubah apa pun pada
   # container yang sedang berjalan.
   migrate:
+    # Jalankan sebagai pengguna runtime aplikasi (uid 1001), BUKAN root.
+    # Migrator menulis ke volume media yang sama dengan aplikasi, dan
+    # `storeMedia()` membuat sub-direktori scope (`euks/hero-logo`, dst.) secara
+    # lazy lewat `mkdir -p`. Bila migrator berjalan sebagai root, sub-direktori
+    # yang DIBUATNYA lebih dulu menjadi milik root:root dengan mode 0755 —
+    # aplikasi (uid 1001) lalu gagal menulis unggahan BARU ke scope itu dengan
+    # EACCES, walaupun /app/media sendiri sudah dimiliki nextjs:nodejs.
+    # Kepemilikan /app/media di Dockerfile hanya melindungi direktori akar,
+    # bukan sub-direktori yang lahir saat runtime.
+    user: "1001:1001"
     environment:
       MEDIA_STORAGE_ROOT: /app/media
     volumes:

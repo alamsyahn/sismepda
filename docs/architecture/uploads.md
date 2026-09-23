@@ -61,6 +61,14 @@ Type validation reads the file's magic bytes through the existing per-domain det
 
 `UploadPolicyError` carries its own HTTP status: 413 `FILE_TOO_LARGE`, 415 `FILE_TYPE_NOT_ALLOWED`, 400 `UPLOAD_POLICY_INVALID`, 400 `UPLOAD_SLOT_UNKNOWN`. `describeAuthFailure` in `lib/api-errors.ts` passes those through unchanged, so every handler that already routes errors there — including `euksErrorResponse` — reports them correctly. Messages are Indonesian and name the file, its size, and the limit; no stack trace or internal path is exposed.
 
+`euksErrorResponse` in `lib/euks-access.ts` separates three failure classes, and the distinction matters for diagnosing upload bugs:
+
+- `ZodError` → **400** `"Data E-UKS tidak valid"`. This is the only case where the phrase is accurate: the payload really is malformed. Zod's own messages are not forwarded, so internal schema shape never reaches the browser.
+- `MediaStorageError` → **500** `"Gagal menyimpan berkas. Silakan coba lagi."`, and the underlying cause (errno, filesystem path) is written to the server log only. A write that fails because of directory ownership, a full disk, or a missing mount is an operational incident, not bad user input.
+- anything else → **500** `"Terjadi kesalahan pada server. Silakan coba lagi."`, also logged server-side.
+
+Before this split every unexpected 500 was reported to the user as `"Data E-UKS tidak valid"`, which pointed the blame at the name and the file the user had just chosen and hid the real fault entirely. Keep the classes distinct: never widen the "tidak valid" wording back to cover storage or unexpected failures.
+
 The client hook exists for UX only. It cannot relax anything: the server resolves the slot, policy, limit, and allowed types from its own configuration and ignores any policy value sent by the client.
 
 ## Grandfathering and replacement

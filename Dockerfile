@@ -65,7 +65,25 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # volume dipasang: volume Docker yang masih kosong mewarisi kepemilikan dari
 # direktori ini, dan tanpa langkah ini proses uid 1001 tidak akan bisa menulis
 # unggahan ke dalamnya. Isinya sendiri tidak pernah masuk image.
-RUN mkdir -p /app/media && chown nextjs:nodejs /app/media
+#
+# Sub-direktori per scope ikut dibuat di sini, bukan dibiarkan lahir saat
+# runtime. Alasannya: `storeMedia()` membuatnya lewat `mkdir -p`, sehingga
+# siapa pun yang menulis PERTAMA ke sebuah scope menentukan kepemilikannya.
+# Ketika migrasi media berjalan sebagai root, scope hasil bentukannya menjadi
+# root:root dan aplikasi (uid 1001) tidak bisa lagi menambah berkas baru di
+# scope tersebut. Daftar ini harus sejalan dengan MEDIA_SCOPES di
+# lib/media-keys.ts.
+RUN mkdir -p \
+      /app/media/users/avatar \
+      /app/media/branding/app-logo \
+      /app/media/branding/favicon \
+      /app/media/euks/hero \
+      /app/media/euks/hero-logo \
+      /app/media/euks/officer \
+      /app/media/euks/facility \
+      /app/media/sarpras/item \
+      /app/media/students/photo \
+  && chown -R nextjs:nodejs /app/media
 USER nextjs
 EXPOSE 3000
 CMD ["node", "server.js"]

@@ -74,9 +74,42 @@ Beberapa hal yang menentukan keselamatan data:
   melaporkan statusnya, sedangkan tahap **build**, **migrate**, dan **activate**
   menolak berjalan bila overlay tidak ada — container app tidak pernah dibuat
   ulang tanpa volume media.
-- **Kepemilikan direktori.** `Dockerfile` membuat `/app/media` dan men-`chown`
-  ke `nextjs:nodejs` sebelum `USER nextjs`, sehingga volume kosong yang di-mount
-  mewarisi kepemilikan itu. Tidak diperlukan `chmod 777` maupun root saat runtime.
+- **Kepemilikan direktori.** `Dockerfile` membuat `/app/media` **beserta setiap
+  sub-direktori scope** lalu men-`chown -R` ke `nextjs:nodejs` sebelum
+  `USER nextjs`, sehingga volume kosong yang di-mount mewarisi kepemilikan itu.
+  Tidak diperlukan `chmod 777` maupun root saat runtime.
+- **Migrator tidak boleh berjalan sebagai root.** Service `migrate` di
+  `compose.media.yaml` memakai `user: "1001:1001"`. `storeMedia()` membuat
+  direktori scope secara lazy lewat `mkdir -p`, jadi penulis pertama ke sebuah
+  scope-lah yang menentukan kepemilikannya. Migrator root membuat scope
+  `root:root`, dan aplikasi uid 1001 lalu gagal menulis unggahan baru ke scope
+  itu dengan `EACCES` — akar `/app/media` yang sudah benar tidak menolong.
+
+### Perbaikan kepemilikan direktori scope yang telanjur milik root
+
+Berlaku untuk volume yang sudah pernah disentuh migrator root **sebelum**
+perbaikan di atas. Image baru hanya mencegah kasus baru; direktori yang sudah
+ada di dalam named volume tidak ikut berubah saat image di-build ulang, karena
+isi volume menimpa isi image pada mount point.
+
+Diagnosis (aman, hanya membaca):
+
+```sh
+docker exec sismepda-app-1 find /app/media -maxdepth 2 -type d -exec ls -ld {} \;
+docker exec sismepda-app-1 sh -c 'touch /app/media/euks/hero-logo/.w && rm /app/media/euks/hero-logo/.w'
+```
+
+Direktori scope mana pun yang tampil `root root` akan menolak unggahan baru.
+Perbaikannya memperbaiki metadata kepemilikan saja dan **tidak menyentuh satu
+byte pun isi berkas**:
+
+```sh
+docker exec -u 0 sismepda-app-1 chown -R nextjs:nodejs /app/media
+```
+
+Jangan memakai `chmod 777`, jangan menghapus berkas, dan jangan membuat ulang
+volume. Verifikasi ulang dengan perintah diagnosis di atas, lalu buktikan lewat
+satu unggahan nyata.
 
 ### Jangan pernah menghapus volume media
 
