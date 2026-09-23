@@ -235,6 +235,50 @@ target actually is, and the name is the one element that reads as a class
 identity. It is a real `<a>` — keyboard focusable, with hover/focus styling and
 a `title` — and it always carries the stable `classId`, never the class name.
 
+## Printed report (Cetak Laporan)
+
+The `/e-uks` home page can print its two summaries — Ringkasan Status Gizi Siswa
+and Ringkasan Kunjungan UKS — as an A4 landscape report. Landscape is required
+by the per-class heatmap: seven columns do not fit a readable portrait page.
+Printing is browser-side `window.print()`; no PDF library and no server-side
+renderer was added, and no report API exists.
+
+`EuksReportProvider` (`components/e-uks/euks-report-print.tsx`) wraps the page
+content, holds the selected scope, and renders `EuksPrintLayout` through
+`createPortal` into `.euks-print-portal`. The portal is `display: none` on
+screen, so the normal desktop and mobile layout is untouched; `@media print`
+hides `body > *:not(.euks-print-portal)` and shows only the report. The printed
+part is chosen by setting `data-euks-print` to `all`, `nutrition` or `visits` on
+`<html>` before `window.print()`, and CSS hides the section that was not asked
+for. `EuksPrintMenu` sits in the Ringkasan Status Gizi header next to "Lihat
+Pantauan Kesehatan", built from the existing `Menu` primitives and the lucide
+`Printer` icon.
+
+**The report re-lays out the same data; it never re-fetches and never
+recomputes.** `app/e-uks/page.tsx` already loads every figure server-side and
+passes it to both the screen components and the provider, so the print layout
+contains no aggregation logic and cannot drift from the dashboard. The grade
+filter is shared the same way: `EuksNutritionDashboard` reads the scope from the
+report context and falls back to local state, so `Cakupan` in the report header
+always matches what the user is looking at.
+
+Print CSS lives in the single `@media print` block in `app/globals.css`. It
+forces `print-color-adjust: exact` — nutrition category colour is information,
+not decoration — and pins the E-UKS and nutrition tokens to their light-theme
+values, because a report printed from dark mode would otherwise lay down full
+pages of ink. Those pinned values must stay identical to `:root`; a divergence
+would mean two different colour meanings for the same category. Colour is never
+the only channel: every cell, slice and bar also prints its count and
+percentage, so a grayscale printout stays readable.
+
+Pagination is declarative. `.euks-print-section + .euks-print-section` carries
+`break-before: page`, which is what makes Ringkasan Kunjungan start on a fresh
+page under "Semua Laporan"; the heatmap repeats its header with
+`display: table-header-group` and keeps rows whole with `break-inside: avoid`.
+The report is allowed to run to several pages — nothing is scaled down to force
+a single sheet, because an unreadable one-page report defeats its purpose. All
+E-UKS charts are plain inline SVG, so they print without a rasterisation step.
+
 ## Pantauan Kesehatan Kelas (per-class monitoring)
 
 `/e-uks/pantauan-kesehatan-kelas` is the aggregation level between the E-UKS

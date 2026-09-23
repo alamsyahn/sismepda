@@ -12,6 +12,8 @@ import { EuksHero } from "@/components/e-uks/euks-hero"
 import { EuksOfficerRail } from "@/components/e-uks/euks-officer-rail"
 import { EuksFacilityGrid } from "@/components/e-uks/euks-facility-grid"
 import { EuksSection, EuksSectionEmpty } from "@/components/e-uks/euks-section"
+import { EuksPrintMenu, EuksReportProvider } from "@/components/e-uks/euks-report-print"
+import type { EuksPrintVisitData } from "@/components/e-uks/euks-print-layout"
 import { pageCan, requirePageAnyPermission } from "@/lib/page-guards"
 import {
   euksFacilityPhotoUrl,
@@ -36,6 +38,7 @@ import {
   readSchoolNutritionSnapshot,
 } from "@/lib/server-euks"
 import { formatSchoolDate, schoolMonthOf } from "@/lib/school-date"
+import { readSchoolName } from "@/lib/server-whatsapp"
 
 export const dynamic = "force-dynamic"
 
@@ -121,9 +124,44 @@ export default async function EuksHomePage() {
     ? `${formatMonthLabel(schoolMonthOf(range.first))} – ${formatMonthLabel(schoolMonthOf(range.last))}`
     : null
 
+  // Kalimat ringkasan tren dirakit sekali di sini agar laporan cetak memakai
+  // teks yang sama persis dengan yang dibaca pengguna di layar.
+  const trendNote = peak
+    ? `${formatMonthLabel(peak.month)} adalah bulan dengan kunjungan terbanyak: ${peak.count} kunjungan.` +
+      (partialFinalMonth && lastVisitDate
+        ? ` Data ${formatMonthLabel(schoolMonthOf(lastVisitDate))} baru sampai ${formatSchoolDate(lastVisitDate, { day: "numeric", month: "long", year: "numeric" })} (ditandai *), jadi bulan itu belum genap.`
+        : "")
+    : null
+
+  // Agregat yang sudah dihitung untuk layar dipakai ulang apa adanya oleh
+  // laporan cetak — tidak ada kueri atau perhitungan kedua.
+  const printVisits: EuksPrintVisitData | null =
+    visits.length > 0
+      ? {
+          periodLabel,
+          totalVisits: visits.length,
+          distinctStudents,
+          monthlyStats,
+          months: monthly.length,
+          averagePerMonth,
+          partialFinalMonth,
+          trendNote,
+          complaints,
+          treatments,
+          lastVisitDate,
+        }
+      : null
+
+  const schoolName = await readSchoolName()
+
   return (
     // Seksi butuh jarak lebih lapang daripada tumpukan kartu dashboard.
     <PageContainer className="gap-10 sm:gap-12">
+      <EuksReportProvider
+        schoolName={schoolName}
+        nutritionBuckets={canMeasurements ? nutritionBuckets : null}
+        visits={printVisits}
+      >
       <EuksHero
         name={settings.profile.name ?? "Unit Kesehatan Sekolah"}
         tagline={settings.profile.description}
@@ -198,14 +236,17 @@ export default async function EuksHomePage() {
           title="Ringkasan Status Gizi Siswa"
           description="Berdasarkan pengukuran kesehatan terbaru masing-masing siswa."
           action={
-            <Button
-              variant="outline"
-              size="sm"
-              nativeButton={false}
-              render={<Link href="/e-uks/pantauan-kesehatan" />}
-            >
-              Lihat Pantauan Kesehatan
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <EuksPrintMenu />
+              <Button
+                variant="outline"
+                size="sm"
+                nativeButton={false}
+                render={<Link href="/e-uks/pantauan-kesehatan" />}
+              >
+                Lihat Pantauan Kesehatan
+              </Button>
+            </div>
           }
         >
           {nutritionBuckets.length === 0 ? (
@@ -322,6 +363,7 @@ export default async function EuksHomePage() {
           </div>
         )}
       </EuksSection>
+      </EuksReportProvider>
     </PageContainer>
   )
 }

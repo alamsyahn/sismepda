@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ChartTooltip, ChartTooltipFrame, isMousePointer } from "@/components/e-uks/chart-tooltip"
 import { EuksNutritionHeatmap } from "@/components/e-uks/euks-nutrition-heatmap"
+import { useEuksReportScopeOptional } from "@/components/e-uks/euks-report-print"
 import { nutritionCategoryLabels } from "@/lib/bmi-for-age"
 import {
   ALL_GRADES,
@@ -32,7 +33,14 @@ import { formatSchoolDate, parseSchoolDate } from "@/lib/school-date"
  * ulang halaman dan tidak memicu query baru.
  */
 export function EuksNutritionDashboard({ buckets }: { buckets: ClassNutritionBucket[] }) {
-  const [grade, setGrade] = useState<string>(ALL_GRADES)
+  const [localGrade, setLocalGrade] = useState<string>(ALL_GRADES)
+  // Ketika halaman menyediakan laporan cetak, filter tingkat diangkat ke
+  // provider itu supaya laporan tidak mungkin memakai cakupan yang berbeda
+  // dari yang sedang dilihat. Tanpa provider, komponen ini tetap berdiri
+  // sendiri dengan keadaan lokalnya.
+  const shared = useEuksReportScopeOptional()
+  const grade = shared?.grade ?? localGrade
+  const setGrade = shared?.setGrade ?? setLocalGrade
   const grades = useMemo(() => gradesOf(buckets), [buckets])
   const summary = useMemo(
     () => summarizeNutrition(filterByGrade(buckets, grade)),

@@ -279,3 +279,352 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ===========================================================================
+   Laporan cetak E-UKS.
+
+   Portal laporan (`.euks-print-portal`) selalu ada di `body` tetapi tidak
+   pernah terlihat di layar; aturan cetak di bawah menyembunyikan seluruh anak
+   `body` KECUALI portal itu, sehingga sidebar, topbar, tombol, menu, dan toast
+   tidak mungkin ikut tercetak tanpa perlu menandai satu per satu elemen
+   aplikasi. Lingkup laporan dipilih lewat atribut `data-euks-print` pada
+   <html> yang dipasang tepat sebelum window.print().
+
+   Tidak ada aturan layar apa pun di blok ini: tampilan aplikasi normal
+   (desktop maupun mobile) tidak tersentuh.
+   =========================================================================== */
+
+.euks-print-portal {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+
+  /* Warna kategori gizi dan warna kartu adalah informasi, bukan hiasan. */
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Mode terang dipaksa untuk kertas: token gelap menghasilkan blok tinta
+     hitam penuh halaman pada printer. Nilai kategori gizi dan aksen E-UKS
+     dikunci ke varian terang — sama seperti :root — supaya laporan yang
+     dicetak dari tema gelap tetap memakai warna yang sama dengan laporan
+     dari tema terang. Nilainya tidak boleh menyimpang dari :root. */
+  html[data-euks-print],
+  html[data-euks-print] .euks-print-portal {
+    color-scheme: light;
+    --gizi-buruk: oklch(0.55 0.19 25);
+    --gizi-kurang: oklch(0.75 0.15 65);
+    --gizi-baik: oklch(0.65 0.16 155);
+    --gizi-lebih: oklch(0.58 0.16 290);
+    --gizi-obesitas: oklch(0.5 0.19 330);
+    --euks-accent: oklch(0.56 0.085 148);
+    --euks-accent-soft: oklch(0.95 0.028 148);
+    --euks-accent-muted: oklch(0.42 0.06 148);
+    --muted-foreground: oklch(0.45 0.02 275);
+    --border: oklch(0.9 0.01 275);
+    --foreground: oklch(0.2 0.02 275);
+    --background: #fff;
+  }
+
+  /* Elemen bantu layar yang tidak pernah berguna di kertas. */
+  .no-print {
+    display: none !important;
+  }
+
+  /* Saat laporan sedang dicetak, hanya portal laporan yang dirender. */
+  html[data-euks-print] body > *:not(.euks-print-portal) {
+    display: none !important;
+  }
+
+  html[data-euks-print] .euks-print-portal {
+    display: block !important;
+  }
+
+  /* Lingkup: menyembunyikan bagian yang tidak diminta pengguna. */
+  html[data-euks-print="nutrition"] .euks-print-section[data-print-part="visits"],
+  html[data-euks-print="visits"] .euks-print-section[data-print-part="nutrition"] {
+    display: none !important;
+  }
+
+  .euks-print-root {
+    color: #111;
+    font-size: 9.5pt;
+    line-height: 1.45;
+  }
+
+  /* Setiap bagian laporan mulai di halaman baru: "Semua Laporan" memisahkan
+     Status Gizi dan Ringkasan Kunjungan dengan sendirinya. */
+  .euks-print-section + .euks-print-section {
+    break-before: page;
+  }
+
+  .euks-print-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12mm;
+    border-bottom: 1.5pt solid var(--euks-accent);
+    padding-bottom: 3mm;
+    margin-bottom: 5mm;
+    break-after: avoid;
+  }
+
+  .euks-print-header h1 {
+    font-size: 15pt;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    margin: 0;
+    color: var(--euks-accent-muted);
+  }
+
+  .euks-print-school {
+    font-size: 10.5pt;
+    font-weight: 500;
+    margin: 1mm 0 0;
+  }
+
+  .euks-print-meta {
+    display: flex;
+    gap: 8mm;
+    margin: 0;
+    font-size: 8.5pt;
+    text-align: right;
+  }
+
+  .euks-print-meta dt {
+    color: #666;
+    font-weight: 500;
+  }
+
+  .euks-print-meta dd {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .euks-print-footer {
+    display: flex;
+    justify-content: space-between;
+    border-top: 0.5pt solid #ccc;
+    margin-top: 5mm;
+    padding-top: 2mm;
+    font-size: 7.5pt;
+    color: #666;
+  }
+
+  .euks-print-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 3mm;
+    margin-bottom: 4mm;
+    break-inside: avoid;
+  }
+
+  .euks-print-section[data-print-part="visits"] .euks-print-stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .euks-print-stat {
+    border: 0.5pt solid #d8d8d8;
+    border-left: 2pt solid var(--euks-accent);
+    border-radius: 1.5mm;
+    padding: 2.5mm 3mm;
+    background: #fbfbfb;
+  }
+
+  .euks-print-stat-label {
+    font-size: 8pt;
+    color: #555;
+    margin: 0;
+  }
+
+  .euks-print-stat-value {
+    font-size: 14pt;
+    font-weight: 700;
+    margin: 0.5mm 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .euks-print-stat-hint {
+    font-size: 7.5pt;
+    color: #777;
+    margin: 0;
+  }
+
+  .euks-print-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4mm;
+    margin-bottom: 4mm;
+  }
+
+  .euks-print-card {
+    border: 0.5pt solid #d8d8d8;
+    border-radius: 2mm;
+    padding: 3mm 4mm 4mm;
+    break-inside: avoid;
+  }
+
+  .euks-print-card h2 {
+    font-size: 10.5pt;
+    font-weight: 600;
+    margin: 0 0 2.5mm;
+    color: var(--euks-accent-muted);
+    break-after: avoid;
+  }
+
+  /* Tabel per kelas boleh melintasi halaman; kartunya tidak dipaksa utuh. */
+  .euks-print-table-card {
+    break-inside: auto;
+  }
+
+  .euks-print-donut-row {
+    display: flex;
+    align-items: center;
+    gap: 4mm;
+  }
+
+  .euks-print-donut {
+    width: 38mm;
+    height: 38mm;
+    flex: none;
+  }
+
+  .euks-print-chart {
+    width: 100%;
+  }
+
+  .euks-print-chart svg {
+    width: 100%;
+    height: auto;
+    max-height: 55mm;
+  }
+
+  .euks-print-list,
+  .euks-print-heatmap {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8.5pt;
+  }
+
+  .euks-print-list th,
+  .euks-print-list td,
+  .euks-print-heatmap th,
+  .euks-print-heatmap td {
+    border-bottom: 0.4pt solid #e4e4e4;
+    padding: 1.2mm 2mm;
+    text-align: right;
+  }
+
+  .euks-print-list thead th,
+  .euks-print-heatmap thead th {
+    background: #f3f3f3;
+    font-weight: 600;
+    font-size: 8pt;
+    border-bottom: 0.7pt solid #c9c9c9;
+  }
+
+  .euks-print-list th[scope="row"],
+  .euks-print-heatmap th[scope="row"],
+  .euks-print-list thead th:first-child,
+  .euks-print-heatmap thead th:first-child {
+    text-align: left;
+    font-weight: 600;
+  }
+
+  /* Header tabel diulang di tiap halaman, baris tidak terbelah. */
+  .euks-print-heatmap thead {
+    display: table-header-group;
+  }
+
+  .euks-print-heatmap tbody tr {
+    break-inside: avoid;
+  }
+
+  .euks-print-swatch,
+  .euks-print-bar {
+    display: inline-block;
+    width: 2.5mm;
+    height: 2.5mm;
+    border-radius: 0.6mm;
+    margin-right: 1.5mm;
+    vertical-align: middle;
+  }
+
+  .euks-print-bar {
+    width: 4mm;
+    height: 1.2mm;
+    border-radius: 0.6mm;
+  }
+
+  .euks-print-cell {
+    display: block;
+    border-radius: 1mm;
+    padding: 0.8mm 1.5mm;
+    font-variant-numeric: tabular-nums;
+    color: #111;
+  }
+
+  .euks-print-cell-empty {
+    color: #aaa;
+    background: none;
+  }
+
+  .euks-print-kv {
+    list-style: none;
+    margin: 0 0 2.5mm;
+    padding: 0;
+    font-size: 8.5pt;
+  }
+
+  .euks-print-kv li {
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 0.4pt dotted #ddd;
+    padding: 1mm 0;
+  }
+
+  .euks-print-lead {
+    font-size: 9pt;
+    margin: 0 0 2mm;
+  }
+
+  .euks-print-note {
+    background: var(--euks-accent-soft);
+    border-radius: 1.5mm;
+    padding: 2mm 3mm;
+  }
+
+  .euks-print-note-title {
+    font-size: 8pt;
+    font-weight: 600;
+    margin: 0 0 1mm;
+  }
+
+  .euks-print-note ul {
+    margin: 0;
+    padding-left: 4mm;
+    font-size: 8.5pt;
+  }
+
+  .euks-print-caption,
+  .euks-print-empty {
+    font-size: 7.5pt;
+    color: #666;
+    margin: 2mm 0 0;
+  }
+}
