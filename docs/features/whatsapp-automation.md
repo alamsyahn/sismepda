@@ -311,7 +311,7 @@ newline or a blank line), with its own placeholders:
 
 | Collection | Item placeholders |
 |---|---|
-| `daftar_kelas_belum_rekap` | `no`, `nama_kelas`, `tingkat`, `wali_kelas`, `jumlah_siswa_belum_diisi` |
+| `daftar_kelas_belum_rekap` | `no`, `nama_kelas`, `tingkat`, `wali_kelas`, `jumlah_siswa_belum_diisi`, `tag_guru_pengajar` |
 | `daftar_siswa_tidak_hadir` | `no`, `nama_siswa`, `nama_kelas`, `tingkat`, `status`, `keterangan` |
 | `daftar_sakit`, `daftar_izin`, `daftar_alfa`, `daftar_dispensasi` | `no`, `nama_siswa`, `nama_kelas`, `status`, `keterangan` |
 
@@ -332,6 +332,46 @@ rows.
 
 `wali_kelas` comes from `SchoolClass.homeroomUser` and `keterangan` from
 `Attendance.note`; both are real columns, and both fall back to `-` when empty.
+
+#### Mentioning the teacher currently in class
+
+`tag_guru_pengajar` renders the WhatsApp mention of whoever is teaching that
+class **at the moment the reminder is sent** — never the homeroom teacher, and
+never a neighbouring lesson. It is an item placeholder like any other, so the
+admin decides where the mention sits by editing "Format setiap item"; the
+renderer never assumes it is last.
+
+The template is the source of truth for the mention metadata. A teacher's JID
+is added to the outgoing payload only when the stored item format actually
+contains `{{tag_guru_pengajar}}`. Mentioning someone in `contextInfo` while the
+text never names them would send a private notification for a sentence that
+does not mention them, so `renderMessage()` collects JIDs from the same
+substitution that prints the `@62…` text. `renderTemplate()` still exists and
+returns text only, for the screens and message types that never mention anyone.
+
+The lookup (`lib/server-whatsapp-teacher-tag.ts`) resolves the current slot from
+the Jadwal module, not from any WhatsApp-specific clock: today's day and minute
+are projected into the school time zone, the active time profile's slots for
+that day decide which slot is running, and only a slot of kind `PELAJARAN`
+yields a teacher. Break, activity, free periods, before/after school and days
+with no profile all yield an empty tag. Schedule entries for every pending class
+are read in one query with the teacher's `User.phone` included, so the number of
+queries does not grow with the number of classes.
+
+Enrichment never blocks the reminder. A failed schedule lookup, a teacher with
+no phone, and a number that `normalizeIndonesianPhone()` rejects each produce an
+empty tag for that class — the message still goes out, with the other classes
+still mentioned. Failures are logged once per send, not once per class.
+
+Team teaching follows the data: if several entries place teachers in the same
+class and slot, every valid number is mentioned, deduplicated by JID. Across
+classes the text may repeat a teacher because the format says so, but each JID
+appears once in the payload.
+
+The built-in `MISSING_PENDING` item format now ends with `{{tag_guru_pengajar}}`,
+so restoring defaults produces mentions. Stored custom templates are untouched;
+a format without the placeholder keeps rendering exactly as before, with no
+mention metadata.
 
 ### Validation
 

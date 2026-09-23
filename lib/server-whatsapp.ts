@@ -19,8 +19,14 @@ import {
 import { readHolidayRules } from "@/lib/server-holidays"
 import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import { readWhatsAppReportClasses } from "@/lib/server-whatsapp-report"
+import { readCurrentTeacherTags } from "@/lib/server-whatsapp-teacher-tag"
+import { incompleteClasses } from "@/lib/whatsapp-messages"
 import type { WhatsAppReportClass } from "@/lib/whatsapp-report"
-import { renderTemplate } from "@/lib/whatsapp-template"
+import {
+  collectionsFor,
+  renderMessage,
+  type RenderedMessage,
+} from "@/lib/whatsapp-template"
 import {
   buildTemplateContext,
   templateKeyFor,
@@ -407,7 +413,7 @@ export async function composeMessage(
    * kasus "rekap final tetapi masih menyebut kelas belum lengkap".
    */
   classesSnapshot?: readonly WhatsAppReportClass[],
-): Promise<string> {
+): Promise<RenderedMessage> {
   // Kartu bawaan yang dipicu peristiwa membawa teksnya sendiri (dirender
   // pemanggil dari data peristiwa) dan tidak pernah sampai ke sini.
   if (
@@ -436,15 +442,24 @@ export async function composeMessage(
   // template yang dipilih tidak pernah bertentangan dengan angka di dalamnya.
   const templateKey = templateKeyFor(message.builtinType, classes)
   const stored = parseStoredTemplates(message.messageTemplates)
+  const template = effectiveTemplate(templateKey, stored)
 
-  return renderTemplate(
+  // Guru yang sedang mengajar hanya dicari bila daftar kelas memang akan
+  // dicetak. Di luar itu — mis. kondisi "semua sudah rekap" — tidak ada baris
+  // kelas sama sekali, jadi membaca jadwal hanya membuang satu query.
+  const teacherTags = collectionsFor(templateKey).includes("daftar_kelas_belum_rekap")
+    ? await readCurrentTeacherTags(incompleteClasses(classes).map((row) => row.id))
+    : undefined
+
+  return renderMessage(
     templateKey,
-    effectiveTemplate(templateKey, stored),
+    template,
     buildTemplateContext({
       dateLabel,
       slot,
       schoolName: await readSchoolName(),
       classes,
+      teacherTags,
     }),
   )
 }
@@ -598,12 +613,14 @@ export async function sendWhatsAppMessage(
   // kunjungan UKS): teksnya sudah dirender pemanggil dari template kartu
   // beserta data kunjungan, dan merendernya kembali di sini hanya akan
   // memindai ulang isi keluhan yang ditulis manusia.
-  const messageText =
+  const composed: RenderedMessage =
     request.text !== undefined
-      ? request.text
+      ? { text: request.text, mentions: [] }
       : message.kind === "MANUAL"
-        ? ""
+        ? { text: "", mentions: [] }
         : await composeMessage(message, date, displaySlot, completionClasses ?? undefined)
+
+  const messageText = composed.text
 
   if (messageText.trim().length === 0) {
     throw new Error("Teks pesan tidak boleh kosong.")
@@ -679,7 +696,11 @@ export async function sendWhatsAppMessage(
 
   let sendResult: { providerMessageId: string | null }
   try {
-    sendResult = await transport.sendMessage(target.jid, messageText)
+    // Mention hanya ikut bila renderer benar-benar mencetaknya; daftar kosong
+    // membuat pemanggilan ini identik dengan jalur lama.
+    sendResult = await transport.sendMessage(target.jid, messageText, {
+      mentions: composed.mentions,
+    })
   } catch (error) {
     const code = error instanceof WhatsAppSendError ? error.code : "UNKNOWN"
     const message = error instanceof WhatsAppSendError ? error.message : "Pengiriman gagal."

@@ -53,7 +53,13 @@ export const DEFAULT_TEMPLATES: WhatsAppTemplateSet = {
       "Total: {{jumlah_kelas_belum_rekap}} kelas.",
     ].join("\n"),
     items: {
-      daftar_kelas_belum_rekap: { format: "{{no}}. {{nama_kelas}}", separator: NEWLINE },
+      // `{{tag_guru_pengajar}}` ada di BAWAAN, bukan di renderer: posisinya
+      // milik admin. Ia menjadi kosong dengan sendirinya di luar jam pelajaran,
+      // sehingga baris tetap wajar dibaca tanpa perlu conditional apa pun.
+      daftar_kelas_belum_rekap: {
+        format: "{{no}}. {{nama_kelas}} (kurang {{jumlah_siswa_belum_diisi}} anak) {{tag_guru_pengajar}}",
+        separator: NEWLINE,
+      },
     },
   },
   MISSING_COMPLETE: {

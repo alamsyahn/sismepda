@@ -449,6 +449,12 @@ test("pesan lengkap dari template bawaan tetap berbentuk seperti sebelumnya", ()
   const output = renderTemplate("MISSING_PENDING", defaultTemplate("MISSING_PENDING"), context)
   assert.match(output, /^\*REKAP ABSENSI\*/)
   assert.match(output, /16 September 2026 • 08\.00 WIB/)
-  assert.match(output, /1\. 7A\n2\. 7B\n3\. 8A/)
+  // Format item bawaan kini menyebut sisa siswa dan menyediakan tempat bagi
+  // `{{tag_guru_pengajar}}`. Tanpa data jadwal, tag itu kosong dan baris
+  // berakhir tepat setelah kurung tutup — bukan dengan spasi menggantung.
+  assert.match(
+    output,
+    /1\. 7A \(kurang 0 anak\)\n2\. 7B \(kurang 0 anak\)\n3\. 8A \(kurang 0 anak\)/,
+  )
   assert.match(output, /Total: 3 kelas\./)
 })

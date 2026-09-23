@@ -21,6 +21,7 @@
  * MURNI: tanpa Prisma, tanpa jaringan, tanpa jam sistem — aman diimpor
  * komponen klien untuk preview maupun validasi.
  */
+import { TEACHER_TAG_PLACEHOLDER, mentionText } from "@/lib/whatsapp-teacher-tag"
 import type { WhatsAppMessageType } from "@/lib/whatsapp-schedule"
 
 /** Empat kondisi yang ditentukan SISTEM, bukan ditulis admin. */
@@ -161,6 +162,15 @@ export const CLASS_ITEM_PLACEHOLDERS = {
   nama_kelas: "Nama kelas, misalnya 7A",
   wali_kelas: "Nama wali kelas; berisi tanda hubung bila kelas belum punya wali",
   jumlah_siswa_belum_diisi: "Banyak siswa di kelas itu yang statusnya masih kosong",
+  /**
+   * Mention WhatsApp guru yang SEDANG mengajar kelas itu pada saat pesan
+   * dikirim, menurut jadwal aktif. Kosong di luar jam pelajaran, pada slot
+   * tanpa guru, dan bila nomor gurunya tidak dapat dipakai.
+   *
+   * BUKAN wali kelas: `{{wali_kelas}}` tetap berarti wali kelas.
+   */
+  [TEACHER_TAG_PLACEHOLDER]:
+    "Mention guru yang sedang mengajar kelas itu saat pesan dikirim; kosong bila sedang bukan jam pelajaran atau nomor gurunya tidak tersedia",
 } as const
 
 /** Placeholder yang berlaku di dalam template ITEM `daftar_siswa_tidak_hadir`. */
@@ -549,6 +559,27 @@ export function renderCollection(
 export type TemplateContext = {
   scalars: Readonly<Record<string, string>>
   collections: Partial<Record<WhatsAppCollectionKey, Readonly<Record<string, string>>[]>>
+  /**
+   * JID yang menyertai baris daftar, SEJAJAR INDEKS dengan `collections`.
+   *
+   * MENGAPA TERPISAH DARI BARIS
+   *
+   * Baris daftar hanya berisi teks yang boleh dilihat admin sebagai variabel.
+   * JID bukan variabel: ia metadata protokol yang tidak pernah dicetak. Menaruh
+   * keduanya di satu objek akan memunculkan `{{jid}}` di editor dan membuat
+   * admin dapat menulis JID ke dalam teks pesan.
+   *
+   * Metadata ini hanya IKUT TERKIRIM bila format item yang disimpan admin
+   * benar-benar memakai placeholder mention-nya; lihat `renderMessage()`.
+   */
+  mentions?: Partial<Record<WhatsAppCollectionKey, readonly (readonly string[])[]>>
+}
+
+/** Teks pesan beserta JID yang harus ikut sebagai metadata mention. */
+export type RenderedMessage = {
+  text: string
+  /** Urut sesuai kemunculan, tanpa duplikat. */
+  mentions: string[]
 }
 
 /**
@@ -566,11 +597,69 @@ export function renderTemplate(
   template: WhatsAppTemplate,
   context: TemplateContext,
 ): string {
+  return renderMessage(key, template, context).text
+}
+
+/**
+ * Merender template SEKALIGUS mengumpulkan JID mention yang menyertainya.
+ *
+ * TEMPLATE ADMIN ADALAH SUMBER KEBENARAN BAGI MENTION.
+ *
+ * JID hanya ikut bila format item yang disimpan admin benar-benar memuat
+ * `{{tag_guru_pengajar}}`. Tanpa itu, teks pesan tidak menyebut guru mana pun,
+ * dan memanggil mereka lewat metadata berarti memberi notifikasi pribadi atas
+ * kalimat yang tidak pernah menyebut namanya.
+ *
+ * Posisi placeholder tidak pernah diasumsikan: ia diganti seperti variabel item
+ * biasa, sehingga admin bebas menaruhnya di awal, tengah, atau akhir baris.
+ */
+export function renderMessage(
+  key: WhatsAppTemplateKey,
+  template: WhatsAppTemplate,
+  context: TemplateContext,
+): RenderedMessage {
   const values: Record<string, string> = { ...context.scalars }
+  const mentions: string[] = []
+
   for (const collection of collectionsFor(key)) {
     const item = template.items[collection]
     const rows = context.collections[collection] ?? []
-    values[collection] = item ? renderCollection(item.format, item.separator, rows) : ""
+    if (!item) {
+      values[collection] = ""
+      continue
+    }
+
+    // Mention hanya disusun bila formatnya memang memintanya. Pemeriksaan
+    // dilakukan atas nama placeholder yang SUDAH terdaftar, bukan atas teks
+    // bebas, sehingga tulisan "@62…" yang diketik admin tidak ikut terhitung.
+    const jidRows = context.mentions?.[collection]
+    const wanted = placeholdersIn(item.format).includes(TEACHER_TAG_PLACEHOLDER)
+
+    const renderRows = rows.map((row, index) => {
+      if (!wanted) return row
+      // Baris yang SUDAH membawa nilainya sendiri dipakai apa adanya. Inilah
+      // jalur pratinjau: ia memperlihatkan bentuk mention dengan data contoh
+      // tanpa pernah menyusun JID sungguhan, sehingga tidak ada jalur dari
+      // layar penyuntingan menuju pemanggilan orang.
+      if (Object.prototype.hasOwnProperty.call(row, TEACHER_TAG_PLACEHOLDER)) return row
+      const jids = jidRows?.[index] ?? []
+      for (const jid of jids) if (!mentions.includes(jid)) mentions.push(jid)
+      // Tanpa data jadwal, tag menjadi kosong — BUKAN token mentah. Pesan yang
+      // memperlihatkan `{{tag_guru_pengajar}}` di grup jauh lebih merusak
+      // daripada baris kelas tanpa mention.
+      return { ...row, [TEACHER_TAG_PLACEHOLDER]: jids.map(mentionText).join(" ") }
+    })
+
+    // Tag yang kosong meninggalkan bekas spasi di tempat ia berdiri —
+    // "7B  (kurang 5 anak)" atau spasi menggantung di ujung baris. Bekas itu
+    // dirapikan HANYA pada daftar yang memakai tag, sehingga daftar lain tetap
+    // tampil persis seperti yang ditulis admin.
+    values[collection] = wanted
+      ? tidyItemSpacing(
+          renderCollection(item.format, item.separator, renderRows),
+          item.format.trimStart().startsWith(`{{${TEACHER_TAG_PLACEHOLDER}}}`),
+        )
+      : renderCollection(item.format, item.separator, renderRows)
   }
 
   for (const section of sectionsFor(key)) {
@@ -582,7 +671,26 @@ export function renderTemplate(
     values[section.section] = list.length > 0 ? `${heading}\n${list}` : heading
   }
 
-  return normalizeBlankLines(renderText(template.body, values))
+  return { text: normalizeBlankLines(renderText(template.body, values)), mentions }
+}
+
+/**
+ * Membuang bekas spasi yang ditinggalkan variabel item bernilai kosong.
+ *
+ * Hanya spasi HORIZONTAL yang disentuh, dan hanya yang berlipat atau berada di
+ * ujung baris. Baris, pemisah antar-item, dan isi teks tidak pernah berubah.
+ */
+function tidyItemSpacing(text: string, trimLineStart: boolean): string {
+  return text
+    .split("\n")
+    .map((line) => {
+      const tidied = line.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+$/, "")
+      // Indentasi yang sengaja ditulis admin di awal format item dipertahankan;
+      // hanya format yang MEMBUKA dengan tag yang boleh kehilangan spasi depan,
+      // karena di situ spasi itu jelas bekas tag yang kosong.
+      return trimLineStart ? tidied.replace(/^[ \t]+/, "") : tidied
+    })
+    .join("\n")
 }
 
 /**

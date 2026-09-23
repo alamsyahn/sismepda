@@ -86,6 +86,23 @@ export function pendingClassRows(
 }
 
 /**
+ * JID guru yang sedang mengajar, SEJAJAR INDEKS dengan `pendingClassRows()`.
+ *
+ * Kesejajaran itulah yang membuat mention tidak pernah tertukar kelas, dan
+ * itulah alasan keduanya dihitung dari daftar yang sama di satu tempat. Kelas
+ * tanpa guru berjalan menghasilkan larik kosong, bukan baris yang hilang —
+ * menghilangkan barisnya akan menggeser seluruh pasangan di bawahnya.
+ */
+export function pendingClassMentions(
+  classes: readonly WhatsAppReportClass[],
+  tags: ReadonlyMap<string, readonly string[]>,
+): readonly string[][] {
+  return incompleteClasses(classes).map((schoolClass) => [
+    ...(tags.get(schoolClass.id) ?? []),
+  ])
+}
+
+/**
  * Siswa tidak hadir, dikelompokkan menurut `ABSENCE_ORDER`.
  *
  * Deduplikasi per siswa dipertahankan dari implementasi lama: satu baris per
@@ -188,6 +205,14 @@ export function buildTemplateContext(input: {
   slot: string
   schoolName: string
   classes: readonly WhatsAppReportClass[]
+  /**
+   * JID guru yang sedang mengajar per `SchoolClass.id`.
+   *
+   * OPSIONAL, dan ketiadaannya BUKAN kegagalan: pemanggil yang tidak punya
+   * data jadwal (uji, pratinjau, jalur lama) tetap menghasilkan pesan lengkap
+   * tanpa mention. Mention adalah pengayaan, bukan syarat terkirimnya pesan.
+   */
+  teacherTags?: ReadonlyMap<string, readonly string[]>
 }): TemplateContext {
   const { dateLabel, slot, schoolName, classes } = input
   const pending = pendingClassRows(classes)
@@ -222,6 +247,9 @@ export function buildTemplateContext(input: {
         pending.length > 0
           ? `Catatan: ${pending.length} kelas belum mengisi absensi sehingga data belum lengkap.`
           : "",
+    },
+    mentions: {
+      daftar_kelas_belum_rekap: pendingClassMentions(classes, input.teacherTags ?? new Map()),
     },
     collections: {
       daftar_kelas_belum_rekap: pending,

@@ -41,6 +41,7 @@ import {
   errorMessageFor,
   reconnectDelayMs,
   shouldReconnect,
+  type SendOptions,
   type SendResult,
   type WhatsAppConnectionState,
   type WhatsAppDisconnectCategory,
@@ -526,12 +527,19 @@ export class BaileysWhatsAppTransport implements WhatsAppTransport {
     }))
   }
 
-  async sendMessage(jid: string, text: string): Promise<SendResult> {
+  async sendMessage(jid: string, text: string, options?: SendOptions): Promise<SendResult> {
     if (!this.socket || this.state !== "CONNECTED") {
       throw new WhatsAppSendError("NOT_CONNECTED")
     }
     try {
-      const sent = await this.socket.sendMessage(jid, { text })
+      // `mentions` sengaja TIDAK dikirim sebagai larik kosong: pesan tanpa
+      // mention harus menghasilkan payload yang persis sama seperti sebelum
+      // fitur ini ada.
+      const mentions = options?.mentions ?? []
+      const sent = await this.socket.sendMessage(
+        jid,
+        mentions.length > 0 ? { text, mentions: [...mentions] } : { text },
+      )
       return { providerMessageId: sent?.key?.id ?? null }
     } catch (error) {
       const code = classifySendError(error)

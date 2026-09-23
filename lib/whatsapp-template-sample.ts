@@ -97,10 +97,30 @@ export const SAMPLE_CONTEXT: TemplateContext = {
       "Catatan: 3 kelas belum mengisi absensi sehingga data belum lengkap.",
   },
   collections: {
+    // `tag_guru_pengajar` ikut sebagai NILAI CONTOH, bukan JID sungguhan:
+    // pratinjau harus memperlihatkan ke mana mention berpindah ketika admin
+    // memindahkan variabelnya, tanpa pernah menyentuh jadwal maupun nomor guru.
+    // Kelas ketiga sengaja tidak punya tag — itulah keadaan nyata ketika guru
+    // yang sedang mengajar tidak memiliki nomor yang dapat dipakai.
     daftar_kelas_belum_rekap: [
-      { nama_kelas: "7A", wali_kelas: "Bu Ani", jumlah_siswa_belum_diisi: "28" },
-      { nama_kelas: "7B", wali_kelas: "Pak Budi", jumlah_siswa_belum_diisi: "5" },
-      { nama_kelas: "8A", wali_kelas: "Bu Sari", jumlah_siswa_belum_diisi: "30" },
+      {
+        nama_kelas: "7A",
+        wali_kelas: "Bu Ani",
+        jumlah_siswa_belum_diisi: "28",
+        tag_guru_pengajar: "@628123456789",
+      },
+      {
+        nama_kelas: "7B",
+        wali_kelas: "Pak Budi",
+        jumlah_siswa_belum_diisi: "5",
+        tag_guru_pengajar: "@628987654321",
+      },
+      {
+        nama_kelas: "8A",
+        wali_kelas: "Bu Sari",
+        jumlah_siswa_belum_diisi: "30",
+        tag_guru_pengajar: "",
+      },
     ],
     daftar_sakit: SAKIT,
     daftar_izin: IZIN,

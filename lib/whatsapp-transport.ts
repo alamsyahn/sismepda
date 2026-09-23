@@ -372,6 +372,18 @@ export type SendResult = {
   providerMessageId: string | null
 }
 
+/** Tambahan opsional saat mengirim. */
+export type SendOptions = {
+  /**
+   * JID yang ikut sebagai metadata mention.
+   *
+   * Teks pesan sudah memuat `@628…`-nya; tanpa metadata ini WhatsApp hanya
+   * mencetaknya sebagai tulisan biasa dan tidak memberi notifikasi kepada
+   * siapa pun.
+   */
+  mentions?: readonly string[]
+}
+
 /**
  * Kontrak transport. Implementasi nyata: `BaileysWhatsAppTransport`.
  * Implementasi uji: transport palsu di dalam test.
@@ -387,7 +399,13 @@ export type WhatsAppTransport = {
   /** Bersihkan sesi lalu langsung minta QR baru. */
   relogin(): Promise<void>
   listGroups(): Promise<WhatsAppGroup[]>
-  sendMessage(jid: string, text: string): Promise<SendResult>
+  /**
+   * `options.mentions` berisi JID yang harus benar-benar DIPANGGIL WhatsApp,
+   * bukan sekadar tertulis `@628…` di dalam teks. Opsional dan default kosong,
+   * sehingga seluruh pemanggil lama — termasuk transport palsu di dalam uji —
+   * tetap sah tanpa perubahan.
+   */
+  sendMessage(jid: string, text: string, options?: SendOptions): Promise<SendResult>
 }
 
 /**

@@ -212,12 +212,15 @@ const SERVER = readFileSync("lib/server-whatsapp.ts", "utf8")
 test("teks pesan manual tidak dirender sebagai template", () => {
   // Placeholder yang kebetulan ditulis admin adalah teks biasa baginya.
   const branch = SERVER.slice(
-    SERVER.indexOf("const messageText ="),
+    SERVER.indexOf("const composed:"),
     SERVER.indexOf("requireAttendanceActivity)"),
   )
   assert.ok(branch.includes('message.kind === "MANUAL"'))
   assert.ok(branch.includes("request.text"))
+  // `renderMessage` menggantikan `renderTemplate` sejak pesan dapat membawa
+  // metadata mention; keduanya sama-sama terlarang di cabang manual.
   assert.ok(!branch.includes("renderTemplate("), "teks manual tidak boleh melewati renderer")
+  assert.ok(!branch.includes("renderMessage("), "teks manual tidak boleh melewati renderer")
 })
 
 test("tidak ada prefix, header, atau penanda yang ditambahkan ke teks manual", () => {
