@@ -429,6 +429,51 @@ monitoring route itself. Internal-only is not enough — otherwise a crafted lin
 could point the back button at an unrelated internal page. Anything else yields
 no back button at all.
 
+### Printing the class report
+
+The page header carries a `Print` button (`EuksClassPrintAction` in
+`components/e-uks/euks-class-print.tsx`) that prints the whole class report as
+**A4 portrait**. The button is not rendered at all when no class is selected, or
+when the `classId` is unknown: the component receives `summary` and returns
+`null` for a null summary, so an empty report cannot be printed. That matches
+the page, which already shows nothing but the selectors until a class is chosen.
+
+Orientation is per-document, not global. The E-UKS home report is landscape
+because of its heatmap; this report is portrait. Both coexist through a named
+page — `@page euks-portrait { size: A4 portrait }` applied via
+`.euks-print-root[data-print-doc="class-monitoring"] { page: euks-portrait }` —
+rather than one report overriding the other's `@page`.
+
+The report reuses the existing print scaffolding: the same
+`.euks-print-portal` portal, hidden on screen and revealed by the shared
+`@media print` block that hides `body > *:not(.euks-print-portal)`. Sidebar,
+topbar, filter dropdowns and the Print button itself therefore disappear from
+the paper without being tagged individually.
+
+`summary` passed to the print document is the same object the dashboard
+renders, so printed figures cannot drift from the screen. The document adds no
+query, no aggregation and no nutrition threshold of its own. Two deliberate
+differences from the screen:
+
+- **The student table prints every student in the class**, ignoring the table's
+  search, filters and sort order. Those controls are on-screen lookup tools; a
+  class report filed as a school document has to be complete.
+- **Trend charts print as labelled horizontal bars**, not as the on-screen SVG
+  columns. Paper has no tooltip, so each bucket carries its own number and the
+  report stays readable even photocopied in grayscale.
+
+Filter dropdowns are not printed as controls. Their selected values appear
+instead in the report header — class name, period label with the resolved date
+range, and the print timestamp in the school time zone. The school name comes
+from `readSchoolName()`, never hardcoded. The timestamp is captured on click
+rather than at render, which keeps it a true print time and avoids a hydration
+mismatch.
+
+Nothing is written: printing is `window.print()` only, with `afterprint`
+clearing the scope attribute. Access control is unchanged — the report is
+rendered from data the page already loaded under `euks.monitoring.read`, and no
+print endpoint exists.
+
 ## Chart tooltips
 
 Every E-UKS chart is hand-drawn SVG or CSS, so there is no library tooltip to

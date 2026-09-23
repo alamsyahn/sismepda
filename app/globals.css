@@ -627,4 +627,122 @@
     color: #666;
     margin: 2mm 0 0;
   }
+
+  /* ---- Pantauan Kesehatan Kelas (A4 potret) ----
+     Halaman Utama mencetak lanskap karena heatmap-nya lebar; laporan kelas
+     tidak punya tabel selebar itu dan lebih wajar sebagai dokumen potret.
+     Orientasi dipilih lewat named page agar kedua laporan hidup berdampingan
+     tanpa saling menimpa `@page` global. */
+  @page euks-portrait {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  .euks-print-root[data-print-doc="class-monitoring"] {
+    page: euks-portrait;
+  }
+
+  /* Band ringkasan kelas berisi lima angka, bukan empat. */
+  .euks-print-stats-5 {
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  .euks-print-meta-sub {
+    display: block;
+    font-size: 7.5pt;
+    font-weight: 400;
+    color: #666;
+  }
+
+  /* Tren sebagai batang mendatar bernilai: kertas tidak punya tooltip, jadi
+     setiap bucket membawa angkanya sendiri dan tetap terbaca hitam-putih. */
+  .euks-print-trend {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: 8pt;
+  }
+
+  .euks-print-trend li {
+    display: grid;
+    grid-template-columns: 22mm 1fr 30mm;
+    align-items: center;
+    gap: 2mm;
+    padding: 0.6mm 0;
+    break-inside: avoid;
+  }
+
+  .euks-print-trend-label {
+    color: #444;
+  }
+
+  .euks-print-trend-track {
+    display: block;
+    height: 2.2mm;
+    background: #eee;
+    border-radius: 1.1mm;
+    overflow: hidden;
+  }
+
+  .euks-print-trend-fill {
+    display: block;
+    height: 100%;
+    background: var(--euks-accent);
+    border-radius: 1.1mm;
+  }
+
+  .euks-print-trend-value {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .euks-print-trend-hint {
+    color: #777;
+  }
+
+  /* Tabel siswa: satu baris per siswa, header berulang tiap halaman. */
+  .euks-print-students {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 7.5pt;
+    table-layout: auto;
+  }
+
+  .euks-print-students thead {
+    display: table-header-group;
+  }
+
+  .euks-print-students tbody tr {
+    break-inside: avoid;
+  }
+
+  .euks-print-students th,
+  .euks-print-students td {
+    border-bottom: 0.4pt solid #e2e2e2;
+    padding: 1.1mm 1.4mm;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .euks-print-students thead th {
+    background: #f3f3f3;
+    font-weight: 600;
+    border-bottom: 0.7pt solid #c9c9c9;
+    white-space: nowrap;
+  }
+
+  .euks-print-students th[scope="row"] {
+    font-weight: 500;
+  }
+
+  .euks-print-students .euks-print-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* Kartu tabel boleh melintasi halaman; hanya barisnya yang dijaga utuh. */
+  .euks-print-table-card {
+    break-inside: auto;
+  }
 }

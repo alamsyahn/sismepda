@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/table"
 import { EuksClassNutritionBar } from "@/components/e-uks/euks-class-nutrition-bar"
 import { EuksClassSickTrend, EuksClassVisitTrend } from "@/components/e-uks/euks-class-trends"
+import { periodLabels } from "@/components/e-uks/euks-class-print"
 import { nutritionCategoryLabels, nutritionCategoryTone } from "@/lib/bmi-for-age"
 import {
   CLASS_TABLE_SORTS,
@@ -59,13 +60,6 @@ import {
 import { NUTRITION_CATEGORY_ORDER, formatShare } from "@/lib/euks-nutrition"
 import { TREND_GRANULARITIES, type TrendGranularity } from "@/lib/attendance-trend"
 import { formatSchoolDate, parseSchoolDate } from "@/lib/school-date"
-
-const periodLabels: Record<TrendGranularity, string> = {
-  harian: "30 hari terakhir",
-  mingguan: "12 minggu terakhir",
-  bulanan: "12 bulan terakhir",
-  semester: "Sejak awal semester",
-}
 
 /**
  * Frasa untuk disisipkan di tengah kalimat ("… sakit pada 12 bulan terakhir").

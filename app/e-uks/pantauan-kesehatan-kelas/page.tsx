@@ -1,8 +1,10 @@
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { EuksClassMonitoringDashboard } from "@/components/e-uks/euks-class-monitoring-dashboard"
+import { EuksClassPrintAction } from "@/components/e-uks/euks-class-print"
 import { requirePagePermission } from "@/lib/page-guards"
 import { prisma } from "@/lib/prisma"
 import { readClassMonitoring, readEuksClassOptions } from "@/lib/server-euks"
+import { readSchoolName } from "@/lib/server-whatsapp"
 import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import { summarizeClassMonitoring } from "@/lib/euks-class-monitoring"
 import { readClassMonitoringView } from "@/lib/euks-class-navigation"
@@ -43,13 +45,14 @@ export default async function PantauanKesehatanKelasPage({ searchParams }: Props
     },
   })
 
-  const [classes, timeZone, setting] = await Promise.all([
+  const [classes, timeZone, setting, schoolName] = await Promise.all([
     readEuksClassOptions(),
     readSchoolTimeZone(),
     prisma.schoolSetting.findUnique({
       where: { id: "default" },
       select: { academicYear: true, semester: true },
     }),
+    readSchoolName(),
   ])
 
   const semesterStart = setting ? semesterStartValue(setting) : null
@@ -90,6 +93,12 @@ export default async function PantauanKesehatanKelasPage({ searchParams }: Props
       <PageHeading
         title="Pantauan Kesehatan Kelas"
         description="Ringkasan status gizi, ketidakhadiran karena sakit, kunjungan UKS, dan data kesehatan siswa per kelas."
+        action={
+          <EuksClassPrintAction
+            summary={summary}
+            meta={{ schoolName, granularity, from, to }}
+          />
+        }
       />
 
       {view.classId && !summary ? (
