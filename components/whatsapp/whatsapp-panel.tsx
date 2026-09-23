@@ -62,6 +62,11 @@ import {
   type DestinationMode,
 } from "@/lib/whatsapp-target"
 import { isSchedulable } from "@/lib/whatsapp-message"
+// Modul murni tanpa Prisma; aman diimpor klien.
+import {
+  COMPLETION_SLOT_LABEL,
+  isCompletionDrivenType,
+} from "@/lib/whatsapp-completion"
 import type { WhatsAppGroup } from "@/lib/whatsapp-transport"
 
 /**
@@ -101,6 +106,8 @@ type ScheduleRow = {
   status: "PROCESSING" | "SENT" | "FAILED" | "SKIPPED" | "NOT_YET"
   sentAt: string | null
   errorMessage: string | null
+  /** Rekap final berbasis kelengkapan absensi, bukan slot jam. */
+  completion?: boolean
 }
 
 type HistoryRow = {
@@ -963,7 +970,20 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                     </div>
                     {configuredSlots.length === 0 ? (
                       <p className="text-muted-foreground text-xs">
-                        Tanpa jadwal, pengiriman otomatis tidak akan berjalan untuk laporan ini.
+                        {/* Untuk kartu berbasis kelengkapan, tidak punya jadwal
+                            BUKAN berarti kartunya mati: rekap finalnya tetap
+                            berangkat. Menampilkan peringatan lama di sini akan
+                            membuat admin menambah jam yang tidak ia butuhkan. */}
+                        {isCompletionDrivenType(message.builtinType)
+                          ? "Tanpa jadwal, versi pengingat tidak dikirim. Rekap final tetap terkirim otomatis saat absensi seluruh kelas lengkap."
+                          : "Tanpa jadwal, pengiriman otomatis tidak akan berjalan untuk laporan ini."}
+                      </p>
+                    ) : null}
+                    {isCompletionDrivenType(message.builtinType) ? (
+                      <p className="text-muted-foreground text-xs">
+                        {message.builtinType === "ATTENDANCE_MISSING"
+                          ? "Jam di atas hanya mengatur pengingat “belum semua rekap”. Pesan “semua sudah rekap” dikirim sekali sehari, segera setelah seluruh kelas melengkapi absensi — bukan pada jam ini."
+                          : "Jam di atas hanya mengatur rekap sementara “belum lengkap”. Rekap final (ada yang tidak hadir / NIHIL) dikirim sekali sehari, segera setelah seluruh kelas melengkapi absensi — bukan pada jam ini."}
                       </p>
                     ) : null}
                   </div>
@@ -981,9 +1001,17 @@ export function WhatsAppPanel({ canManageConnection, canSend }: WhatsAppPanelPro
                             : "secondary"
                       }
                       className="font-normal"
-                      title={slot.errorMessage ?? undefined}
+                      title={
+                        slot.errorMessage ??
+                        (slot.completion
+                          ? "Dikirim sekali sehari, segera setelah absensi seluruh kelas lengkap."
+                          : undefined)
+                      }
                     >
-                      {slot.slot} · {SEND_STATUS_LABELS[slot.status] ?? slot.status}
+                      {/* Rekap final tidak punya jam jadwal, jadi ia tidak
+                          boleh tampil seperti slot yang dapat digeser admin. */}
+                      {slot.completion ? COMPLETION_SLOT_LABEL : slot.slot} ·{" "}
+                      {SEND_STATUS_LABELS[slot.status] ?? slot.status}
                     </Badge>
                   ))}
                 </div>

@@ -9,6 +9,7 @@ import { ApiError, authFailureResponse } from "@/lib/api-errors"
 import { requireUser } from "@/lib/rbac-access"
 import { FILLED_WIRE_STATUSES, UNFILLED_WIRE_STATUS, planAttendanceWrite } from "@/lib/attendance-save"
 import { readHolidayFor } from "@/lib/server-holidays"
+import { notifyAttendanceCompletion } from "@/lib/server-whatsapp-worker-client"
 
 const attendanceInput = z.object({
   classId: z.string().min(1),
@@ -89,6 +90,17 @@ export async function POST(request: Request) {
       // Siswa yang dikosongkan kembali menjadi "belum diisi" = barisnya dihapus.
       if (plan.clears.length > 0) await tx.attendance.deleteMany({ where: { attendanceDayId: day.id, studentId: { in: plan.clears } } })
     })
+    // PEMICU REKAP FINAL.
+    //
+    // Penyimpanan ini mungkin baru saja membuat absensi hari itu lengkap, dan
+    // rekap final tidak menunggu jam mana pun. Pemeriksaannya dilakukan worker
+    // (yang memegang koneksi WhatsApp), bukan di sini.
+    //
+    // Dipanggil SETELAH transaksi commit: memanggilnya di dalam transaksi
+    // berarti worker membaca keadaan lama dan menyimpulkan absensi belum
+    // lengkap. Sengaja tidak di-`await` hasilnya secara bermakna — fungsinya
+    // tidak pernah melempar, dan guru tidak perlu menunggu WhatsApp.
+    void notifyAttendanceCompletion()
     return NextResponse.json({ ok: true, submittedAt: new Date().toISOString(), submittedBy: { id: user.id, name: user.name ?? "Guru" } })
   } catch (error) {
     return authFailureResponse(error, "Gagal menyimpan absensi")

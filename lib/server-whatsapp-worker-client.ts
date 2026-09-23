@@ -104,6 +104,23 @@ export function workerSend(body: {
   return call("/send", { method: "POST", body })
 }
 
+/**
+ * Beri tahu worker bahwa absensi baru saja berubah.
+ *
+ * TIDAK PERNAH MELEMPAR. Pemanggilnya adalah route penyimpanan absensi, dan
+ * absensi seorang guru tidak boleh gagal tersimpan — atau tampak gagal —
+ * karena WhatsApp sedang putus, worker sedang restart, atau token salah.
+ * Kehilangan sinyal ini paling buruk menunda rekap final sampai tick worker
+ * berikutnya, yang memeriksa kondisi yang sama.
+ */
+export async function notifyAttendanceCompletion(): Promise<void> {
+  try {
+    await call("/completion", { method: "POST" })
+  } catch {
+    // Sengaja diam: worker memeriksa ulang secara berkala.
+  }
+}
+
 export function workerResolveTarget(name?: string): Promise<
   | { status: "RESOLVED"; jid: string; name: string }
   | { status: "NOT_FOUND"; searchedName: string }

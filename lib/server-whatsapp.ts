@@ -10,6 +10,7 @@ import { resolveHoliday } from "@/lib/holiday-rules"
 import { prisma } from "@/lib/prisma"
 import {
   formatSchoolDate,
+  formatSchoolTime,
   schoolMinutesOfDay,
   todayInSchoolTimeZone,
   toPrismaDate,
@@ -18,6 +19,7 @@ import {
 import { readHolidayRules } from "@/lib/server-holidays"
 import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import { readWhatsAppReportClasses } from "@/lib/server-whatsapp-report"
+import type { WhatsAppReportClass } from "@/lib/whatsapp-report"
 import { renderTemplate } from "@/lib/whatsapp-template"
 import {
   buildTemplateContext,
@@ -35,6 +37,17 @@ import {
 import {
   attendanceActivityDecision,
 } from "@/lib/whatsapp-attendance-activity"
+import {
+  COMPLETION_SLOT,
+  EMPTY_COMPLETION_ATTEMPTS,
+  attendanceCompletion,
+  completionGuard,
+  completionOccurrenceSlot,
+  isCompletionDrivenType,
+  isCompletionSlot,
+  shouldAttemptCompletion,
+  type CompletionAttempts,
+} from "@/lib/whatsapp-completion"
 import {
   BUILTIN_MESSAGE_IDS,
   MANUAL_MESSAGE_DESCRIPTION,
@@ -362,6 +375,12 @@ export type SkipReason =
   | "NO_SLOT"
   | "NO_ATTENDANCE_ACTIVITY"
   | "NOT_SCHEDULABLE"
+  // Occurrence penyelesaian dijalankan sebelum absensi lengkap: dilewati tanpa
+  // memakai occurrence-nya, akan dicoba lagi.
+  | "NOT_COMPLETE"
+  // Slot berjam dijalankan padahal absensi sudah lengkap: versi "belum" sudah
+  // tidak berlaku, dan rekap finalnya ditangani occurrence penyelesaian.
+  | "ALREADY_COMPLETE"
 
 export type SendOutcome =
   | { status: "SENT"; logId: string }
@@ -378,6 +397,16 @@ export async function composeMessage(
   message: WhatsAppMessageRow,
   date: SchoolDate,
   slot: string,
+  /**
+   * Potret kelas yang sudah dibaca pemanggil.
+   *
+   * Penjagaan kelengkapan sudah membaca data yang sama beberapa baris sebelum
+   * ini. Membacanya ulang bukan sekadar boros: di antara dua query itu seorang
+   * guru dapat menyimpan absensi, sehingga pesan yang terkirim akan berisi
+   * keadaan yang BERBEDA dari keadaan yang membuat pesan itu dikirim — persis
+   * kasus "rekap final tetapi masih menyebut kelas belum lengkap".
+   */
+  classesSnapshot?: readonly WhatsAppReportClass[],
 ): Promise<string> {
   // Kartu bawaan yang dipicu peristiwa membawa teksnya sendiri (dirender
   // pemanggil dari data peristiwa) dan tidak pernah sampai ke sini.
@@ -395,7 +424,7 @@ export async function composeMessage(
   // Data laporan dibaca lewat fungsi data-only: jalur ini juga dijalankan
   // worker latar yang tidak punya sesi pengguna. Guard permission untuk
   // pemanggil web ada di `lib/whatsapp-access.ts`.
-  const classes = await readWhatsAppReportClasses(toPrismaDate(date))
+  const classes = classesSnapshot ?? (await readWhatsAppReportClasses(toPrismaDate(date)))
   // Parameter ketiga formatSchoolDate adalah LOCALE, bukan zona waktu:
   // SchoolDate sudah bebas zona waktu dan tidak boleh diproyeksikan ulang.
   const dateLabel = formatSchoolDate(date)
@@ -515,6 +544,50 @@ export async function sendWhatsAppMessage(
     }
   }
 
+  // PENJAGAAN KELENGKAPAN — yang memisahkan pengingat dari rekap final.
+  //
+  // Dibaca SEKALI di sini, tepat sebelum teks disusun, sehingga keputusan
+  // "kirim atau lewati" dan isi pesan berasal dari potret data yang sama.
+  // Memeriksanya lebih awal (mis. di scheduler) akan membuat pesan disusun
+  // dari keadaan yang sudah berubah beberapa detik kemudian.
+  let completionClasses: Awaited<ReturnType<typeof readWhatsAppReportClasses>> | null = null
+  if (request.trigger === "SCHEDULED" && isCompletionDrivenType(message.builtinType)) {
+    completionClasses = await readWhatsAppReportClasses(toPrismaDate(date))
+    const guard = completionGuard({
+      slot,
+      completion: attendanceCompletion(completionClasses),
+    })
+    if (guard.blocked) {
+      // Hanya pembatalan yang MEMAKAI HABIS occurrence yang dicatat. Occurrence
+      // penyelesaian yang belum waktunya sengaja tidak menulis apa pun: ia
+      // harus tetap tersedia ketika kelas terakhir selesai mengisi nanti.
+      if (guard.claimsOccurrence && slot) {
+        await recordLog({
+          request,
+          slot,
+          date,
+          idempotencyKey: messageIdempotencyKey(message, date, slot),
+          target,
+          messageText: guard.detail,
+          status: "SKIPPED",
+          errorCode: guard.reason,
+          errorMessage: guard.detail,
+        })
+      }
+      return { status: "SKIPPED", reason: guard.reason, detail: guard.detail }
+    }
+  }
+
+  // WAKTU PADA PESAN FINAL ADALAH WAKTU KIRIM, BUKAN NAMA OCCURRENCE.
+  //
+  // `{{waktu}}` pada pesan berjam berarti jam jadwalnya. Pada rekap final tidak
+  // ada jam jadwal — mencetak "LENGKAP WIB" jelas salah, dan mencetak jam slot
+  // mana pun akan berbohong tentang kapan datanya diambil. Yang dicetak adalah
+  // jam dinding WIB saat pengiriman ini berlangsung.
+  const displaySlot = isCompletionSlot(slot)
+    ? formatSchoolTime(new Date(), timeZone)
+    : (slot ?? "")
+
   // TEKS MANUAL DIKIRIM APA ADANYA.
   //
   // Kartu manual tidak punya template dan tidak boleh melewati renderer:
@@ -530,7 +603,7 @@ export async function sendWhatsAppMessage(
       ? request.text
       : message.kind === "MANUAL"
         ? ""
-        : await composeMessage(message, date, slot ?? "")
+        : await composeMessage(message, date, displaySlot, completionClasses ?? undefined)
 
   if (messageText.trim().length === 0) {
     throw new Error("Teks pesan tidak boleh kosong.")
@@ -583,6 +656,8 @@ export async function sendWhatsAppMessage(
       request,
       slot: slot!,
       date,
+      // Occurrence penyelesaian sudah membawa nomor percobaannya di dalam nama
+      // slot (`LENGKAP`, `LENGKAP#2`, …), jadi kunci diturunkan apa adanya.
       idempotencyKey: messageIdempotencyKey(message, date, slot!),
       target,
       messageText,
@@ -649,6 +724,103 @@ export async function sendWhatsAppMessage(
   })
 
   return { status: "SENT", logId: success.id! }
+}
+
+/**
+ * Jalankan occurrence penyelesaian untuk seluruh kartu berbasis kelengkapan.
+ *
+ * DIPANGGIL DARI DUA ARAH, dan harus benar pada keduanya:
+ *
+ *   1. Tepat setelah absensi disimpan (app), supaya rekap final berangkat
+ *      dalam hitungan detik setelah kelas terakhir selesai — tanpa menunggu
+ *      jadwal apa pun, dan tanpa mensyaratkan ada jadwal sama sekali.
+ *   2. Setiap tick worker, sebagai jaring pengaman: proses web bisa mati di
+ *      tengah, notifikasi bisa hilang, dan absensi bisa disunting lewat jalur
+ *      lain. Tick yang berulang TIDAK mengirim ulang karena penanda hariannya
+ *      persisten di database, bukan di memori proses.
+ *
+ * Aman dijalankan berkali-kali dan dari beberapa proses sekaligus: yang
+ * menentukan boleh-tidaknya mengirim tetap constraint UNIQUE pada
+ * `idempotencyKey`, bukan pemeriksaan di sini.
+ */
+export async function dispatchCompletionMessages(
+  transport: WhatsAppTransport,
+  options: { date?: SchoolDate } = {},
+): Promise<SendOutcome[]> {
+  const timeZone = await readSchoolTimeZone()
+  const date = options.date ?? todayInSchoolTimeZone(new Date(), timeZone)
+
+  // Libur memblokir seluruh pengiriman terjadwal, termasuk rekap final: hari
+  // yang tidak berjalan tidak punya rekap untuk dilaporkan.
+  if (resolveHoliday(date, await readHolidayRules()).isHoliday) return []
+
+  const messages = await readMessages()
+  const candidates = messages.filter(
+    (message) => isCompletionDrivenType(message.builtinType) && message.enabled,
+  )
+  if (candidates.length === 0) return []
+
+  // Satu query untuk seluruh kartu: fungsi ini dipanggil setiap kali absensi
+  // disimpan, jadi ia harus murah pada hari yang rekapnya sudah terkirim.
+  const attemptsByMessage = await readCompletionAttempts(
+    date,
+    candidates.map((message) => message.id),
+  )
+
+  const outcomes: SendOutcome[] = []
+  for (const message of candidates) {
+    const attempts = attemptsByMessage.get(message.id) ?? EMPTY_COMPLETION_ATTEMPTS
+    if (!shouldAttemptCompletion(attempts)) continue
+    outcomes.push(
+      await sendWhatsAppMessage(transport, {
+        messageId: message.id,
+        // Percobaan pertama memakai nama occurrence polos `LENGKAP`, sehingga
+        // hari yang normal hanya punya satu baris riwayat yang mudah dibaca.
+        slot: completionOccurrenceSlot(attempts.failed + 1),
+        trigger: "SCHEDULED",
+        date,
+      }),
+    )
+  }
+  return outcomes
+}
+
+/**
+ * Jejak occurrence penyelesaian hari itu, dibaca dari riwayat pengiriman.
+ *
+ * Sumbernya database, bukan variabel proses: worker yang di-restart di tengah
+ * hari harus sampai pada kesimpulan yang persis sama dengan worker yang hidup
+ * sejak pagi.
+ */
+async function readCompletionAttempts(
+  date: SchoolDate,
+  messageIds: readonly string[],
+): Promise<Map<string, CompletionAttempts>> {
+  const logs = await prisma.whatsAppSendLog.findMany({
+    where: {
+      schoolDate: toPrismaDate(date),
+      trigger: "SCHEDULED",
+      messageId: { in: [...messageIds] },
+      // `startsWith` menangkap `LENGKAP` maupun `LENGKAP#3`. Slot berjam
+      // berbentuk `HH:mm` sehingga tidak mungkin ikut tersaring.
+      scheduledSlot: { startsWith: COMPLETION_SLOT },
+    },
+    select: { messageId: true, status: true },
+  })
+
+  const result = new Map<string, CompletionAttempts>()
+  for (const log of logs) {
+    if (!log.messageId) continue
+    const current = result.get(log.messageId) ?? { ...EMPTY_COMPLETION_ATTEMPTS }
+    if (log.status === "SENT") current.sent = true
+    else if (log.status === "PROCESSING") current.processing = true
+    else if (log.status === "FAILED") current.failed += 1
+    // SKIPPED tidak dihitung: occurrence penyelesaian yang dilewati karena
+    // belum lengkap memang tidak menulis baris, dan baris SKIPPED dari sebab
+    // lain (mis. tujuan hilang) tidak boleh menghabiskan jatah percobaan.
+    result.set(log.messageId, current)
+  }
+  return result
 }
 
 /** Selesaikan klaim yang sudah ditulis: PROCESSING → SENT/FAILED. */
@@ -760,6 +932,14 @@ export type ScheduleSlotStatus = {
   status: "PROCESSING" | "SENT" | "FAILED" | "SKIPPED" | "NOT_YET"
   sentAt: Date | null
   errorMessage: string | null
+  /**
+   * Baris ini adalah rekap final berbasis kelengkapan, bukan slot jam.
+   *
+   * UI memakainya untuk memberi label yang berbeda. Tanpa penanda ini, badge
+   * rekap final akan tampak sebagai "jadwal jam LENGKAP" — menyiratkan admin
+   * dapat menggesernya, padahal jamnya ditentukan kapan absensi selesai.
+   */
+  completion: boolean
 }
 
 /**
@@ -784,8 +964,15 @@ export async function readScheduleStatus(date: SchoolDate): Promise<ScheduleSlot
   for (const message of messages) {
     if (!isSchedulable(message)) continue
     for (const slot of message.slots) {
+      // Baris penyelesaian TIDAK BOLEH mengisi badge slot jam. Keduanya milik
+      // kartu yang sama, dan mencocokkan hanya lewat messageId akan membuat
+      // rekap final yang sudah terkirim menandai jam 07.00 sebagai "Terkirim"
+      // padahal pengingat jam itu justru dilewati.
       const log = logs.find(
-        (entry) => entry.messageId === message.id && entry.scheduledSlot === slot,
+        (entry) =>
+          entry.messageId === message.id &&
+          entry.scheduledSlot === slot &&
+          !isCompletionSlot(entry.scheduledSlot),
       )
       statuses.push({
         messageId: message.id,
@@ -794,6 +981,30 @@ export async function readScheduleStatus(date: SchoolDate): Promise<ScheduleSlot
         status: log ? log.status : "NOT_YET",
         sentAt: log?.sentAt ?? null,
         errorMessage: log?.errorMessage ?? null,
+        completion: false,
+      })
+    }
+
+    // Kartu berbasis kelengkapan selalu punya SATU baris rekap final, ada atau
+    // tidak ada jadwal jam. Ia ditampilkan walaupun belum terkirim: admin perlu
+    // tahu bahwa rekap final hari itu memang belum berangkat, dan itu tidak
+    // dapat disimpulkan dari badge jam mana pun.
+    if (isCompletionDrivenType(message.builtinType)) {
+      const completionLogs = logs.filter(
+        (entry) => entry.messageId === message.id && isCompletionSlot(entry.scheduledSlot),
+      )
+      // Percobaan ulang menulis beberapa baris; yang mewakili hari itu adalah
+      // yang BERHASIL bila ada, bukan sekadar yang terbaru — sebuah kegagalan
+      // yang diikuti keberhasilan bukan hari yang gagal.
+      const log = completionLogs.find((entry) => entry.status === "SENT") ?? completionLogs[0]
+      statuses.push({
+        messageId: message.id,
+        label: message.title,
+        slot: COMPLETION_SLOT,
+        status: log ? log.status : "NOT_YET",
+        sentAt: log?.sentAt ?? null,
+        errorMessage: log?.errorMessage ?? null,
+        completion: true,
       })
     }
   }

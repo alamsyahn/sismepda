@@ -29,7 +29,7 @@ import { readHolidayRules } from "../lib/server-holidays.js"
 import { readSchoolTimeZone } from "../lib/server-school-time-zone.js"
 import { schoolMinutesOfDay, todayInSchoolTimeZone } from "../lib/school-date.js"
 import { BaileysWhatsAppTransport } from "../lib/whatsapp-baileys.mjs"
-import { readMessages, sendWhatsAppMessage } from "../lib/server-whatsapp.js"
+import { readMessages, sendWhatsAppMessage, dispatchCompletionMessages } from "../lib/server-whatsapp.js"
 import {
   LOCK_HEARTBEAT_MS,
   acquireSessionLock,
@@ -90,12 +90,53 @@ async function tick(): Promise<void> {
         console.error(`[whatsapp] ${messageId} ${slot} gagal: ${outcome.code}`)
       }
     }
+
+    // REKAP FINAL TIDAK MENUNGGU JAM.
+    //
+    // Pemicu utamanya adalah penyimpanan absensi, yang memanggil worker lewat
+    // `/completion` dalam hitungan detik. Putaran ini adalah JARING PENGAMAN:
+    // proses web bisa mati sebelum sempat memberi tahu, panggilan HTTP bisa
+    // hilang, dan worker bisa baru hidup setelah absensi terakhir tersimpan.
+    // Tanpa pemeriksaan berkala, hari seperti itu berakhir tanpa rekap.
+    //
+    // Aman diulang tiap menit: penanda hariannya ada di database.
+    await runCompletion()
   } catch (error) {
     // Kegagalan satu putaran tidak boleh mematikan worker: putaran berikutnya
     // akan mencoba lagi, dan koneksi WhatsApp tetap hidup.
     console.error("[whatsapp] putaran jadwal gagal", error)
   } finally {
     ticking = false
+  }
+}
+
+/**
+ * Kirimkan rekap final yang sudah waktunya, satu kali.
+ *
+ * Serialisasi sendiri lewat `completing`: pemicu absensi dan tick jadwal dapat
+ * bertabrakan dalam detik yang sama, dan dua pemeriksaan bersamaan akan
+ * menghitung nomor percobaan yang sama sebelum salah satunya sempat menulis
+ * klaim. Constraint database tetap menjadi penjaga terakhir; penjaga ini hanya
+ * menghindari kerja dan baris tolakan yang tidak perlu.
+ */
+let completing = false
+
+async function runCompletion(): Promise<void> {
+  if (completing) return
+  completing = true
+  try {
+    const outcomes = await dispatchCompletionMessages(transport)
+    for (const outcome of outcomes) {
+      if (outcome.status === "FAILED") {
+        console.error(`[whatsapp] rekap final gagal: ${outcome.code}`)
+      }
+    }
+  } catch (error) {
+    // Kegagalan di sini tidak boleh menjatuhkan tick: percobaan berikutnya
+    // (tick menit depan atau simpan absensi berikutnya) akan mencoba lagi.
+    console.error("[whatsapp] pemeriksaan rekap final gagal", error)
+  } finally {
+    completing = false
   }
 }
 
@@ -218,6 +259,22 @@ const server = createServer((request, response) => {
             initiatedById: typeof body.initiatedById === "string" ? body.initiatedById : null,
           })
           send(response, 200, outcome)
+          return
+        }
+
+        case "POST /completion": {
+          // DIPANGGIL SETELAH ABSENSI DISIMPAN.
+          //
+          // Menjawab SEGERA, sebelum pemeriksaannya selesai: aplikasi web
+          // sedang menahan respons guru yang baru menekan Simpan, dan
+          // pengiriman WhatsApp tidak boleh membuat tombol itu terasa lambat
+          // atau — lebih buruk — membuat penyimpanan absensi tampak gagal
+          // hanya karena WhatsApp sedang putus.
+          //
+          // Kehilangan panggilan ini tidak menghilangkan rekap: tick berkala
+          // memeriksa hal yang sama.
+          send(response, 202, { accepted: true })
+          void runCompletion()
           return
         }
 

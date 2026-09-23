@@ -136,6 +136,95 @@ A slot is only sent within a 20-minute grace window. A worker that was down at
 it: by then the classes have submitted, so the message would be both late and
 factually wrong.
 
+## Completion-driven final messages
+
+The two attendance cards each carry **two** messages with different natures,
+and only the first of each pair is governed by the configured hours:
+
+| Card | Hour-driven version | Completion-driven version |
+|---|---|---|
+| Classes that have not submitted attendance | `MISSING_PENDING` | `MISSING_COMPLETE` |
+| Student attendance recap for the day | `ABSENT_INCOMPLETE` | `ABSENT_PRESENT` / `ABSENT_NONE` |
+
+The left column is a reminder: it is only useful while some class is still
+incomplete. The right column is the day's final report: it is only true once
+every class is complete, and holding it until the next configured hour means
+sending stale news — or, when completeness arrives after the last hour, never
+sending it at all.
+
+So the rules are split (`lib/whatsapp-completion.ts`, pure):
+
+- **Hour slot + still incomplete** → send the reminder. Each configured hour is
+  its own occurrence, so several reminders per day are normal, each at most once.
+- **Hour slot + already complete** → skip, and **consume** the occurrence. The
+  reminder is no longer true, and without consuming it a momentary backwards
+  edit inside the grace window would resurrect it.
+- **Completion occurrence + complete** → send the final recap.
+- **Completion occurrence + still incomplete** → skip **without** consuming the
+  occurrence: it must stay available for when the last class finishes.
+
+"Complete" is not redefined here — `incompleteClasses()` is the same source as
+the recap page and `{{daftar_kelas_belum_rekap}}`, so a class that pressed Save
+but left students without a status is still incomplete. **Zero classes is not
+complete**: an empty list means the data did not load, and treating it as "all
+submitted" would send a NIHIL recap to a school with no classes at all.
+
+The final recap is sent **once per school date, per card**. The two cards have
+separate daily markers, so the same completion event can legitimately send both.
+Attendance edited backwards and completed again does not resend: the marker is
+the `SENT` row in `WhatsAppSendLog`, not an in-memory flag.
+
+### Occurrence identity and retry
+
+The completion occurrence is stored with `scheduledSlot = "LENGKAP"` (not an
+`HH:mm` value, so it can never collide with an operator-typed hour), producing
+keys like `attendance_absent:2026-09-16:LENGKAP`. The unique `idempotencyKey`
+remains the only real duplicate guard — restarts, repeated polling and two
+concurrent workers all converge on the same key and the second writer is
+rejected by the database before the transport is touched.
+
+Failed sends are retried, unlike hour slots. A failed claim is marked `FAILED`
+and kept, so a fixed key would lock the day's final recap out permanently after
+one network blip; deleting the key instead would let two workers both write a
+fresh claim. Retries therefore number the occurrence — `LENGKAP`, `LENGKAP#2`,
+… — where the number is **derived from the failure count recorded in the
+database**, so concurrent processes compute the same key. Retries stop at
+`MAX_COMPLETION_ATTEMPTS` (5). A `PROCESSING` row left behind by a process that
+died mid-send is deliberately **not** retried: its message may already have
+arrived, and a duplicate recap to the school group is worse than one that has to
+be re-sent with *Kirim sekarang*.
+
+### Triggers
+
+`dispatchCompletionMessages()` (`lib/server-whatsapp.ts`) is called from two
+directions, and must be correct in both:
+
+1. **After attendance is saved** — `POST /api/attendance` calls
+   `notifyAttendanceCompletion()` after the transaction commits, which pokes the
+   worker's `POST /completion`. The worker answers `202` immediately and checks
+   asynchronously: a teacher pressing Save must never wait on WhatsApp, nor see
+   the save appear to fail because the session is down. The notifier never
+   throws.
+2. **Every worker tick** — a safety net. The web process can die, the HTTP call
+   can be lost, and the worker can start only after the last class has saved.
+   Without the periodic check such a day ends without a recap. This is also what
+   makes the trigger work when **no schedule hour exists at all**.
+
+`{{waktu}}` on a final message is the actual send time in the school timezone
+(`formatSchoolTime()`), not a slot name; `{{tanggal}}` is the school date of the
+report. The class snapshot read by the completeness guard is passed straight
+into `composeMessage()`, so the message content cannot disagree with the
+condition that triggered it.
+
+Holidays still block completion occurrences: a day that did not run has no
+recap to report. Manual *Kirim sekarang* never goes through the completeness
+guard and never writes an idempotency key, so it cannot consume the daily
+allowance.
+
+On the WhatsApp page the final recap appears as a separate badge labelled
+**Rekap final** rather than as an hour slot, and each attendance card states
+that its configured hours only govern the "belum" version.
+
 ## Message templates
 
 The text of every automatic message is editable by an admin on the WhatsApp page
@@ -311,6 +400,7 @@ handlers are not. It therefore runs as a separate persistent process.
 | `lib/whatsapp-template-sample.ts` | Sample data for the preview (pure) | no |
 | `lib/whatsapp-transport.ts` | Transport contract, status labels, reconnect backoff | no |
 | `lib/whatsapp-slots.ts` | Which configured slots are due now (pure) | no |
+| `lib/whatsapp-completion.ts` | Completeness verdict, hour-vs-completion trigger rules, occurrence identity and retry policy (pure) | no |
 | `lib/whatsapp-target.ts` | Destination resolution: default/override, JID validation, display labels (pure) | no |
 | `lib/whatsapp-session-root.ts` | Environment → session path (pure) | no |
 | `lib/whatsapp-session-store.ts` | Session presence check and credential wipe | no |
@@ -355,6 +445,7 @@ small control API on `127.0.0.1` for the Next.js app.
 | `GET /groups` | Group list; `409 NOT_CONNECTED` unless the session is live |
 | `POST /resolve-target` | Group name → JID; `409 NOT_CONNECTED` unless the session is live |
 | `POST /send` | Send one slot immediately ("Kirim sekarang") |
+| `POST /completion` | Attendance changed; check whether the final recaps are now due. Answers `202` immediately and works asynchronously |
 
 Every endpoint requires `Authorization: Bearer $WHATSAPP_WORKER_TOKEN`. The
 worker refuses to start if that variable is unset — an unauthenticated endpoint
@@ -754,6 +845,11 @@ occurrence, so a transport failure is not retried every minute for the rest of
 the grace window. The status chips read these rows directly, which is why
 "Terkirim" means a delivery actually succeeded rather than that the clock passed
 the slot.
+
+Completion occurrences are the one exception, and they buy the exception by
+changing the key rather than deleting the row: see *Occurrence identity and
+retry* above. A final recap has no grace window to expire, so refusing to retry
+it would lose the day's report to a single blip.
 
 Manual sends store `NULL` in that column. PostgreSQL treats each `NULL` as
 distinct in a unique index, so an operator can resend deliberately while the
