@@ -25,7 +25,7 @@ This directory is the canonical description of the system as it works now. Start
 | Teacher links, 19-item review, weighted supervision dashboard and audit | [Workbook supervision](features/workbook-supervision.md) | `/supervisi-buku-kerja` |
 | Budget, categories, realization entries, document URLs and delegated rights | [BOS](features/bos.md) | `/bos` |
 | Location tree, item types, quantities/condition, photos, history and delegated rights | [Sarpras](features/sarpras.md) | `/sarpras` |
-| School health unit: visit log, student health monitoring, growth charts and UKS page content | [E-UKS](features/e-uks.md) | `/e-uks` |
+| School health unit: visit log, student health monitoring, growth charts, private menstrual card and weekly recording | [E-UKS](features/e-uks.md) | `/e-uks`, `/kartu-menstruasi`, `/e-uks/menstruasi-mingguan` |
 | Lesson timetable, aSc TimeTables import, external ID mapping, time structure, revisions | [Jadwal](features/jadwal.md) | `/jadwal` |
 | Subject master data (Data Master Mata Pelajaran) | [Jadwal](features/jadwal.md) | `/mata-pelajaran` |
 | Scheduled WhatsApp attendance reports: Baileys worker, session, idempotency | [Automatic WhatsApp reporting](features/whatsapp-automation.md) | worker process |

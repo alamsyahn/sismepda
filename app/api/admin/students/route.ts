@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/rbac-access"
 import { ApiError, authFailureResponse } from "@/lib/api-errors"
 import { prisma } from "@/lib/prisma"
 import { sortClasses } from "@/lib/class-order"
+import { lockSystemAdminPopulation } from "@/lib/rbac-invariants-db"
 import { fromPrismaDate, parseSchoolDate, toPrismaDate } from "@/lib/school-date"
 
 /** Ubah YYYY-MM-DD menjadi Date kolom @db.Date, atau null bila dikosongkan. */
@@ -143,18 +144,41 @@ export async function DELETE(request: Request) {
   try {
     await requirePermission("students.master.delete")
     const body = studentDelete.parse(await request.json())
-    const existing = await prisma.student.findUnique({ where: { id: body.id }, select: { nis: true, nisn: true } })
-    if (!existing) throw new ApiError(404, "Siswa tidak ditemukan")
-    const expectedIdentifier = existing.nis ?? existing.nisn
-    if (expectedIdentifier !== body.confirmationIdentifier) {
-      throw new ApiError(400, "Konfirmasi identitas siswa tidak sesuai")
-    }
-    const deletedAttendances = await prisma.$transaction(async (tx) => {
+    const outcome = await prisma.$transaction(async (tx) => {
+      // Same order as provisioning (population first), then the exact key used
+      // by menstrual writers. All dependency reads precede destructive writes.
+      await lockSystemAdminPopulation(tx)
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`menstruation:student:${body.id}`}, 0))`
+      const existing = await tx.student.findUnique({ where: { id: body.id }, select: { nis: true, nisn: true } })
+      if (!existing) throw new ApiError(404, "Siswa tidak ditemukan")
+      const expectedIdentifier = existing.nis ?? existing.nisn
+      if (expectedIdentifier !== body.confirmationIdentifier) {
+        throw new ApiError(400, "Konfirmasi identitas siswa tidak sesuai")
+      }
+      const [linkedAccounts, menstruationRecords, menstruationHistories, menstruationConflicts] = await Promise.all([
+        tx.user.count({ where: { studentId: body.id } }),
+        tx.menstruationRecord.count({ where: { studentId: body.id } }),
+        tx.menstruationHistory.count({ where: { studentId: body.id } }),
+        tx.menstruationConflict.count({ where: { studentId: body.id } }),
+      ])
+      const counts = { linkedAccounts, menstruationRecords, menstruationHistories, menstruationConflicts }
+      if (Object.values(counts).some((count) => count > 0)) {
+        return { blocked: true as const, counts }
+      }
       const result = await tx.attendance.deleteMany({ where: { studentId: body.id } })
       await tx.student.delete({ where: { id: body.id } })
-      return result.count
+      return { blocked: false as const, deletedAttendances: result.count }
     })
-    return NextResponse.json({ id: body.id, deletedAttendances })
+    if (outcome.blocked) {
+      const counts = outcome.counts
+      return NextResponse.json({
+        error: `Siswa memiliki ${counts.linkedAccounts} akun tertaut, ${counts.menstruationRecords} catatan, ` +
+          `${counts.menstruationHistories} riwayat, dan ${counts.menstruationConflicts} konflik tersimpan. ` +
+          "Data dan riwayat tidak boleh dihapus otomatis. Nonaktifkan siswa sebagai alternatif penghapusan permanen.",
+        reason: "student_dependencies", counts,
+      }, { status: 409 })
+    }
+    return NextResponse.json({ id: body.id, deletedAttendances: outcome.deletedAttendances })
   } catch (error) {
     if (error instanceof z.ZodError) return NextResponse.json({ error: "Data hapus tidak valid" }, { status: 400 })
     return authFailureResponse(error, "Siswa gagal dihapus permanen")

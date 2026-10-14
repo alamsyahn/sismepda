@@ -79,7 +79,7 @@ Invariants:
 - `User.isTeacher` marks teacher records. Teacher directory, homeroom candidates, schedule/duty editing targets, workbook supervision population, E-UKS officer candidates and the `teachers` export select on `isTeacher = true`, not on role membership. `teacherPopulationWhere()` is the single source for that filter; it does **not** fall back to `role = "GURU"` (the legacy backfill is `COMPLETED`, and the narrowing was verified to change zero rows).
 - Holding the `guru` role does not set `isTeacher`; having `isTeacher` does not grant permissions.
 - `workbookSupervised` stays a business attribute (include in supervision population). `EuksOfficer.role` stays a free-text UKS position.
-- `siswa` and `wali_murid` may exist as roles, but until a `User↔Student` link and a parent↔child resolver exist their templates hold only the authenticated-public set. No student/parent account creation path exists in HEAD.
+- `siswa` memakai tautan unik nullable `User.studentId` ke `Student` dan template hanya `euks.menstruation.read.own/create.own/update.own`. Pembuatan akun pribadi melalui `/pengaturan/akun-siswa` + `students.accounts.manage`, hanya untuk siswi aktif. NIS/NISN dan ID URL tidak mengautentikasi. Role siswa yang sudah ada tidak ditimpa seed; provisioning menolak role kosong/terkontaminasi. `wali_murid` tetap tanpa permission data karena resolver wali↔anak belum tersedia.
 
 ## System admin
 
@@ -102,6 +102,7 @@ Two relations reference `User` without `onDelete`, so PostgreSQL applies RESTRIC
 |---|---|---|
 | `AttendanceDay.submittedById` | Reassigned to the deleting actor | Student attendance is a school record that must not disappear because the submitting teacher was removed. |
 | `StudentViolationPoint.recordedById` | **Blocks** deletion (HTTP 409, `reason: violation_points_attributed`) | Reassigning it would rewrite who accused a student of misconduct — record falsification. Deleting it would discard the student's disciplinary history, which does not belong to the teacher's account. No automatic treatment is correct, so the operator decides. |
+| Menstruation record/history/conflict attribution and request actor | **Blocks** deletion (HTTP 409, `reason: menstruation_attributed`) | Attribution and private history must survive. Response contains counts only, never dates/complaints; deactivate the account instead. Counts are read while holding the account row lock before any attendance reassignment. |
 
 Additional rules enforced by the endpoint:
 
@@ -195,7 +196,10 @@ Every key below corresponds to at least one surface in the inventory. Keys are g
 | `euks.overview.read` | — | `/e-uks` visit aggregates and trend loaders |
 | `euks.visits.read` | — | `/e-uks/riwayat-kunjungan`, `readEuksVisits` |
 | `euks.visits.create/update/delete` | — | `POST /api/e-uks/visits`, `PATCH` / `DELETE /api/e-uks/visits/[visitId]` |
-| `euks.monitoring.read` | — | `/e-uks/pantauan-kesehatan` shell and student selectors |
+| `euks.monitoring.read` | — | `/e-uks/pantauan-kesehatan` shell and student selectors; does not grant menstruation |
+| `euks.menstruation.read/create/update/review` | — | private individual card, `/e-uks/menstruasi-mingguan`, guarded loaders and GET/POST `/api/e-uks/menstruation`; review is separate |
+| `euks.menstruation.read/create/update` | `own` | `/kartu-menstruasi`, own GET/POST `/api/e-uks/menstruation`; resolves `User.studentId` from database |
+| `students.accounts.manage` | — | `/pengaturan/akun-siswa`, guarded roster and GET/POST `/api/admin/student-accounts`; authority-sensitive |
 | `euks.measurements.read` | — | measurement panel of the monitoring loader |
 | `euks.measurements.create` | — | `POST /api/e-uks/measurements` |
 | `euks.measurements.delete` | — | `DELETE /api/e-uks/measurements/[measurementId]` |
@@ -239,7 +243,7 @@ Every key below corresponds to at least one surface in the inventory. Keys are g
 | `schedule.revisions.read` | — | `GET /api/jadwal/revisi` |
 | `schedule.revisions.rollback` | — | `POST /api/jadwal/revisi`. Sensitive: changes the active timetable |
 
-Not created (no operation exists in HEAD): `euks.export`, `bos.export`, `sarpras.export`, `students.violations.read` (violations are read inside `students.profile.read`), `teachers.duties.read`/`teachers.schedule.read` (read inside directory), `euks.*.read` for settings sub-entities (read inside `euks.overview.read`), `attendance.delete`, any `siswa`/`wali_murid` data permission.
+Not created (no operation exists in HEAD): `euks.export`, `bos.export`, `sarpras.export`, `students.violations.read` (violations are read inside `students.profile.read`), `teachers.duties.read`/`teachers.schedule.read` (read inside directory), `euks.*.read` for settings sub-entities (read inside `euks.overview.read`), `attendance.delete`, any `wali_murid` data permission (student own menstruation now exists).
 
 ## Role templates (initial seed, adjustable in UI)
 
@@ -249,10 +253,10 @@ Not created (no operation exists in HEAD): `euks.export`, `bos.export`, `sarpras
 | `guru` | Guru | `attendance.dashboard.read.assigned_classes`, `attendance.reports.read.assigned_classes`, `attendance.read.assigned_classes`, `attendance.write.assigned_classes`, `attendance.export.assigned_classes`, `reports.whatsapp.read.all`, `students.profile.read.assigned_classes`, `students.violations.create.assigned_classes`, `teachers.directory.read`, `workbook.links.read.own`, `workbook.links.update.own`, `schedule.own.read`, `schedule.classes.read`, `schedule.free_teachers.read` |
 | `pengawas` | Pengawas | `attendance.dashboard.read.all`, `attendance.reports.read.all`, `attendance.export.all`, `students.profile.read.all`, `teachers.directory.read`, `workbook.supervision.read`, `workbook.supervision.review` |
 | `kepala_sekolah` | Kepala Sekolah | `attendance.dashboard.read.all`, `attendance.reports.read.all`, `attendance.export.all`, `reports.whatsapp.read.all`, `students.profile.read.all`, `teachers.directory.read`, `workbook.supervision.read`, `bos.read`, `sarpras.read`, `euks.overview.read`, `euks.visits.read`, `euks.monitoring.read` |
-| `pengurus_uks` | Pengurus UKS | all `euks.*` |
+| `pengurus_uks` | Pengurus UKS | visit/measurement/sick-absence rights from `lib/rbac-templates.ts`; menstruation requires explicit separate grants |
 | `pengurus_bos` | Pengurus BOS | `bos.read`, `bos.entries.create`, `bos.entries.update`, `bos.categories.create` |
 | `pengurus_sarpras` | Pengurus Sarpras | `sarpras.read`, `sarpras.history.read`, `sarpras.photos.read`, `sarpras.locations.*`, `sarpras.item_types.*`, `sarpras.items.*`, `sarpras.photos.create/delete` |
-| `siswa` | Siswa | none |
+| `siswa` | Siswa | `euks.menstruation.read.own`, `euks.menstruation.create.own`, `euks.menstruation.update.own`; valid linked student required |
 | `wali_murid` | Wali Murid | none |
 
 Templates are seeded once by key (created only when the key is absent; existing rows and their `RolePermission` set are never touched again). No user is assigned a position role by name, NIP or `position` guessing; only the legacy mapping below is applied automatically. Template contents are initial values, not a permanent authority: after an admin edits a role, seed reruns never restore removed permissions.

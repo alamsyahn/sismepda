@@ -68,6 +68,16 @@ function def(definition: PermissionDefinition): PermissionDefinition {
  * inventori otorisasi di docs/architecture/rbac.md.
  */
 export const PERMISSIONS: readonly PermissionDefinition[] = [
+  // Data menstruasi bersifat privat; tidak termasuk grant pantauan umum.
+  def({ key: "euks.menstruation.read", resource: "euks.menstruation", action: "read", module: "euks", label: "Baca catatan menstruasi (UKS)", sensitive: true }),
+  def({ key: "euks.menstruation.create", resource: "euks.menstruation", action: "create", module: "euks", label: "Catat menstruasi dan konfirmasi mingguan (UKS)", dependsOn: ["euks.menstruation.read"], sensitive: true }),
+  def({ key: "euks.menstruation.update", resource: "euks.menstruation", action: "update", module: "euks", label: "Koreksi catatan menstruasi (UKS)", dependsOn: ["euks.menstruation.read"], sensitive: true }),
+  def({ key: "euks.menstruation.review", resource: "euks.menstruation", action: "review", module: "euks", label: "Tinjau dan selesaikan konflik menstruasi", dependsOn: ["euks.menstruation.read"], sensitive: true }),
+  def({ key: "euks.menstruation.read.own", resource: "euks.menstruation", action: "read", scope: "own", module: "euks", label: "Baca kartu menstruasi sendiri", sensitive: true }),
+  def({ key: "euks.menstruation.create.own", resource: "euks.menstruation", action: "create", scope: "own", module: "euks", label: "Tambah catatan menstruasi sendiri", dependsOn: ["euks.menstruation.read.own"], sensitive: true }),
+  def({ key: "euks.menstruation.update.own", resource: "euks.menstruation", action: "update", scope: "own", module: "euks", label: "Koreksi catatan menstruasi sendiri", dependsOn: ["euks.menstruation.read.own"], sensitive: true }),
+  def({ key: "students.accounts.manage", resource: "students.accounts", action: "manage", module: "students", label: "Buat akun pribadi siswa", sensitive: true }),
+
   // --- attendance ---------------------------------------------------------
   def({
     key: "attendance.dashboard.read.assigned_classes",
@@ -821,6 +831,7 @@ export const SENSITIVE_AUTHORITY_FAMILIES: readonly string[] = [
   "database",
   "school.class_access.manage",
   "homerooms.assign",
+  "students.accounts",
 ]
 
 /**

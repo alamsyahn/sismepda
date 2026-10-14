@@ -13,10 +13,14 @@ and makes the parser throw. And the trigger must map the selected value to a
 label, since Base UI's `SelectValue` otherwise renders the raw delimiter
 character. `tests/csv-delimiter-field.test.ts` asserts both.
 
-Permanent deletion requires a matching confirmation identifier. The handler removes related attendance rows and violation points before deleting the student; this is destructive and changes historical aggregates. Deactivation is the non-destructive alternative.
+Permanent deletion requires a matching confirmation identifier. The handler removes related attendance rows and violation points before deleting the student; this is destructive and changes historical aggregates. Deactivation is the non-destructive alternative. A linked personal account or any menstrual record/history/conflict blocks permanent deletion with HTTP 409 before any attendance is removed; sensitive history is not erased automatically.
 
 `/siswa/[studentId]` is the canonical authenticated profile. It is resolved through class scope, so an inaccessible student appears not found. The profile shows current identity/class/status, attendance counts and percentage over recorded rows, monthly trend, current consecutive-HADIR streak, latest ALFA, current-month absence count, and paginated/filterable history. Dates/status are validated and pages clamped. The displayed class for historic attendance is the student's **current class**; the schema has no enrollment or class-history snapshot.
 
 Authenticated users can add violation points only for a student in their accessible class. Entries record category, positive points, optional note, occurrence date and recording user. Severity/progress is derived from cumulative points; deletion/editing is not exposed by the current endpoint.
+
+## Akun pribadi siswa
+
+Administrator dengan `students.accounts.manage` membuat akun di `/pengaturan/akun-siswa`. Saat ini pembuatan hanya untuk siswi aktif pengguna Kartu Menstruasi, dengan email dan kata sandi sesuai kebijakan akun aplikasi. Tautan `User.studentId` unik mencegah dua akun untuk satu siswa; provisioning tidak mengambil alih akun yang sudah ada. Role `siswa` harus berisi tepat `euks.menstruation.read.own/create.own/update.own`; role yang belum dikonfigurasi menghasilkan pesan konfigurasi, bukan akun tanpa akses. Login memakai email dan kata sandi, bukan NIS/NISN. Pengguna dengan izin `accounts.credentials.manage`/`accounts.status.manage` dapat mereset kata sandi/menonaktifkan akun di Pengguna. Detail pencatatan dan privasi berada di [E-UKS](e-uks.md).
 
 Relationships: attendance and reporting rules are canonical in [Attendance](attendance-reporting.md); scope is in [Authorization](../architecture/authentication-authorization.md). Primary files are `app/api/admin/students/route.ts`, `app/siswa/**`, `lib/student-input.ts` (pure parsing/validation, including demographics), `lib/server-student-profile.ts`, and `app/api/students/[studentId]/violation-points/route.ts`.

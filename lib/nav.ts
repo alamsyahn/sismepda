@@ -161,6 +161,13 @@ export const dashboardItem: NavItem = {
 export const mainNav: NavEntry[] = [
   dashboardItem,
   {
+    title: "Kartu Menstruasi Saya",
+    href: "/kartu-menstruasi",
+    icon: HeartPulse,
+    description: "Catatan pribadi; hanya data sendiri",
+    permissions: ["euks.menstruation.read.own"],
+  },
+  {
     // Tepat di bawah Dashboard: jadwal adalah rujukan harian paling sering
     // dibuka, sehingga tidak boleh terkubur di bawah modul lain.
     //
@@ -293,6 +300,13 @@ export const mainNav: NavEntry[] = [
         icon: Stethoscope,
         description: "Status gizi, riwayat sakit, dan pertumbuhan per siswa",
         permissions: ["euks.monitoring.read"],
+      },
+      {
+        title: "Pencatatan Menstruasi Mingguan",
+        href: "/e-uks/menstruasi-mingguan",
+        icon: ClipboardCheck,
+        description: "Konfirmasi mingguan dan peninjauan catatan pribadi",
+        permissions: ["euks.menstruation.read"],
       },
       {
         title: "Riwayat Kunjungan UKS",
@@ -429,6 +443,13 @@ function administrationGroup(): NavGroup {
           "accounts.read", "rbac.assignments.manage", "accounts.credentials.manage",
           "accounts.status.manage", "accounts.delete",
         ],
+      },
+      {
+        title: "Akun Siswa",
+        href: "/pengaturan/akun-siswa",
+        icon: UserCog,
+        description: "Buat akses pribadi yang terhubung ke identitas siswa",
+        permissions: ["students.accounts.manage"],
       },
       {
         title: "Akses",

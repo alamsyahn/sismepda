@@ -24,12 +24,20 @@
  * dapat ditindaklanjuti pengguna — technical debt TD-009.
  */
 
-export type DeletionBlockReason = "self_delete" | "violation_points_attributed"
+export type MenstruationDeletionCounts = {
+  menstruationRecords: number
+  menstruationHistories: number
+  menstruationConflicts: number
+  menstruationRequests: number
+}
+
+export type DeletionBlockReason = "self_delete" | "violation_points_attributed" | "menstruation_attributed"
 
 type AccountDeletionBase = {
   /** Penerima atribusi absensi; selalu aktor penghapus. */
   reassignAttendanceTo: string
   attendanceDays: number
+  counts?: MenstruationDeletionCounts
 }
 
 export type AccountDeletionPlan = AccountDeletionBase & (
@@ -42,7 +50,7 @@ export function planAccountDeletion(input: {
   targetId: string
   attendanceDays: number
   violationPoints: number
-}): AccountDeletionPlan {
+} & Partial<MenstruationDeletionCounts>): AccountDeletionPlan {
   const base = {
     reassignAttendanceTo: input.actorId,
     attendanceDays: input.attendanceDays,
@@ -56,6 +64,21 @@ export function planAccountDeletion(input: {
       blocked: true,
       reason: "self_delete",
       message: "Anda tidak dapat menghapus akun Anda sendiri.",
+    }
+  }
+
+  const counts = {
+    menstruationRecords: input.menstruationRecords ?? 0,
+    menstruationHistories: input.menstruationHistories ?? 0,
+    menstruationConflicts: input.menstruationConflicts ?? 0,
+    menstruationRequests: input.menstruationRequests ?? 0,
+  }
+  if (Object.values(counts).some((count) => count > 0)) {
+    return {
+      ...base, counts, blocked: true, reason: "menstruation_attributed",
+      message: `Akun ini memiliki atribusi ${counts.menstruationRecords} catatan, ${counts.menstruationHistories} riwayat, ` +
+        `${counts.menstruationConflicts} konflik, dan ${counts.menstruationRequests} permintaan tersimpan. ` +
+        "Atribusi dan riwayat tidak boleh dihapus atau dialihkan. Nonaktifkan akun ini sebagai alternatif penghapusan permanen.",
     }
   }
 

@@ -28,6 +28,7 @@ export default async function PengaturanLayout({ children }: { children: ReactNo
     "accounts.credentials.manage",
     "accounts.status.manage",
     "accounts.delete",
+    "students.accounts.manage",
   ])
   return children
 }

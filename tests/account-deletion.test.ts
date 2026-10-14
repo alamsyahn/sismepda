@@ -22,6 +22,17 @@ import { describe, it } from "node:test"
 import { planAccountDeletion } from "../lib/account-deletion"
 
 describe("planAccountDeletion", () => {
+  for (const key of ["menstruationRecords", "menstruationHistories", "menstruationConflicts", "menstruationRequests"] as const) {
+    it(`blocks permanent deletion for ${key} without exposing health details`, () => {
+      const plan = planAccountDeletion({ actorId: "admin", targetId: "user", attendanceDays: 8, violationPoints: 0, [key]: 3 })
+      assert.equal(plan.blocked, true)
+      assert.equal(plan.reason, "menstruation_attributed")
+      assert.match(plan.message!, /3/)
+      assert.match(plan.message!, /nonaktifkan/i)
+      assert.doesNotMatch(plan.message!, /complaint|startDate|endDate|proposed|response/)
+      assert.equal(plan.counts?.[key], 3)
+    })
+  }
   it("mengalihkan atribusi absensi ke aktor penghapus", () => {
     const plan = planAccountDeletion({
       actorId: "admin-1",

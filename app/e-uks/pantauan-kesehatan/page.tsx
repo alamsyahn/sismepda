@@ -11,6 +11,8 @@ import { EuksSickAbsenceTable } from "@/components/e-uks/euks-sick-absence-table
 import { EuksBmiChart } from "@/components/e-uks/euks-bmi-chart"
 import { EuksKmsCard } from "@/components/e-uks/euks-kms-card"
 import { EuksStudentPrintAction } from "@/components/e-uks/euks-student-print"
+import { MenstruationCard } from "@/components/e-uks/menstruation-card"
+import { readMenstruationCard } from "@/lib/server-menstruation"
 import {
   ageInYears,
   formatBmi,
@@ -35,13 +37,14 @@ type Props = {
 
 export default async function PantauanKesehatanPage({ searchParams }: Props) {
   await requirePagePermission("euks.monitoring.read")
-  const [canMeasurements, canCreateMeasurement, canDeleteMeasurement, canSickAbsences, canUpdateSickAbsence, canVisits] = await Promise.all([
+  const [canMeasurements, canCreateMeasurement, canDeleteMeasurement, canSickAbsences, canUpdateSickAbsence, canVisits, canMenstruation] = await Promise.all([
     pageCan("euks.measurements.read"),
     pageCan("euks.measurements.create"),
     pageCan("euks.measurements.delete"),
     pageCan("euks.sick_absences.read"),
     pageCan("euks.sick_absences.update"),
     pageCan("euks.visits.read"),
+    pageCan("euks.menstruation.read"),
   ])
 
   const { classId = "", studentId = "", returnTo = "" } = await searchParams
@@ -55,6 +58,10 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
     sickAbsences: canSickAbsences,
     visits: canVisits,
   }) : null
+
+  const menstruation = canMenstruation && monitoring?.student.gender === "PEREMPUAN"
+    ? await readMenstruationCard(studentId)
+    : null
 
   const series = monitoring ? toBmiSeries(monitoring.measurements) : []
   const heightSeries = monitoring
@@ -172,6 +179,14 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
         </Card>
       ) : (
         <>
+          {menstruation ? (
+            <MenstruationCard
+              data={menstruation}
+              today={menstruation.today}
+              canCreate={menstruation.canCreate}
+              canUpdate={menstruation.canUpdate}
+            />
+          ) : null}
           {canSickAbsences ? <Card>
             <CardHeader>
               <CardTitle>Riwayat Ketidakhadiran Karena Sakit</CardTitle>

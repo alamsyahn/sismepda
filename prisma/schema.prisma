@@ -46,6 +46,12 @@ enum WorkbookItemStatus {
 }
 
 model User {
+  studentId String? @unique
+  linkedStudent Student? @relation("StudentAccount", fields: [studentId], references: [id], onDelete: Restrict)
+  menstruationRecords MenstruationRecord[]
+  menstruationHistories MenstruationHistory[]
+  menstruationRequests MenstruationRequest[]
+  menstruationConflicts MenstruationConflict[]
   id String @id @default(cuid())
   email String? @unique
   nip String? @unique
@@ -172,6 +178,10 @@ model SchoolClass {
 }
 
 model Student {
+  account User? @relation("StudentAccount")
+  menstruationRecords MenstruationRecord[]
+  menstruationHistories MenstruationHistory[]
+  menstruationConflicts MenstruationConflict[]
   id String @id @default(cuid())
   nis String? @unique
   nisn String? @unique
@@ -815,6 +825,86 @@ model Permission {
 }
 
 /// Keanggotaan user pada role. Tidak ada grant permission langsung ke user.
+enum MenstruationSource {
+  STUDENT
+  UKS
+}
+enum MenstruationKind {
+  EPISODE
+  WEEKLY
+  PROFILE
+}
+enum MenstruationStatus {
+  HAD
+  NONE
+  UNKNOWN
+}
+/// Private health data. A PROFILE/WEEKLY uses a stable key; episode uses start.
+model MenstruationRecord {
+  id String @id @default(cuid())
+  studentId String
+  kind MenstruationKind
+  key String
+  version Int @default(1)
+  startDate DateTime? @db.Date
+  endDate DateTime? @db.Date
+  weekStart DateTime? @db.Date
+  status MenstruationStatus?
+  episodeId String?
+  neverMenstruated Boolean?
+  complaint String?
+  source MenstruationSource
+  recordedById String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  recordedBy User @relation(fields: [recordedById], references: [id], onDelete: Restrict)
+  @@unique([studentId, kind, key])
+  @@index([studentId, kind, startDate])
+  @@index([weekStart, kind])
+}
+/// Never exposed through general audit readers.
+model MenstruationHistory {
+  id String @id @default(cuid())
+  studentId String
+  recordId String?
+  action String
+  source MenstruationSource
+  recordedById String
+  before Json?
+  after Json?
+  createdAt DateTime @default(now())
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  recordedBy User @relation(fields: [recordedById], references: [id], onDelete: Restrict)
+  @@index([studentId, createdAt])
+}
+model MenstruationConflict {
+  id String @id @default(cuid())
+  studentId String
+  targetType String
+  targetId String?
+  proposed Json
+  recordedById String
+  resolvedAt DateTime?
+  resolvedById String?
+  resolution String?
+  reason String?
+  createdAt DateTime @default(now())
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  recordedBy User @relation(fields: [recordedById], references: [id], onDelete: Restrict)
+  @@index([studentId, resolvedAt])
+}
+model MenstruationRequest {
+  id String @id @default(cuid())
+  requestId String
+  actorId String
+  fingerprint String
+  response Json
+  createdAt DateTime @default(now())
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  @@unique([actorId, requestId])
+}
+
 model UserRole {
   userId    String
   roleId    String

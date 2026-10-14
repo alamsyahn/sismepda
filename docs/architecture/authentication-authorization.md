@@ -13,6 +13,10 @@ Login throttling is an in-memory, per-process map (`lib/login-rate-limit.ts`): 8
 
 `proxy.ts` applies Auth.js to non-static paths. Public exceptions are Auth.js endpoints, the login page, static/file-like URLs (which is how GET `/favicon.ico` and `/site-branding.json` stay public), and GET `/app-logo`; mutation guards still protect branding. Logged-in users are redirected away from `/login`. Public-vs-authenticated policy lives in `lib/route-policy.ts` and fails closed: an unlisted path always requires login. The callback does not prefilter application routes by JWT role/capability; pages guard themselves server-side against current database permissions, so grants and revocations are not delayed by stale session claims.
 
+## Student identity
+
+Akun siswa menggunakan Auth.js email + kata sandi yang sama, dengan `User.studentId` unik nullable sebagai tautan ke siswa. `/pengaturan/akun-siswa` dan `/api/admin/student-accounts` memerlukan `students.accounts.manage`; hanya akun baru untuk siswi aktif yang dapat dibuat, tidak menautkan ulang akun guru/admin. Role `siswa` harus mempunyai tepat tiga permission menstruasi own. Endpoint kartu pribadi meresolusi tautan dari database setiap permintaan dan menolak akses antar siswa, gender kosong/non-perempuan, serta siswa tidak aktif. Izin menstruasi petugas terpisah dan tidak diberikan oleh izin pantauan umum. Tidak ada self-registration atau akses publik berdasarkan NIS/NISN.
+
 ## Roles, permissions, and class scope
 
 Role membership comes from `UserRole`; effective permission is the union of each assigned role's `RolePermission` rows. Only the immutable key `system_admin` bypasses permission checks. Display names such as "Admin Sistem" never authorize. Accounts may intentionally have no role and therefore no grants.

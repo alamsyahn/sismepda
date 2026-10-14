@@ -399,10 +399,11 @@ test("template guru tidak memperoleh scope all", () => {
   assert.deepEqual(wide, [])
 })
 
-test("template siswa dan wali murid belum memiliki permission", () => {
-  for (const key of ["siswa", "wali_murid"]) {
-    const template = ROLE_TEMPLATES.find((entry) => entry.key === key)
-    assert.ok(template)
-    assert.deepEqual(template.permissionKeys, [])
-  }
+test("template siswa terbatas kartu pribadi; wali murid belum punya resolver", () => {
+  const siswa = ROLE_TEMPLATES.find((entry) => entry.key === "siswa")
+  assert.ok(siswa)
+  assert.deepEqual(siswa.permissionKeys, [
+    "euks.menstruation.read.own", "euks.menstruation.create.own", "euks.menstruation.update.own",
+  ])
+  assert.deepEqual(ROLE_TEMPLATES.find((entry) => entry.key === "wali_murid")?.permissionKeys, [])
 })

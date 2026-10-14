@@ -14,11 +14,12 @@ PostgreSQL is the only durable store. Prisma 7 uses `@prisma/adapter-pg`; `lib/d
 - Workbook: `Workbook`, `WorkbookItem`, `TeacherWorkbook`, `TeacherWorkbookItemStatus`.
 - BOS: `BosSetting`, `BosCategory`, `BosEntry`, `BosDocument`.
 - Sarpras: `SarprasLocation`, `SarprasItemType`, `SarprasItem`, `SarprasPhoto`, `SarprasHistory`.
-- Cross-module: `AuditLog`.
+- E-UKS menstruasi: `MenstruationRecord` (jenis EPISODE/WEEKLY/PROFILE), `MenstruationHistory` (detail perubahan privat), `MenstruationConflict` (usulan tertunda), `MenstruationRequest` (idempotensi per aktor/request). `User.studentId` unik nullable mengikat akun pribadi ke siswa; seluruh relasi identitas dan atribusi menstruasi memakai RESTRICT agar riwayat tidak hilang otomatis. Tanggal episode/minggu memakai DATE; waktu pencatatan timestamp. Lihat [E-UKS](../features/e-uks.md).
+- Cross-module: `AuditLog`; untuk menstruasi hanya metadata aksi/identitas perubahan, tanpa detail kesehatan.
 
 ## Lifecycles and invariants
 
-Classes and students are retained by restrictive foreign keys where attendance history refers to them. Student deletion is an explicit ADMIN operation that first deletes related attendance records/points as implemented by the route. Teacher deletion reassigns attendance submissions to the acting admin before deletion because submission ownership is restrictive. Homeroom deletion effects use `SetNull`.
+Classes and students are retained by restrictive foreign keys where attendance history refers to them. Student deletion is an explicit ADMIN operation that first deletes related attendance records/points as implemented by the route. Teacher deletion reassigns attendance submissions to the acting admin before deletion because submission ownership is restrictive. Homeroom deletion effects use `SetNull`. A student with a linked account or menstrual records/history/conflicts cannot be permanently deleted. Accounts with menstrual attribution or idempotency requests cannot be permanently deleted either; both routes return counted HTTP 409 and recommend deactivation rather than erasing or reassigning private history.
 
 Workbook child data cascades with workbook/user/item deletion; reviewer deletion sets reviewer to null. BOS category references restrict category removal (the UI deactivates categories); documents cascade with entries, and creator/updater deletion sets null. Sarpras location/item-type references restrict deletion while used; item photos/history cascade; actor/creator/updater deletion sets null. Sarpras enforces nonnegative quantities and condition-total equality in both domain validation and a database check constraint. A partial unique index enforces unique root location slugs because PostgreSQL treats nullable composite keys specially.
 

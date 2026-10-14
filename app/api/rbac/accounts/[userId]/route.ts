@@ -234,15 +234,26 @@ export async function DELETE(request: Request, context: { params: Promise<{ user
       })
       if (denial) throw new InvariantViolationError(denial)
 
-      const [attendanceDays, violationPoints] = await Promise.all([
+      // FK inserts take KEY SHARE on User. FOR UPDATE serializes attribution
+      // writers with these counts even when they use a different student lock.
+      await tx.$executeRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`
+      const [attendanceDays, violationPoints, menstruationRecords, menstruationHistories, menstruationConflicts, menstruationRequests] = await Promise.all([
         tx.attendanceDay.count({ where: { submittedById: userId } }),
         tx.studentViolationPoint.count({ where: { recordedById: userId } }),
+        tx.menstruationRecord.count({ where: { recordedById: userId } }),
+        tx.menstruationHistory.count({ where: { recordedById: userId } }),
+        tx.menstruationConflict.count({ where: { recordedById: userId } }),
+        tx.menstruationRequest.count({ where: { actorId: userId } }),
       ])
       const plan = planAccountDeletion({
         actorId: actor.id,
         targetId: userId,
         attendanceDays,
         violationPoints,
+        menstruationRecords,
+        menstruationHistories,
+        menstruationConflicts,
+        menstruationRequests,
       })
       if (plan.blocked) {
         return {
@@ -250,6 +261,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ user
           status: plan.reason === "self_delete" ? 403 : 409,
           reason: plan.reason,
           message: plan.message,
+          counts: plan.counts,
         }
       }
 
@@ -295,7 +307,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ user
 
     if (outcome.blocked) {
       return NextResponse.json(
-        { error: outcome.message, reason: outcome.reason },
+        { error: outcome.message, reason: outcome.reason, counts: outcome.counts },
         { status: outcome.status },
       )
     }

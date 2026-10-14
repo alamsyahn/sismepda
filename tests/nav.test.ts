@@ -138,6 +138,7 @@ test("group Administrasi memuat tujuan administratif dengan permission-nya", () 
   assert.deepEqual(group.children.map((child) => child.href), [
     "/pengaturan",
     "/pengaturan/pengguna",
+    "/pengaturan/akun-siswa",
     "/pengaturan/akses",
     "/pengaturan/audit",
   ])

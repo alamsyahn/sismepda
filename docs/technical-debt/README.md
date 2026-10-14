@@ -35,7 +35,7 @@ Only verified, unresolved engineering liabilities are listed here.
 ## TD-004 — Critical integration behavior lacks automated coverage
 
 - **Area / severity:** Testing — **Medium**
-- **Current condition:** The current unit/contract suite covers pure helpers and selected permission behavior, but there is no database-backed route suite or browser E2E coverage for login, class-scoped IDOR, destructive deletion, backup/restore, migrations, and major writes.
+- **Current condition:** The suite covers pure helpers and permission behavior. Kartu Menstruasi now additionally has local PostgreSQL service and authenticated HTTP acceptance tests for own-account isolation, live grant revocation, transactional weekly writes, conflict privacy, replay and fixture cleanup. These tests use temporary signed Auth.js sessions, not the password-login UI. Browser E2E coverage for login, core class-scoped IDOR, destructive deletion, backup/restore and other major writes remains absent; menstruation responsive layout checks are isolated Chrome renders, not a complete authenticated browser flow.
 - **Evidence:** `package.json` test command; `tests/` contents; absence of E2E/CI configuration.
 - **Impact:** Unit-clean changes can still regress middleware, session/database integration, transactional behavior or production flows.
 - **Reason:** Test architecture is currently optimized for fast pure-domain tests.

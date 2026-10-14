@@ -165,10 +165,14 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     key: "siswa",
     name: "Siswa",
     description:
-      "Belum memiliki permission: tautan User↔Student belum ada, sehingga tidak ada data yang bisa dibatasi dengan benar.",
+      "Kartu menstruasi pribadi melalui tautan akun ke siswa; tidak membuka data siswa lain maupun pantauan umum.",
     isSystem: true,
     isProtected: false,
-    permissionKeys: [],
+    permissionKeys: [
+      "euks.menstruation.read.own",
+      "euks.menstruation.create.own",
+      "euks.menstruation.update.own",
+    ],
   },
   {
     key: "wali_murid",

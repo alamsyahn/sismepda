@@ -213,7 +213,9 @@ test("template: Pengurus UKS/BOS/Sarpras tidak mendapat delete/config destruktif
 })
 
 test("template: Siswa & Wali Murid tanpa grant sensitif; hanya system_admin yang protected", () => {
-  assert.deepEqual(getRoleTemplate("siswa")!.permissionKeys, [])
+  assert.deepEqual(getRoleTemplate("siswa")!.permissionKeys, [
+    "euks.menstruation.read.own", "euks.menstruation.create.own", "euks.menstruation.update.own",
+  ])
   assert.deepEqual(getRoleTemplate("wali_murid")!.permissionKeys, [])
   assert.deepEqual(ROLE_TEMPLATES.filter((t) => t.isProtected).map((t) => t.key), [SYSTEM_ADMIN_ROLE_KEY])
 })

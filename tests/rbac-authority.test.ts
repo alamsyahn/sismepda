@@ -10,6 +10,7 @@ test("keluarga authority sensitif mencakup rbac, accounts, database, class_acces
     "homerooms.assign",
     "rbac",
     "school.class_access.manage",
+    "students.accounts",
   ])
 })
 
@@ -21,6 +22,8 @@ test("isSensitiveAuthority mengenali anggota keluarga berdasarkan segmen key, bu
   assert.equal(isSensitiveAuthority("database.restore"), true)
   assert.equal(isSensitiveAuthority("school.class_access.manage"), true)
   assert.equal(isSensitiveAuthority("homerooms.assign"), true)
+  assert.equal(isSensitiveAuthority("students.accounts.manage"), true)
+  assert.equal(isSensitiveAuthority("students.master.read"), false)
 
   // Bukan anggota: nama yang hanya mirip di awal tidak boleh ikut tertarik.
   assert.equal(isSensitiveAuthority("attendance.read.all"), false)
