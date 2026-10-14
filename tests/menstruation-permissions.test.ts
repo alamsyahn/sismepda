@@ -24,9 +24,9 @@ test("template siswa hanya akses pribadi; pengurus UKS tidak diberi izin baru ot
   for (const key of staff) assert.ok(!getRoleTemplate("pengurus_uks")?.permissionKeys.includes(key))
 })
 test("menu pribadi dan mingguan terpisah sesuai izin", () => {
-  const hrefs = (keys: readonly string[]) => flattenNav(visibleNavEntries(mainNav, { grants: keys })).map((item) => item.href)
-  assert.ok(hrefs(own).includes("/kartu-menstruasi"))
-  assert.ok(!hrefs(own).includes("/e-uks/menstruasi-mingguan"))
+  const hrefs = (keys: readonly string[], canReadOwnMenstruation?: boolean) => flattenNav(visibleNavEntries(mainNav, { grants: keys, canReadOwnMenstruation })).map((item) => item.href)
+  assert.ok(hrefs(own, true).includes("/kartu-menstruasi"))
+  assert.ok(!hrefs(own, true).includes("/e-uks/menstruasi-mingguan"))
   assert.ok(hrefs(staff).includes("/e-uks/menstruasi-mingguan"))
   assert.ok(!hrefs(["euks.monitoring.read"]).includes("/e-uks/menstruasi-mingguan"))
   assert.ok(hrefs(["students.accounts.manage"]).includes("/pengaturan/akun-siswa"))
