@@ -50,6 +50,26 @@ refresh diam-diam — ia hanya menjalankan aplikasi terhadap clone yang ada.
 Semantik lengkap sinkronisasi media ada di
 [`../architecture/media-storage.md`](../architecture/media-storage.md).
 
+### Clone yang sudah ada setelah kode mendapat migrasi baru
+
+`dev:prodclone` tidak memigrasikan schema otomatis. Migrasi yang diterapkan pada
+`sismepda_dev` tidak berlaku pada `sismepda_prodclone`. Bila kode baru membaca
+kolom yang belum ada pada clone, halaman gagal meskipun akun Admin Sistem sah
+(contoh: `User.studentId` pada Kartu Menstruasi).
+
+Tanpa refresh atau reset clone, periksa lalu terapkan migrasi forward melalui
+pemilih target yang sama:
+
+```bash
+npx tsx scripts/with-db.ts prodclone -- prisma migrate status
+npx tsx scripts/with-db.ts prodclone -- prisma migrate deploy
+```
+
+Catat jumlah data utama sebelum/sesudah, lalu restart `dev:prodclone` agar klien
+Prisma dalam proses memakai schema terbaru. Perintah ini hanya mengubah clone
+lokal; jangan mengganti target menjadi produksi atau menyunting `.env` untuk
+mengalihkan koneksi.
+
 Kedua perintah mencetak target yang dipakai sebelum Next.js start, misalnya:
 
 ```text
