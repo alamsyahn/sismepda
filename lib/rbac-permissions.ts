@@ -68,6 +68,9 @@ function def(definition: PermissionDefinition): PermissionDefinition {
  * inventori otorisasi di docs/architecture/rbac.md.
  */
 export const PERMISSIONS: readonly PermissionDefinition[] = [
+  def({ key: "euks.fitness.read", resource: "euks.fitness", action: "read", module: "euks", label: "Baca catatan kebugaran" }),
+  def({ key: "euks.fitness.create", resource: "euks.fitness", action: "create", module: "euks", label: "Catat hasil tes kebugaran", dependsOn: ["euks.fitness.read"] }),
+  def({ key: "euks.fitness.update", resource: "euks.fitness", action: "update", module: "euks", label: "Koreksi hasil tes kebugaran", dependsOn: ["euks.fitness.read"] }),
   // Data menstruasi bersifat privat; tidak termasuk grant pantauan umum.
   def({ key: "euks.menstruation.read", resource: "euks.menstruation", action: "read", module: "euks", label: "Baca catatan menstruasi (UKS)", sensitive: true }),
   def({ key: "euks.menstruation.create", resource: "euks.menstruation", action: "create", module: "euks", label: "Catat menstruasi dan konfirmasi mingguan (UKS)", dependsOn: ["euks.menstruation.read"], sensitive: true }),

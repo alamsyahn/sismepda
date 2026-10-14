@@ -46,6 +46,7 @@ enum WorkbookItemStatus {
 }
 
 model User {
+  fitnessResults FitnessResult[] @relation("FitnessRecorder")
   studentId String? @unique
   linkedStudent Student? @relation("StudentAccount", fields: [studentId], references: [id], onDelete: Restrict)
   menstruationRecords MenstruationRecord[]
@@ -166,6 +167,7 @@ model AdditionalDuty {
 }
 
 model SchoolClass {
+  fitnessSessions FitnessSession[]
   id String @id @default(cuid())
   name String @unique
   grade String
@@ -178,6 +180,7 @@ model SchoolClass {
 }
 
 model Student {
+  fitnessResults FitnessResult[]
   account User? @relation("StudentAccount")
   menstruationRecords MenstruationRecord[]
   menstruationHistories MenstruationHistory[]
@@ -1491,4 +1494,48 @@ model ScheduleImport {
 
   @@index([status, createdAt])
   @@index([createdAt])
+}
+
+enum FitnessStatus {
+  TESTED
+  NOT_TESTED
+  ABSENT
+  INVALID
+}
+
+model FitnessSession {
+  id String @id @default(cuid())
+  classId String
+  testedAt DateTime @db.Date
+  testType String @default("BEEP_TEST")
+  protocol String
+  audioLabel String
+  createdAt DateTime @default(now())
+  schoolClass SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+  results FitnessResult[]
+
+  @@unique([classId, testedAt, testType])
+}
+
+model FitnessResult {
+  id String @id @default(cuid())
+  sessionId String
+  studentId String
+  status FitnessStatus
+  level Int?
+  shuttle Int?
+  note String?
+  genderAtTest Gender?
+  gradeAtTest String
+  recordedById String?
+  recordedByName String
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  session FitnessSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  recordedBy User? @relation("FitnessRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@unique([sessionId, studentId])
+  @@index([studentId])
 }
