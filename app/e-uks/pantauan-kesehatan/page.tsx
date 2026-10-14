@@ -1,3 +1,5 @@
+import { FitnessStudentCard } from "@/components/e-uks/fitness-student-card"
+import { readStudentFitness } from "@/lib/server-fitness"
 import { pageCan, requirePagePermission } from "@/lib/page-guards"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -62,6 +64,9 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
   const menstruation = canMenstruation && monitoring?.student.gender === "PEREMPUAN"
     ? await readMenstruationCard(studentId)
     : null
+
+  const canFitness = await pageCan("euks.fitness.read")
+  const fitness = canFitness && monitoring ? await readStudentFitness(studentId) : null
 
   const series = monitoring ? toBmiSeries(monitoring.measurements) : []
   const heightSeries = monitoring
@@ -179,6 +184,8 @@ export default async function PantauanKesehatanPage({ searchParams }: Props) {
         </Card>
       ) : (
         <>
+          {fitness ? <FitnessStudentCard results={fitness} classId={students.find(s => s.id === studentId)?.classId ?? classId} /> : null}
+
           {menstruation ? (
             <MenstruationCard
               data={menstruation}

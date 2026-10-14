@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { fitnessBatchSchema, fitnessCategory, sameFitnessInput, type FitnessInputRow } from "../lib/fitness"
+import { canSeeNavItem, mainNav, flattenNav } from "../lib/nav"
 
 const base = { status: "TESTED", protocol: "TKSI_D_20M_2023", level: 4, shuttle: 4, genderAtTest: "LAKI_LAKI", gradeAtTest: "VII" }
 test("TKSI beep categories preserve integer level/balikan boundaries and gender", () => {
@@ -33,4 +34,10 @@ test("batch validation rejects partial, fractional, duplicate, forged and invali
   assert.ok(fitnessBatchSchema.safeParse({...payload,rows:[{...row,status:"INVALID",level:null,shuttle:null}]}).success)
   assert.equal(sameFitnessInput(row,{...row,version:99}),true)
   assert.equal(sameFitnessInput(row,{...row,shuttle:5}),false)
+})
+test("fitness navigation is limited to its own read permission", () => {
+  const item = flattenNav(mainNav).find(n=>n.href==="/e-uks/kebugaran")!
+  assert.ok(item)
+  assert.equal(canSeeNavItem(item,{grants:["euks.monitoring.read"]}),false)
+  assert.equal(canSeeNavItem(item,{grants:["euks.fitness.read"]}),true)
 })

@@ -306,6 +306,13 @@ export const mainNav: NavEntry[] = [
         permissions: ["euks.monitoring.read"],
       },
       {
+        title: "Catatan Kebugaran",
+        href: "/e-uks/kebugaran",
+        icon: HeartPulse,
+        description: "Hasil beep test dan riwayat daya tahan aerobik siswa",
+        permissions: ["euks.fitness.read"],
+      },
+      {
         title: "Pencatatan Menstruasi Mingguan",
         href: "/e-uks/menstruasi-mingguan",
         icon: ClipboardCheck,
