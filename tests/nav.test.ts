@@ -399,3 +399,15 @@ test("route tanpa induk tidak mengubah state accordion", () => {
   const state = { absensi: true }
   assert.deepEqual(seedActiveGroup(state, "absensi", null), state)
 })
+
+test("personal menstruation menu requires both eligibility and its own permission", () => {
+ const hrefs = (grants: string[], eligible?: boolean) => visibleNavItems({ grants, canReadOwnMenstruation: eligible }).map(item => item.href)
+ const own = ["euks.menstruation.read.own"]
+ assert.ok(!hrefs(own).includes("/kartu-menstruasi"))
+ assert.ok(!hrefs(own, false).includes("/kartu-menstruasi"))
+ assert.ok(!hrefs([], true).includes("/kartu-menstruasi"))
+ assert.ok(hrefs(own, true).includes("/kartu-menstruasi"))
+ const staff = hrefs(["euks.menstruation.read", "euks.monitoring.read"], false)
+ assert.ok(staff.includes("/e-uks/menstruasi-mingguan"))
+ assert.ok(staff.includes("/e-uks/pantauan-kesehatan"))
+})

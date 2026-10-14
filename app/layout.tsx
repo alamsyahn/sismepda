@@ -76,7 +76,7 @@ export default async function RootLayout({
                 hasAppLogo: branding.hasAppLogo,
               }}
             >
-              <AppShell grants={navIdentity.grants} roleNames={navIdentity.roleNames}>{children}</AppShell>
+              <AppShell grants={navIdentity.grants} roleNames={navIdentity.roleNames} canReadOwnMenstruation={navIdentity.canReadOwnMenstruation}>{children}</AppShell>
             </AppBrandingProvider>
           </SessionProvider>
           <Toaster position="top-center" />

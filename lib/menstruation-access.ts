@@ -6,3 +6,8 @@ export function decideMenstruationAccess(grants: ReadonlySet<string>, linkedStud
   if (action !== "review" && grants.has(`euks.menstruation.${action}.own`) && linkedStudentId && (!requestedStudentId || requestedStudentId === linkedStudentId)) return { studentId: linkedStudentId, source: "STUDENT" }
   throw new Error("FORBIDDEN")
 }
+
+/** Linked student comes from the current account's database relation. */
+export function canReadOwnMenstruation(grants: ReadonlySet<string>, student: { active: boolean; gender: string | null } | null): boolean {
+  return grants.has("euks.menstruation.read.own") && student?.active === true && student.gender === "PEREMPUAN"
+}

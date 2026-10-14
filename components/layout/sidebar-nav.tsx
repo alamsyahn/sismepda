@@ -46,12 +46,12 @@ function readStoredGroups(): Record<string, boolean> {
  * TIDAK lagi membaca peran dari sesi/JWT: tanpa grants, tidak ada fallback
  * "GURU" saat sesi masih dimuat — menu yang dijaga cukup tidak tampil.
  */
-export function SidebarNav({ onNavigate, grants, roleNames }: { onNavigate?: () => void; grants: readonly string[]; roleNames: readonly string[] }) {
+export function SidebarNav({ onNavigate, grants, roleNames, canReadOwnMenstruation }: { onNavigate?: () => void; grants: readonly string[]; roleNames: readonly string[]; canReadOwnMenstruation: boolean }) {
   const pathname = usePathname()
   const { data: session } = useSession()
   const branding = useAppBranding()
 
-  const viewer = useMemo(() => ({ grants }), [grants])
+  const viewer = useMemo(() => ({ grants, canReadOwnMenstruation }), [grants, canReadOwnMenstruation])
 
   const entries = useMemo(() => visibleNavEntries(mainNav, viewer), [viewer])
   const accountItems = useMemo(() => accountNav.filter((item) => canSeeNavItem(item, viewer)), [viewer])

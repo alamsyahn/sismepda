@@ -64,18 +64,18 @@ test("system_admin tanpa RolePermission tetap memperoleh seluruh permission yang
   assert.equal(grants.size, PERMISSION_KEYS.length)
 })
 
-test("system_admin melihat setiap tujuan navigasi yang dijaga permission dikenal", () => {
+test("system_admin tanpa tautan siswa melihat menu petugas, bukan kartu pribadi", () => {
   const viewer = { grants: deriveNavGrants(systemAdminSubject) }
   const visible = visibleNavEntries(mainNav, viewer)
 
-  // Tidak ada satu pun entri yang hilang: seluruh pohon harus tampil utuh.
-  assert.deepEqual(labelsOf(visible), labelsOf(mainNav))
-  assert.equal(flatten(visible).length, flatten(mainNav).length)
+  const expectedMain = mainNav.filter(entry => entry.type === "group" || !entry.requiresOwnMenstruation)
+  assert.deepEqual(labelsOf(visible), labelsOf(expectedMain))
+  assert.equal(flatten(visible).length, flatten(expectedMain).length)
 
   // Termasuk dashboard dan menu akun.
   assert.deepEqual(
     visibleNavItems(viewer).map((item) => item.href),
-    navItems.map((item) => item.href),
+    navItems.filter((item) => !item.requiresOwnMenstruation).map((item) => item.href),
   )
   assert.ok(canSeeNavItem(dashboardItem, viewer))
   for (const item of accountNav) assert.ok(canSeeNavItem(item, viewer), `menu akun hilang: ${item.href}`)

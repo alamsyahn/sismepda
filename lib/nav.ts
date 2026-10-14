@@ -45,6 +45,7 @@ export type NavItem = {
    * pengguna tidak diarahkan ke halaman yang pasti menolaknya.
    */
   permissions?: readonly string[]
+  requiresOwnMenstruation?: boolean
   /** Route matching strategy for the active state. Defaults to "prefix". */
   match?: "exact" | "prefix"
 }
@@ -63,6 +64,7 @@ export type NavEntry = NavItem | NavGroup
 export type NavViewer = {
   /** Grant efektif pemakai, hasil authorization context database terkini. */
   grants: ReadonlySet<string> | readonly string[]
+  canReadOwnMenstruation?: boolean
 }
 
 export function isNavGroup(entry: NavEntry): entry is NavGroup {
@@ -71,6 +73,7 @@ export function isNavGroup(entry: NavEntry): entry is NavGroup {
 
 /** Nav filtering mirrors the server-side guards; it never grants access on its own. */
 export function canSeeNavItem(item: NavItem, viewer: NavViewer): boolean {
+  if (item.requiresOwnMenstruation && viewer.canReadOwnMenstruation !== true) return false
   // Tanpa daftar permission, item dianggap tersedia bagi setiap sesi yang sah
   // (mis. "Profil Saya"). Item yang dijaga WAJIB mencantumkan key-nya.
   if (!item.permissions || item.permissions.length === 0) return true
@@ -163,6 +166,7 @@ export const mainNav: NavEntry[] = [
   {
     title: "Kartu Menstruasi Saya",
     href: "/kartu-menstruasi",
+    requiresOwnMenstruation: true,
     icon: HeartPulse,
     description: "Catatan pribadi; hanya data sendiri",
     permissions: ["euks.menstruation.read.own"],
