@@ -31,6 +31,7 @@ type Source = {
 }
 
 const sources: Source[] = [
+  { label: "KsEvidence.file", load: async () => (await prisma.ksEvidence.findMany({ select: { id: true, mediaKey: true, size: true } })).map(r => ({ id: r.id, key: r.mediaKey, size: r.size, hasLegacy: false })) },
   {
     label: "User.photo",
     load: async () =>

@@ -245,6 +245,8 @@ export async function DELETE(request: Request, context: { params: Promise<{ user
         tx.menstruationConflict.count({ where: { recordedById: userId } }),
         tx.menstruationRequest.count({ where: { actorId: userId } }),
       ])
+      const coaching = await tx.ksCoach.count({ where: { userId } })
+      if (coaching > 0) return { blocked: true as const, status: 409, reason: "kesiswaan_coach", message: `Akun masih membina ${coaching} ekstrakurikuler. Alihkan penugasan pembina atau nonaktifkan akun.`, counts: { coaching } }
       const plan = planAccountDeletion({
         actorId: actor.id,
         targetId: userId,

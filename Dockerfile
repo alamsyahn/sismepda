@@ -83,6 +83,7 @@ RUN mkdir -p \
       /app/media/euks/facility \
       /app/media/sarpras/item \
       /app/media/students/photo \
+      /app/media/kesiswaan/evidence \
   && chown -R nextjs:nodejs /app/media
 USER nextjs
 EXPOSE 3000

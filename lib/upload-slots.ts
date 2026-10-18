@@ -69,6 +69,7 @@ const IMAGE_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"] as const
  * memanggilnya; slot tanpa pemakai adalah utang, bukan fitur.
  */
 export const UPLOAD_SLOTS: readonly UploadSlot[] = [
+  { key: "kesiswaan.achievement.evidence", label: "Bukti Prestasi", category: "document", module: "Kesiswaan", allowedMimeTypes: ["application/pdf", "image/jpeg", "image/png", "image/webp"] },
   {
     key: "profile.user.photo",
     label: "Foto Profil Pengguna",

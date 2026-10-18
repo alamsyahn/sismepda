@@ -1640,6 +1640,7 @@ model KsAchievement {
   period KsPeriod @relation(fields: [periodId], references: [id], onDelete: Restrict)
   activity KsActivity? @relation(fields: [activityId], references: [id], onDelete: Restrict)
   participants KsParticipant[]
+  evidenceFiles KsEvidence[]
   @@index([periodId, date])
 }
 
@@ -1687,4 +1688,16 @@ model KsHistory {
   reason String @default("")
   createdAt DateTime @default(now())
   @@index([entityId, createdAt])
+}
+
+model KsEvidence {
+  id String @id @default(cuid())
+  achievementId String
+  mediaKey String
+  mimeType String
+  name String
+  size Int
+  createdAt DateTime @default(now())
+  achievement KsAchievement @relation(fields: [achievementId], references: [id], onDelete: Restrict)
+  @@index([achievementId])
 }

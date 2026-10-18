@@ -37,7 +37,7 @@ const countModel = (events: string[], name: string, count: number, where?: Recor
   return count
 } })
 
-for (const blocker of ["account", "menstruationRecord", "menstruationHistory", "menstruationConflict", "none"]) {
+for (const blocker of ["account", "menstruationRecord", "menstruationHistory", "menstruationConflict", "ksMember", "ksParticipant", "none"]) {
   test(`student deletion checks ${blocker} before attendance and retains private history`, async () => {
     const events: string[] = []
     const tx = {
@@ -46,6 +46,8 @@ for (const blocker of ["account", "menstruationRecord", "menstruationHistory", "
       menstruationRecord: countModel(events, "menstruationRecord", blocker === "menstruationRecord" ? 2 : 0),
       menstruationHistory: countModel(events, "menstruationHistory", blocker === "menstruationHistory" ? 3 : 0),
       menstruationConflict: countModel(events, "menstruationConflict", blocker === "menstruationConflict" ? 4 : 0),
+      ksMember: countModel(events, "ksMember", blocker === "ksMember" ? 1 : 0),
+      ksParticipant: countModel(events, "ksParticipant", blocker === "ksParticipant" ? 1 : 0),
       student: { findUnique: async () => { events.push("student-read"); return { nis: "123", nisn: null } }, delete: async () => { events.push("student-delete") } },
       attendance: { deleteMany: async () => { events.push("attendance-delete"); return { count: 7 } } },
     }
@@ -67,12 +69,13 @@ for (const blocker of ["account", "menstruationRecord", "menstruationHistory", "
   })
 }
 
-for (const blocker of ["menstruationRecord", "menstruationHistory", "menstruationConflict", "menstruationRequest", "none"]) {
+for (const blocker of ["menstruationRecord", "menstruationHistory", "menstruationConflict", "menstruationRequest", "ksCoach", "none"]) {
   test(`account deletion blocks ${blocker} before reassigning attendance`, async () => {
     const events: string[] = []
     const tx = {
       $executeRaw: async (parts: TemplateStringsArray) => { events.push("user-lock"); assert.match(parts.join(""), /FOR UPDATE/) },
       user: { findUnique: async () => ({ id: "u1", name: "Target", email: "target@example.test", nip: null, active: true, rbacRoles: [] }), delete: async () => { events.push("user-delete") } },
+      ksCoach: countModel(events, "ksCoach", blocker === "ksCoach" ? 1 : 0),
       attendanceDay: { ...countModel(events, "attendance-count", 6), updateMany: async () => { events.push("attendance-update"); return { count: 6 } } },
       studentViolationPoint: countModel(events, "violation-count", 0),
       schoolClass: { updateMany: async () => { events.push("class-update") } },
@@ -84,7 +87,7 @@ for (const blocker of ["menstruationRecord", "menstruationHistory", "menstruatio
     assert.deepEqual(events.slice(0, 3), ["transaction", "population-lock", "user-lock"])
     const body = await response.json()
     if (blocker !== "none") {
-      assert.equal(body.reason, "menstruation_attributed")
+      assert.equal(body.reason, blocker === "ksCoach" ? "kesiswaan_coach" : "menstruation_attributed")
       assert.ok(body.counts)
       assert.match(body.error, /nonaktifkan/i)
       for (const write of ["attendance-update", "class-update", "audit", "user-delete"]) assert.ok(!events.includes(write))

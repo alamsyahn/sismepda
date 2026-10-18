@@ -26,6 +26,7 @@ export const MEDIA_CATEGORIES = [
   "euks",
   "sarpras",
   "students",
+  "kesiswaan",
 ] as const
 
 export type MediaCategory = (typeof MEDIA_CATEGORIES)[number]
@@ -36,6 +37,7 @@ export type MediaCategory = (typeof MEDIA_CATEGORIES)[number]
  * memberi pemanggil kebebasan menyusun jalur sendiri.
  */
 export const MEDIA_SCOPES = {
+  "kesiswaan/evidence": { category: "kesiswaan", prefix: "kesiswaan/evidence" },
   "users/avatar": { category: "users", prefix: "users/avatar" },
   "branding/app-logo": { category: "branding", prefix: "branding/app-logo" },
   "branding/favicon": { category: "branding", prefix: "branding/favicon" },
@@ -60,6 +62,7 @@ export type MediaScope = keyof typeof MEDIA_SCOPES
  * ikut ke jalur filesystem sama sekali.
  */
 const EXTENSION_BY_MIME: Record<string, string> = {
+  "application/pdf": "pdf",
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",

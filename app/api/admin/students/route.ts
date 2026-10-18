@@ -155,13 +155,15 @@ export async function DELETE(request: Request) {
       if (expectedIdentifier !== body.confirmationIdentifier) {
         throw new ApiError(400, "Konfirmasi identitas siswa tidak sesuai")
       }
-      const [linkedAccounts, menstruationRecords, menstruationHistories, menstruationConflicts] = await Promise.all([
+      const [linkedAccounts, menstruationRecords, menstruationHistories, menstruationConflicts, extracurricularMemberships, achievementParticipations] = await Promise.all([
         tx.user.count({ where: { studentId: body.id } }),
         tx.menstruationRecord.count({ where: { studentId: body.id } }),
         tx.menstruationHistory.count({ where: { studentId: body.id } }),
         tx.menstruationConflict.count({ where: { studentId: body.id } }),
+        tx.ksMember.count({ where: { studentId: body.id } }),
+        tx.ksParticipant.count({ where: { studentId: body.id } }),
       ])
-      const counts = { linkedAccounts, menstruationRecords, menstruationHistories, menstruationConflicts }
+      const counts = { linkedAccounts, menstruationRecords, menstruationHistories, menstruationConflicts, extracurricularMemberships, achievementParticipations }
       if (Object.values(counts).some((count) => count > 0)) {
         return { blocked: true as const, counts }
       }
@@ -174,6 +176,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({
         error: `Siswa memiliki ${counts.linkedAccounts} akun tertaut, ${counts.menstruationRecords} catatan, ` +
           `${counts.menstruationHistories} riwayat, dan ${counts.menstruationConflicts} konflik tersimpan. ` +
+          `Riwayat Kesiswaan: ${counts.extracurricularMemberships} keanggotaan ekstra dan ${counts.achievementParticipations} kepesertaan prestasi. ` +
           "Data dan riwayat tidak boleh dihapus otomatis. Nonaktifkan siswa sebagai alternatif penghapusan permanen.",
         reason: "student_dependencies", counts,
       }, { status: 409 })
