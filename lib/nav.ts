@@ -1,6 +1,7 @@
 import { SCHEDULE_PAGE_PERMISSIONS } from "@/lib/schedule-authorization"
 import {
   LayoutDashboard,
+  GraduationCap,
   ClipboardCheck,
   ClipboardList,
   UserCog,
@@ -253,6 +254,19 @@ export const mainNav: NavEntry[] = [
         description: "Kelola daftar mata pelajaran yang dipakai jadwal dan impor aSc",
         permissions: ["subjects.read"],
       },
+    ],
+  },
+  {
+    type: "group",
+    id: "kesiswaan",
+    title: "Kesiswaan",
+    icon: GraduationCap,
+    children: [
+      { title: "Ringkasan", href: "/kesiswaan", icon: GraduationCap, description: "Partisipasi dan prestasi siswa", permissions: ["kesiswaan.read.all", "kesiswaan.read.own"], match: "exact" },
+      { title: "Ekstrakurikuler", href: "/kesiswaan/ekstrakurikuler", icon: Users, description: "Program dan pembinaan ekstra", permissions: ["kesiswaan.read.all", "kesiswaan.read.own"] },
+      { title: "Presensi Ekstra", href: "/kesiswaan/presensi", icon: ClipboardCheck, description: "Halaman kerja presensi per pertemuan", permissions: ["kesiswaan.read.all", "kesiswaan.read.own"] },
+      { title: "Prestasi", href: "/kesiswaan/prestasi", icon: ScrollText, description: "Register dan timeline prestasi", permissions: ["kesiswaan.read.all", "kesiswaan.read.own"] },
+      { title: "Monitoring & Evaluasi", href: "/kesiswaan/monitoring", icon: ClipboardList, description: "Rekap dan tindak lanjut kegiatan", permissions: ["kesiswaan.read.all", "kesiswaan.read.own"] },
     ],
   },
   {
