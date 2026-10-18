@@ -35,6 +35,8 @@ export type RoleTemplate = {
 }
 
 export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
+  { key: "pembina_ekstra", name: "Pembina Ekstrakurikuler", description: "Mencatat kegiatan ekstra binaan sesuai penugasan", isSystem: true, isProtected: false, permissionKeys: ["kesiswaan.read.own", "kesiswaan.write.own", "kesiswaan.export.own"] },
+  { key: "waka_kesiswaan", name: "Waka Kesiswaan", description: "Mengelola program, pembinaan dan laporan kesiswaan", isSystem: true, isProtected: false, permissionKeys: ["kesiswaan.read.all", "kesiswaan.write.all", "kesiswaan.manage", "kesiswaan.verify", "kesiswaan.export.all"] },
   {
     key: SYSTEM_ADMIN_ROLE_KEY,
     name: "Admin Sistem",

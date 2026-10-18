@@ -32,6 +32,7 @@ export type PermissionModule =
   | "whatsapp"
   | "schedule"
   | "development"
+  | "kesiswaan"
 
 export type PermissionDefinition = {
   /// `resource.action` atau `resource.action.scope` — selalu gabungan dari
@@ -68,6 +69,14 @@ function def(definition: PermissionDefinition): PermissionDefinition {
  * inventori otorisasi di docs/architecture/rbac.md.
  */
 export const PERMISSIONS: readonly PermissionDefinition[] = [
+  def({ key: "kesiswaan.read.all", resource: "kesiswaan", action: "read", scope: "all", module: "kesiswaan", label: "Kesiswaan: read seluruh sekolah" }),
+  def({ key: "kesiswaan.read.own", resource: "kesiswaan", action: "read", scope: "own", module: "kesiswaan", label: "Kesiswaan: read ekstra binaan" }),
+  def({ key: "kesiswaan.write.all", resource: "kesiswaan", action: "write", scope: "all", module: "kesiswaan", label: "Kesiswaan: write seluruh sekolah" }),
+  def({ key: "kesiswaan.write.own", resource: "kesiswaan", action: "write", scope: "own", module: "kesiswaan", label: "Kesiswaan: write ekstra binaan" }),
+  def({ key: "kesiswaan.export.all", resource: "kesiswaan", action: "export", scope: "all", module: "kesiswaan", label: "Kesiswaan: export seluruh sekolah" }),
+  def({ key: "kesiswaan.export.own", resource: "kesiswaan", action: "export", scope: "own", module: "kesiswaan", label: "Kesiswaan: export ekstra binaan" }),
+  def({ key: "kesiswaan.manage", resource: "kesiswaan", action: "manage", module: "kesiswaan", label: "Kelola periode, program dan anggota" }),
+  def({ key: "kesiswaan.verify", resource: "kesiswaan", action: "verify", module: "kesiswaan", label: "Verifikasi prestasi" }),
   def({ key: "euks.fitness.read", resource: "euks.fitness", action: "read", module: "euks", label: "Baca catatan kebugaran" }),
   def({ key: "euks.fitness.create", resource: "euks.fitness", action: "create", module: "euks", label: "Catat hasil tes kebugaran", dependsOn: ["euks.fitness.read"] }),
   def({ key: "euks.fitness.update", resource: "euks.fitness", action: "update", module: "euks", label: "Koreksi hasil tes kebugaran", dependsOn: ["euks.fitness.read"] }),

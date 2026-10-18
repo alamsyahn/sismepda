@@ -46,6 +46,7 @@ enum WorkbookItemStatus {
 }
 
 model User {
+  ksCoaches KsCoach[]
   fitnessResults FitnessResult[] @relation("FitnessRecorder")
   studentId String? @unique
   linkedStudent Student? @relation("StudentAccount", fields: [studentId], references: [id], onDelete: Restrict)
@@ -180,6 +181,8 @@ model SchoolClass {
 }
 
 model Student {
+  ksMembers KsMember[]
+  ksParticipants KsParticipant[]
   fitnessResults FitnessResult[]
   account User? @relation("StudentAccount")
   menstruationRecords MenstruationRecord[]
@@ -1538,4 +1541,150 @@ model FitnessResult {
 
   @@unique([sessionId, studentId])
   @@index([studentId])
+}
+
+
+model KsPeriod {
+  id String @id @default(cuid())
+  year String
+  semester String
+  start DateTime @db.Date
+  end DateTime @db.Date
+  activities KsActivity[]
+  achievements KsAchievement[]
+  @@unique([year, semester])
+}
+
+model KsActivity {
+  id String @id @default(cuid())
+  periodId String
+  name String
+  kind String
+  description String @default("")
+  venue String @default("")
+  schedule String @default("")
+  active Boolean @default(true)
+  version Int @default(1)
+  period KsPeriod @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  coaches KsCoach[]
+  members KsMember[]
+  sessions KsSession[]
+  achievements KsAchievement[]
+  followups KsFollowup[]
+  @@unique([periodId, name])
+}
+
+model KsCoach {
+  activityId String
+  userId String
+  activity KsActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@id([activityId, userId])
+  @@index([userId])
+}
+
+model KsMember {
+  id String @id @default(cuid())
+  activityId String
+  studentId String
+  joined DateTime @db.Date
+  left DateTime? @db.Date
+  className String
+  version Int @default(1)
+  activity KsActivity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  attendance KsAttendance[]
+  reviews KsReview[]
+  @@unique([activityId, studentId, joined])
+  @@index([activityId, joined, left])
+}
+
+model KsSession {
+  id String @id @default(cuid())
+  activityId String
+  date DateTime @db.Date
+  topic String
+  status String @default("DRAFT")
+  version Int @default(1)
+  activity KsActivity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  attendance KsAttendance[]
+  @@index([activityId, date])
+}
+
+model KsAttendance {
+  id String @id @default(cuid())
+  sessionId String
+  memberId String
+  studentName String
+  className String
+  status String?
+  note String @default("")
+  session KsSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  member KsMember @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  @@unique([sessionId, memberId])
+}
+
+model KsAchievement {
+  id String @id @default(cuid())
+  periodId String
+  activityId String?
+  title String
+  organizer String
+  date DateTime @db.Date
+  level String
+  result String
+  status String @default("DRAFT")
+  evidence String @default("")
+  authorId String
+  version Int @default(1)
+  period KsPeriod @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  activity KsActivity? @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  participants KsParticipant[]
+  @@index([periodId, date])
+}
+
+model KsParticipant {
+  achievementId String
+  studentId String
+  name String
+  className String
+  achievement KsAchievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  @@id([achievementId, studentId])
+}
+
+model KsReview {
+  id String @id @default(cuid())
+  memberId String
+  month String
+  skill String
+  teamwork String
+  independence String
+  note String @default("")
+  version Int @default(1)
+  member KsMember @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  @@unique([memberId, month])
+}
+
+model KsFollowup {
+  id String @id @default(cuid())
+  activityId String
+  finding String
+  owner String
+  due DateTime @db.Date
+  done Boolean @default(false)
+  version Int @default(1)
+  activity KsActivity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+}
+
+model KsHistory {
+  id String @id @default(cuid())
+  actorId String
+  entity String
+  entityId String
+  before Json?
+  after Json
+  reason String @default("")
+  createdAt DateTime @default(now())
+  @@index([entityId, createdAt])
 }
