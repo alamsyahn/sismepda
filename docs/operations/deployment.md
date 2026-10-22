@@ -25,6 +25,21 @@ cd /srv/apps/sismepda
 docker compose -f deploy.yaml --env-file /etc/sismepda/sismepda.env <subcommand>
 ```
 
+### Node.js runtime security updates
+
+All four Dockerfile stages pin `node:24.22.1-bookworm-slim` to the same image
+digest. This is the October 21, 2026 security release. Future Node security
+updates require changing the version and digest in every stage and rebuilding
+both `app` and `whatsapp-worker`; the worker uses `migrator`, not `runner`.
+Verify `node -v` inside both replacement containers after activation.
+
+A runtime-only update must retain the existing PostgreSQL bind mount, media
+volume, and WhatsApp session volume. Take a verified database/media backup and
+a protected session backup before activation, and retain the previous image
+identities for recovery. Do not run a seed, reset, or database restore for a
+Node version change. The normal deploy migration gate should report no pending
+migration when only the Dockerfile and documentation changed.
+
 ### Git-tracked overlays
 
 Two overlays live in Git and reach production through the `git merge --ff-only`

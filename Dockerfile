@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim AS deps
+FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS deps
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl \
   && rm -rf /var/lib/apt/lists/*
@@ -10,14 +10,14 @@ COPY package.json package-lock.json ./
 RUN PRISMA_CLI_BINARY_TARGETS=debian-openssl-3.0.x npm ci --ignore-scripts \
   && node node_modules/@prisma/engines/scripts/postinstall.js
 
-FROM node:24-bookworm-slim AS builder
+FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate && npm run build
 
-FROM node:24-bookworm-slim AS migrator
+FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS migrator
 WORKDIR /app
 ENV NODE_ENV=production
 RUN apt-get update && apt-get install -y --no-install-recommends openssl \
@@ -45,7 +45,7 @@ COPY scripts ./scripts
 # akan menulis ulang akun/data referensi pada database produksi yang sudah hidup.
 CMD ["sh", "-c", "npx prisma migrate deploy"]
 
-FROM node:24-bookworm-slim AS runner
+FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
