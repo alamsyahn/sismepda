@@ -17,6 +17,7 @@ export const ATTENDANCE_DRAFT_KEY = "sismepda:absensi-input:draft"
 export const ATTENDANCE_RETURN_KEY = "sismepda:absensi-input:return"
 
 export type AttendanceDraft = {
+  revision?: number
   classId: string
   date: string
   statuses: Record<string, InputStatus>
@@ -58,7 +59,7 @@ export function serializeDraft(draft: AttendanceDraft): string {
  * dibuka. Draft sengaja di-scope: kembali ke kelas atau tanggal lain tidak boleh
  * memunculkan isian milik konteks lain.
  */
-export function parseDraft(raw: string | null, classId: string, date: string): AttendanceDraft | null {
+export function parseDraft(raw: string | null, classId: string, date: string, revision?: number): AttendanceDraft | null {
   if (!raw) return null
   let parsed: unknown
   try {
@@ -68,6 +69,7 @@ export function parseDraft(raw: string | null, classId: string, date: string): A
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null
   const candidate = parsed as Partial<AttendanceDraft>
+  if (revision !== undefined && (candidate.revision ?? 0) !== revision) return null
   if (candidate.classId !== classId || candidate.date !== date) return null
   if (!classId || !date) return null
   if (!isRecordOfStrings(candidate.statuses)) return null
@@ -87,7 +89,7 @@ export function parseDraft(raw: string | null, classId: string, date: string): A
     }
   }
 
-  return { classId, date, statuses, notes: { ...candidate.notes }, absentPending }
+  return { classId, date, statuses, notes: { ...candidate.notes }, absentPending, ...(candidate.revision !== undefined ? { revision: candidate.revision } : {}) }
 }
 
 export type RosterState = {

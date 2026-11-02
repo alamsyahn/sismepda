@@ -864,6 +864,15 @@ visible.
 
 ## Idempotency
 
+Initial UKS notifications from Scan Siswa supply a stable optional
+`eventKey=scan-visit:<visitId>` through the internal `/send` API. These otherwise
+manual event sends use the same unique PROCESSING-before-transport claim as
+scheduled sends. A duplicate SENT claim returns the original success/log id;
+FAILED or PROCESSING does not send again and asks the operator to inspect the
+existing visit. Ordinary manual sends, including an explicit notification retry,
+remain repeatable. The worker accepts only the scan-visit key format from its
+authenticated internal caller; this never creates a public send endpoint.
+
 `WhatsAppSendLog.idempotencyKey` is unique and derived from date, slot and
 message type. A scheduled send that already happened cannot be repeated, even if
 the worker restarts mid-loop.

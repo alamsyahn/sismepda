@@ -18,7 +18,7 @@ This directory is the canonical description of the system as it works now. Start
 
 | Domain | Canonical document | Primary routes |
 |---|---|---|
-| Attendance, dashboard, school/class/student recaps, trend, WhatsApp and attendance exports | [Attendance and reporting](features/attendance-reporting.md) | `/`, `/absensi/input`, `/rekap-*`, `/laporan-whatsapp`, `/export-data` |
+| Attendance, shared QR scanning, dashboard, school/class/student recaps, trend, WhatsApp and attendance exports | [Attendance and reporting](features/attendance-reporting.md) | `/scan`, `/`, `/absensi/input`, `/rekap-*`, `/laporan-whatsapp`, `/export-data` |
 | Student master data, profiles, history, violation points | [Students](features/students.md) | `/siswa`, `/siswa/[studentId]` |
 | Teacher accounts, directory, employment, subjects, schedules, duties, homerooms | [Teachers and homerooms](features/teachers-homerooms.md) | `/guru`, `/guru/[teacherId]`, `/wali-kelas/input` |
 | Personal profile, passwords, photos, site/app settings and branding | [Profiles and settings](features/profiles-settings.md) | `/profil`, `/pengaturan` |

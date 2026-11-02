@@ -181,6 +181,8 @@ model SchoolClass {
 }
 
 model Student {
+  scanCredentials StudentQrCredential[]
+  scanEvents ScanEvent[]
   ksMembers KsMember[]
   ksParticipants KsParticipant[]
   fitnessResults FitnessResult[]
@@ -230,6 +232,7 @@ model StudentViolationPoint {
 /// Satu kunjungan siswa ke UKS. Menjadi source of truth untuk riwayat
 /// kunjungan, tren keluhan, dan statistik tindakan pada modul E-UKS.
 model EuksVisit {
+  scanEvents ScanEvent[]
   id String @id @default(cuid())
   studentId String
   /// Tanggal kunjungan — tanggal sekolah, bukan timestamp.
@@ -442,6 +445,7 @@ model EuksComplaintOption {
 }
 
 model AttendanceDay {
+  revision Int @default(0)
   id String @id @default(cuid())
   date DateTime @db.Date
   classId String
@@ -452,6 +456,41 @@ model AttendanceDay {
   submittedBy User @relation(fields: [submittedById], references: [id])
   attendances Attendance[]
   @@unique([classId, date])
+}
+
+/// Only the hash is stored. Raw QR material is returned once when issued.
+model StudentQrCredential {
+  id String @id @default(cuid())
+  studentId String
+  tokenHash String @unique
+  issuedAt DateTime @default(now())
+  revokedAt DateTime?
+  issuedById String
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  @@index([studentId, revokedAt])
+}
+
+/// One logical physical scan; HTTP retries reuse requestKey. No QR or health text.
+model ScanEvent {
+  id String @id @default(cuid())
+  requestKey String @unique
+  fingerprint String
+  actorId String
+  actorName String
+  studentId String?
+  classId String?
+  className String?
+  mode String
+  source String
+  outcome String
+  scannedAt DateTime @default(now())
+  schoolDate DateTime @db.Date
+  visitId String?
+  saveFingerprint String?
+  student Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  visit EuksVisit? @relation(fields: [visitId], references: [id], onDelete: SetNull)
+  @@index([schoolDate, mode, scannedAt])
+  @@index([studentId, mode, schoolDate])
 }
 
 model Attendance {

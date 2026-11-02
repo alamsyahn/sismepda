@@ -67,7 +67,7 @@ import { formatSchoolDate, parseSchoolDate } from "@/lib/school-date"
 import { ProfileNameLink } from "@/components/profile/profile-name-link"
 import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 
-type ApiClass = { id: string; name: string; homeroomUser: { id: string; name: string } | null; students: Array<{ id: string; nis: string | null; nisn: string | null; name: string }>; attendanceDays: Array<{ submittedAt: string; updatedAt: string; submittedBy: { id: string; name: string }; attendances: Array<{ studentId: string; status: string; note: string | null }> }> }
+type ApiClass = { id: string; name: string; homeroomUser: { id: string; name: string } | null; students: Array<{ id: string; nis: string | null; nisn: string | null; name: string }>; attendanceDays: Array<{ revision: number; submittedAt: string; updatedAt: string; submittedBy: { id: string; name: string }; attendances: Array<{ studentId: string; status: string; note: string | null }> }> }
 
 function emptyCounts(): Record<InputStatus, number> {
   return { belum: 0, hadir: 0, sakit: 0, izin: 0, alfa: 0, dispensasi: 0 }
@@ -150,7 +150,7 @@ export default function AbsensiInputPage() {
         // kelas/tanggal yang sama — data server tidak pernah ditimpa otomatis.
         const server = { statuses: nextStatuses, notes: nextNotes, absentPending: {} }
         const draft = requested
-          ? parseDraft(window.sessionStorage.getItem(ATTENDANCE_DRAFT_KEY), requested.id, date)
+          ? parseDraft(window.sessionStorage.getItem(ATTENDANCE_DRAFT_KEY), requested.id, date, requested.attendanceDays[0]?.revision ?? 0)
           : null
         const restored = applyDraft(server, draft, Object.keys(nextStatuses))
 
@@ -234,9 +234,9 @@ export default function AbsensiInputPage() {
     if (!selectedClass) return
     window.sessionStorage.setItem(
       ATTENDANCE_DRAFT_KEY,
-      serializeDraft({ classId: selectedClass, date, statuses, notes, absentPending }),
+      serializeDraft({ classId: selectedClass, date, statuses, notes, absentPending, revision: selected?.attendanceDays[0]?.revision ?? 0 }),
     )
-  }, [selectedClass, date, statuses, notes, absentPending])
+  }, [selected, selectedClass, date, statuses, notes, absentPending])
 
   const clearDraft = useCallback(() => {
     window.sessionStorage.removeItem(ATTENDANCE_DRAFT_KEY)
@@ -556,7 +556,7 @@ export default function AbsensiInputPage() {
   const doSave = useCallback(async () => {
     setSaving(true)
     try {
-      const response = await fetch("/api/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ classId: selectedClass, date, records: roster.map((s) => ({ studentId: s.id, status: (statuses[s.id] ?? "belum").toUpperCase(), note: notes[s.id] })) }) })
+      const response = await fetch("/api/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ classId: selectedClass, date, revision: selected?.attendanceDays[0]?.revision ?? 0, records: roster.map((s) => ({ studentId: s.id, status: (statuses[s.id] ?? "belum").toUpperCase(), note: notes[s.id] })) }) })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? "Absensi gagal disimpan")
       const time = currentJam(timeZone)
@@ -569,12 +569,13 @@ export default function AbsensiInputPage() {
       // menimpa data server pada kunjungan berikutnya.
       clearDraft()
       setLastSaved({ time, by: data.submittedBy })
+      setClasses(prev => prev.map(c => c.id === selectedClass ? { ...c, attendanceDays: [{ ...(c.attendanceDays[0] ?? {}), revision: data.revision, submittedAt: data.submittedAt, updatedAt: data.submittedAt, submittedBy: data.submittedBy, attendances: roster.filter(s => (statuses[s.id] ?? "belum") !== "belum").map(s => ({ studentId: s.id, status: statuses[s.id].toUpperCase(), note: notes[s.id] ?? null })) }] } : c))
       setSuccessOpen(true)
       toast.success("Absensi tersimpan", {
         description: `${classOption?.name ?? ""} • pukul ${time}`,
       })
     } catch (error) { setSaving(false); toast.error(error instanceof Error ? error.message : "Absensi gagal disimpan") }
-  }, [classOption, clearDraft, selectedClass, date, roster, statuses, notes, timeZone])
+  }, [classOption, clearDraft, selected, selectedClass, date, roster, statuses, notes, timeZone])
 
   const confirmLeave = useCallback(() => {
     setUnsavedOpen(false)

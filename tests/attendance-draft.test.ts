@@ -23,6 +23,13 @@ const DRAFT: AttendanceDraft = {
   absentPending: { s3: true },
 }
 
+test("draft from before a scanner write cannot overlay a newer attendance revision", () => {
+  const raw = serializeDraft({ ...DRAFT, revision: 3 })
+  assert.ok(parseDraft(raw, DRAFT.classId, DRAFT.date, 3))
+  assert.equal(parseDraft(raw, DRAFT.classId, DRAFT.date, 4), null)
+  assert.equal(parseDraft(serializeDraft(DRAFT), DRAFT.classId, DRAFT.date, 1), null)
+})
+
 function serverState(): RosterState {
   return {
     statuses: { s1: "belum", s2: "belum", s3: "belum" } as Record<string, InputStatus>,

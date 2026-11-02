@@ -4,6 +4,7 @@ import type { RbacAuditAction, RbacAuditEntity } from "@/lib/rbac-audit"
 
 /** Entities tracked in the audit trail. Extend as other features adopt it. */
 export type AuditEntity =
+  | "StudentQrCredential"
   | "TeacherWorkbook"
   | "TeacherWorkbookItemStatus"
   | "User"
@@ -48,6 +49,7 @@ export type AuditEntity =
   | RbacAuditEntity
 
 export type AuditAction =
+  | "STUDENT_QR_ISSUED"
   | "WORKBOOK_LINK_UPDATED"
   | "WORKBOOK_ITEM_STATUS_CHANGED"
   | "WORKBOOK_SUPERVISION_SCOPE_CHANGED"

@@ -251,6 +251,7 @@ const server = createServer((request, response) => {
               : undefined
 
           const outcome = await sendWhatsAppMessage(transport, {
+            eventKey: typeof body.eventKey === "string" && /^scan-visit:[a-zA-Z0-9_-]{1,100}$/.test(body.eventKey) ? body.eventKey : undefined,
             messageId,
             slot: typeof body.slot === "string" ? body.slot : null,
             text: typeof body.text === "string" ? body.text : undefined,

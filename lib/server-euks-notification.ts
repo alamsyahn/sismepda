@@ -49,6 +49,8 @@ const visitSelect = {
   treatment: true,
   followUp: true,
   notifyStatus: true,
+  notifyRecipientName: true,
+  notifyRecipientPhone: true,
   recordedBy: { select: { name: true } },
   student: {
     select: {
@@ -137,12 +139,14 @@ function blocked(
 export async function notifyEuksVisit(input: {
   visitId: string
   actorId: string
+  eventKey?: string
 }): Promise<NotifyOutcome> {
   const visit = await prisma.euksVisit.findUnique({
     where: { id: input.visitId },
     select: visitSelect,
   })
   if (!visit) throw new ApiError(404, "Kunjungan tidak ditemukan")
+  if (input.eventKey && visit.notifyStatus === "SENT") return { status: "SENT", message: "Notifikasi kunjungan ini sudah terkirim.", recipientName: visit.notifyRecipientName, recipientPhone: visit.notifyRecipientPhone }
 
   const schoolClass = visit.student.schoolClass
   const homeroom = schoolClass.homeroomUser
@@ -200,6 +204,7 @@ export async function notifyEuksVisit(input: {
       text,
       recipient: { jid: personalJidFor(phone.whatsapp), name: homeroom.name },
       initiatedById: input.actorId,
+      eventKey: input.eventKey,
     })
   } catch (error) {
     const message =

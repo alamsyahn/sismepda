@@ -10,8 +10,10 @@ import { requireUser } from "@/lib/rbac-access"
 import { FILLED_WIRE_STATUSES, UNFILLED_WIRE_STATUS, planAttendanceWrite } from "@/lib/attendance-save"
 import { readHolidayFor } from "@/lib/server-holidays"
 import { notifyAttendanceCompletion } from "@/lib/server-whatsapp-worker-client"
+import { lockAttendanceDay } from "@/lib/attendance-lock"
 
 const attendanceInput = z.object({
+  revision: z.number().int().nonnegative(),
   classId: z.string().min(1),
   date: z.string(),
   records: z.array(z.object({
@@ -84,11 +86,15 @@ export async function POST(request: Request) {
     if (holiday) throw new ApiError(400, `Tanggal ini ditandai sebagai hari libur: ${holiday.name}`)
 
     const plan = planAttendanceWrite(body.records)
-    await prisma.$transaction(async (tx) => {
-      const day = await tx.attendanceDay.upsert({ where: { classId_date: { classId: body.classId, date } }, update: { submittedById: user.id }, create: { classId: body.classId, date, submittedById: user.id } })
+    const revision = await prisma.$transaction(async (tx) => {
+      await lockAttendanceDay(tx, body.classId, schoolDate)
+      const current = await tx.attendanceDay.findUnique({ where: { classId_date: { classId: body.classId, date } }, select: { revision: true } })
+      if ((current?.revision ?? 0) !== body.revision) throw new ApiError(409, "Absensi berubah sejak halaman dimuat (misalnya ada scan baru). Muat ulang halaman dan periksa data terbaru sebelum menyimpan.")
+      const day = await tx.attendanceDay.upsert({ where: { classId_date: { classId: body.classId, date } }, update: { submittedById: user.id, revision: { increment: 1 } }, create: { classId: body.classId, date, submittedById: user.id, revision: 1 } })
       for (const r of plan.upserts) await tx.attendance.upsert({ where: { attendanceDayId_studentId: { attendanceDayId: day.id, studentId: r.studentId } }, update: { status: r.status, note: r.note }, create: { attendanceDayId: day.id, studentId: r.studentId, status: r.status, note: r.note } })
       // Siswa yang dikosongkan kembali menjadi "belum diisi" = barisnya dihapus.
       if (plan.clears.length > 0) await tx.attendance.deleteMany({ where: { attendanceDayId: day.id, studentId: { in: plan.clears } } })
+      return day.revision
     })
     // PEMICU REKAP FINAL.
     //
@@ -101,7 +107,7 @@ export async function POST(request: Request) {
     // lengkap. Sengaja tidak di-`await` hasilnya secara bermakna — fungsinya
     // tidak pernah melempar, dan guru tidak perlu menunggu WhatsApp.
     void notifyAttendanceCompletion()
-    return NextResponse.json({ ok: true, submittedAt: new Date().toISOString(), submittedBy: { id: user.id, name: user.name ?? "Guru" } })
+    return NextResponse.json({ ok: true, revision, submittedAt: new Date().toISOString(), submittedBy: { id: user.id, name: user.name ?? "Guru" } })
   } catch (error) {
     return authFailureResponse(error, "Gagal menyimpan absensi")
   }

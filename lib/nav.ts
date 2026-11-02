@@ -29,6 +29,7 @@ import {
   SlidersHorizontal,
   CalendarClock,
   TerminalSquare,
+  ScanLine,
   type LucideIcon,
 } from "lucide-react"
 
@@ -190,6 +191,13 @@ export const mainNav: NavEntry[] = [
     title: "Absensi",
     icon: ClipboardCheck,
     children: [
+      {
+        title: "Scan Siswa",
+        href: "/scan",
+        icon: ScanLine,
+        description: "Pindai kehadiran dan kunjungan UKS",
+        permissions: ["scan.attendance.use", "scan.uks.use", "scan.history.read", "scan.cards.manage"],
+      },
       {
         title: "Input Absensi",
         href: "/absensi/input",

@@ -465,6 +465,8 @@ export async function composeMessage(
 }
 
 export type SendRequest = {
+  /** Stable key for event-driven sends, never for ordinary manual messages. */
+  eventKey?: string
   /** Kartu pesan yang mengirim. */
   messageId: string
   /** Slot `HH:mm` untuk kiriman terjadwal; NULL untuk manual. */
@@ -668,19 +670,24 @@ export async function sendWhatsAppMessage(
   // database sebelum transport disentuh, sehingga yang dijaga adalah
   // PENGIRIMAN, bukan pencatatan.
   let claim: { id: string | null; duplicate: boolean }
-  if (request.trigger === "SCHEDULED") {
+  if (request.trigger === "SCHEDULED" || request.eventKey) {
     claim = await recordLog({
       request,
       slot: slot!,
       date,
       // Occurrence penyelesaian sudah membawa nomor percobaannya di dalam nama
       // slot (`LENGKAP`, `LENGKAP#2`, …), jadi kunci diturunkan apa adanya.
-      idempotencyKey: messageIdempotencyKey(message, date, slot!),
+      idempotencyKey: request.eventKey ?? messageIdempotencyKey(message, date, slot!),
       target,
       messageText,
       status: "PROCESSING",
     })
     if (claim.duplicate || !claim.id) {
+      if (request.eventKey) {
+        const previous = await prisma.whatsAppSendLog.findUnique({ where: { idempotencyKey: request.eventKey }, select: { id: true, status: true, errorMessage: true } })
+        if (previous?.status === "SENT") return { status: "SENT", logId: previous.id }
+        return { status: "FAILED", code: "UNKNOWN", message: previous?.errorMessage ?? "Pengiriman sedang diproses atau statusnya belum pasti. Periksa riwayat sebelum mengirim ulang.", logId: previous?.id ?? null }
+      }
       return {
         status: "SKIPPED",
         reason: "ALREADY_SENT",

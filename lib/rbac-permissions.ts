@@ -69,6 +69,10 @@ function def(definition: PermissionDefinition): PermissionDefinition {
  * inventori otorisasi di docs/architecture/rbac.md.
  */
 export const PERMISSIONS: readonly PermissionDefinition[] = [
+  def({ key: "scan.attendance.use", resource: "scan.attendance", action: "use", module: "attendance", label: "Scan kehadiran siswa", description: "Tetap memerlukan attendance.write sesuai scope kelas." }),
+  def({ key: "scan.uks.use", resource: "scan.uks", action: "use", module: "euks", label: "Scan kunjungan UKS", dependsOn: ["euks.visits.create"] }),
+  def({ key: "scan.history.read", resource: "scan.history", action: "read", module: "attendance", label: "Baca riwayat scan", description: "Tetap memerlukan izin baca absensi atau kunjungan UKS; scope kelas mengikuti izin baca." }),
+  def({ key: "scan.cards.manage", resource: "scan.cards", action: "manage", module: "students", label: "Terbitkan dan ganti kartu QR siswa", dependsOn: ["students.master.read"], sensitive: true }),
   def({ key: "kesiswaan.read.all", resource: "kesiswaan", action: "read", scope: "all", module: "kesiswaan", label: "Kesiswaan: read seluruh sekolah" }),
   def({ key: "kesiswaan.read.own", resource: "kesiswaan", action: "read", scope: "own", module: "kesiswaan", label: "Kesiswaan: read ekstra binaan" }),
   def({ key: "kesiswaan.write.all", resource: "kesiswaan", action: "write", scope: "all", module: "kesiswaan", label: "Kesiswaan: write seluruh sekolah" }),

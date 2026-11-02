@@ -81,6 +81,31 @@ Every notification column is nullable and none of them were backfilled. Visits r
 
 ## Homeroom notification
 
+The **Kunjungan UKS** mode at `/scan` selects a student by the same QR used for
+attendance. It requires `scan.uks.use` plus `euks.visits.create`; it pauses the
+scanner until the operator saves or cancels. Complaint, treatment and an explicit
+follow-up are required. “Lainnya” requires details. The resulting text uses the
+existing `EuksVisit.followUp`; older nullable entries remain valid.
+
+`POST /api/scan/visits` creates the same EuksVisit used by the visit table and all
+E-UKS statistics, and atomically links it to the ScanEvent. It is idempotent per
+scan event plus payload fingerprint. Another genuine scan can create another
+visit that day. Cancelled drafts create no visit. Notifications are automatic on
+save for users with `euks.visits.notify`; otherwise the UI offers **Simpan
+kunjungan** and states that notifying needs permission. The receiving homeroom is
+derived and previewed. Notification permission is checked **before** writing for
+both the existing visits API and the scan API. Delivery failures never roll back
+a saved visit; the result distinguishes persistence from delivery, and links to
+the existing E-UKS notification/retry controls when the user has read access.
+
+The initial scan notification has a stable worker `eventKey=scan-visit:<visitId>`.
+The worker claims it before transport, so HTTP retry/concurrent requests cannot
+send it again. SENT results are reused. FAILED/PROCESSING claims are not deleted
+or silently retried; uncertain delivery is shown for operator review. A crash
+between persistence and notification requires replay of the same save or the
+existing explicit notify action; there is no new autonomous notification queue.
+A UKS visit never changes a student's attendance status automatically.
+
 A UKS officer can send the visit to the student's homeroom teacher over WhatsApp, either while saving it ("Simpan & Kirim Notifikasi") or later from the visit table ("Kirim" / "Kirim Ulang").
 
 **Recipient resolution is derived, never configured.** The chain is visit → student → the student's class → `SchoolClass.homeroomUser` → `User.phone`. This is the same homeroom relation attendance reporting uses; E-UKS stores no mapping and no phone number of its own, and the officer is never asked to pick a teacher. The number is read again on every attempt, so a number corrected in Data Master Guru takes effect on the next send without touching the visit.

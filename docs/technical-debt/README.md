@@ -25,7 +25,7 @@ Only verified, unresolved engineering liabilities are listed here.
 ## TD-003 — Attendance time/auto-lock settings are not enforced
 
 - **Area / severity:** Attendance business rules — **Medium**
-- **Current condition:** Open time, close time and `autoLock` are configurable; close time is used for on-time display, but `POST /api/attendance` permits writes regardless of the configured window.
+- **Current condition:** Open time, close time and `autoLock` are configurable; close time is used for on-time display, but `POST /api/attendance` permits writes regardless of the configured window. The new `POST /api/scan` attendance path enforces that window when autoLock is enabled and logs out-of-window scans without marking present. The manual editing policy remains unresolved; this entry is not closed by the scanner guard.
 - **Evidence:** `prisma/schema.prisma` (`SchoolSetting`); `app/api/admin/settings/route.ts`; `app/api/attendance/route.ts`; `app/api/dashboard/route.ts`.
 - **Impact:** UI configuration can imply a restriction that the backend does not apply, allowing late/early edits contrary to operator expectations.
 - **Reason:** Settings and reporting were implemented without a matching mutation guard.
@@ -35,7 +35,7 @@ Only verified, unresolved engineering liabilities are listed here.
 ## TD-004 — Critical integration behavior lacks automated coverage
 
 - **Area / severity:** Testing — **Medium**
-- **Current condition:** The suite covers pure helpers and permission behavior. Kartu Menstruasi now additionally has local PostgreSQL service and authenticated HTTP acceptance tests for own-account isolation, live grant revocation, transactional weekly writes, conflict privacy, replay and fixture cleanup. These tests use temporary signed Auth.js sessions, not the password-login UI. Browser E2E coverage for login, core class-scoped IDOR, destructive deletion, backup/restore and other major writes remains absent; menstruation responsive layout checks are isolated Chrome renders, not a complete authenticated browser flow.
+- **Current condition:** The suite covers pure helpers and permission behavior. Kartu Menstruasi additionally has local PostgreSQL service and authenticated HTTP acceptance tests for own-account isolation, live grant revocation, transactional weekly writes, conflict privacy, replay and fixture cleanup. Scan Siswa now also has isolated-schema migration/concurrency tests, authenticated HTTP tests for class isolation, live revocation, CSRF, stale roster protection and UKS idempotency, plus a fake-transport test for notification claims. These use temporary signed Auth.js sessions, not the password-login UI. Browser E2E coverage for login, destructive deletion, backup/restore and other major writes remains absent; scanner physical-device/camera coverage is still manual.
 - **Evidence:** `package.json` test command; `tests/` contents; absence of E2E/CI configuration.
 - **Impact:** Unit-clean changes can still regress middleware, session/database integration, transactional behavior or production flows.
 - **Reason:** Test architecture is currently optimized for fast pure-domain tests.

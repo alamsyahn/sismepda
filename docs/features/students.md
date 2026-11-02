@@ -19,6 +19,29 @@ Permanent deletion requires a matching confirmation identifier. The handler remo
 
 Authenticated users can add violation points only for a student in their accessible class. Entries record category, positive points, optional note, occurrence date and recording user. Severity/progress is derived from cumulative points; deletion/editing is not exposed by the current endpoint.
 
+## Kartu QR siswa
+
+`/scan` → **Kartu QR** issues printable cards per class with
+`scan.cards.manage` plus `students.master.read`. Select students and choose
+**Terbitkan QR yang belum ada**, or explicitly confirm **Ganti QR terpilih**.
+Only new tokens are returned; existing active cards are skipped unless replaced.
+Raw tokens are held only in that browser session and printable as cards/PDF;
+print/save them before closing the tab. Reloading cannot recover an old token.
+
+The QR is `SP1:` plus 24 cryptographically random bytes in base64url, linked to
+`Student.id`, not NIS/NISN or a public profile URL. Only its SHA-256 hash is stored
+in `StudentQrCredential`. A partial unique index permits one active credential per
+student. Rotation is serialized, checks the expected current credential, and
+revokes the prior token. It writes an audit event without token material. Moving
+class or correcting a number does not require reissuing the QR. Deactivation
+prevents new scans. A static QR can be copied: scanning is an authenticated,
+supervised operator activity and displays name, class and identifier for checking;
+it is not student self-attendance or identity proof on its own.
+
+The printable sheet uses 35 mm QR fields with quiet zones, name, class, school,
+and NIS (or NISN where NIS is absent). Scanner/device/print testing remains
+necessary for each school's hardware. No student photo field or upload is added.
+
 ## Akun pribadi siswa
 
 Administrator dengan `students.accounts.manage` membuat akun di `/pengaturan/akun-siswa`. Saat ini pembuatan hanya untuk siswi aktif pengguna Kartu Menstruasi, dengan email dan kata sandi sesuai kebijakan akun aplikasi. Tautan `User.studentId` unik mencegah dua akun untuk satu siswa; provisioning tidak mengambil alih akun yang sudah ada. Role `siswa` harus berisi tepat `euks.menstruation.read.own/create.own/update.own`; role yang belum dikonfigurasi menghasilkan pesan konfigurasi, bukan akun tanpa akses. Login memakai email dan kata sandi, bukan NIS/NISN. Pengguna dengan izin `accounts.credentials.manage`/`accounts.status.manage` dapat mereset kata sandi/menonaktifkan akun di Pengguna. Detail pencatatan dan privasi berada di [E-UKS](e-uks.md).

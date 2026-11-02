@@ -31,6 +31,18 @@ Real instants such as `createdAt`, `updatedAt`, `submittedAt`, and `reviewedAt` 
 
 ## Migrations and seed
 
+Student scanning adds `StudentQrCredential` (hashed opaque credentials; one active
+per student enforced by a partial unique index), `ScanEvent` (operator/class
+snapshot, timestamp, school date and domain result), and `AttendanceDay.revision`
+for serialized compare-and-set roster saves. The migration is additive and
+registers four scan permission catalog entries without changing role grants.
+Deleting a student cascades credentials but sets the scan's student relation to
+NULL; deleting a visit clears its event link, rather than erasing the scan log.
+Operator ids/names in scan history are snapshots, so account deletion does not
+erase attribution. QR plaintext and UKS complaint text are not duplicated into
+ScanEvent. Runtime behavior is documented in [Attendance](../features/attendance-reporting.md)
+and [Students](../features/students.md).
+
 Production uses `prisma migrate deploy`; development scripts use `prisma migrate dev`. The seed requires `DATABASE_URL`, `SEED_ADMIN_EMAIL`, and `SEED_ADMIN_PASSWORD`; it idempotently seeds the RBAC permission catalog, role templates and compatibility bundles, creates the initial admin **only when the database has no users at all** (as a `system_admin` member; a colliding e-mail aborts), 27 classes (VII–IX A–I), the singleton school setting, and four workbook masters with 19 items. It never modifies existing accounts. The one-time legacy access backfill is a separate operator command (`npm run db:rbac-backfill`, see `architecture/rbac.md`). It deliberately does not delete workbook/items outside the current master because user links/statuses may depend on them.
 
 Schema validation: `npx prisma validate`. A migration must update both `schema.prisma` and a forward migration, regenerate the client, and be exercised against an isolated schema before deployment.

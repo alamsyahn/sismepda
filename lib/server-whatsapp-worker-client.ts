@@ -83,6 +83,7 @@ export async function workerGroups(): Promise<{ groups: WhatsAppGroup[] }> {
 }
 
 export function workerSend(body: {
+  eventKey?: string
   messageId: string
   slot: string | null
   /** Teks kartu manual atau pesan berbasis peristiwa, diteruskan apa adanya. */

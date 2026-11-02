@@ -148,6 +148,10 @@ Every key below corresponds to at least one surface in the inventory. Keys are g
 
 | Key | Scope values | Surfaces |
 |---|---|---|
+| `scan.attendance.use` | — | `/scan`, `POST /api/scan`, attendance lookup; also requires `attendance.write.*` and its independent class scope |
+| `scan.uks.use` | — | `/scan`, scan/lookup and `/api/scan/visits`; also `euks.visits.create`, plus `euks.visits.notify` before save when notifying |
+| `scan.history.read` | — | `/api/scan/history`; also `attendance.read.*` with read scope or `euks.visits.read` for UKS |
+| `scan.cards.manage` | — | `/scan` card tab, `/api/scan/cards`, card lookup; also `students.master.read`; rotates credentials, never grants attendance/health access |
 | `attendance.dashboard.read` | `assigned_classes`, `all` | `/`, `/api/dashboard`, `/rekap-sekolah` loaders (`getClassRecords`, `getAbsenceRanking`) |
 | `attendance.reports.read` | `assigned_classes`, `all` | `/rekap-kelas`, `/rekap-siswa`, `/api/class-recap`, `/api/recap-students`, `/api/attendance-trend`, `readClassPeriodRecap`, `readAccessibleClassOptions`, `readAttendanceTrend` |
 | `attendance.read` | `assigned_classes`, `all` | `GET /api/attendance` (roster/day for input page) |

@@ -33,6 +33,7 @@ export async function POST(request: Request) {
   try {
     const viewer = await requireEuksPermission("euks.visits.create")
     const body = payload.parse(await request.json())
+    if (body.notify) await requireEuksPermission("euks.visits.notify")
 
     const schoolDate = parseSchoolDate(body.occurredAt)
     if (!schoolDate) return NextResponse.json({ error: "Tanggal tidak valid" }, { status: 400 })
@@ -89,7 +90,6 @@ export async function POST(request: Request) {
       // Permission notifikasi diperiksa TERSENDIRI: hak mencatat kunjungan
       // tidak dengan sendirinya memberi hak mengirim data kesehatan siswa ke
       // nomor pribadi seorang guru.
-      await requireEuksPermission("euks.visits.notify")
       notification = await notifyEuksVisit({ visitId: created.id, actorId: viewer.id })
     }
 
