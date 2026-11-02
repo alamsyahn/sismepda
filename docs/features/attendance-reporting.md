@@ -39,6 +39,14 @@ new scan. After a network error, the screen offers replay of the same command
 and never claims it was saved without server confirmation. Offline capture is
 not supported. A pending UKS form stays in memory, not browser persistence.
 
+Attendance results also show a centered, responsive popup for 800 ms: green with
+a white check, student name and class for server-confirmed PRESENT/REPEAT; red
+with a white cross and reason for rejected or unconfirmed requests. Network
+errors explicitly say **Belum terkonfirmasi** and retain the existing replay
+flow. The popup does not take focus or block the next scan; a subsequent result
+replaces it and starts a fresh timer. The last result/error remains visible on
+the page after dismissal. UKS continues using its explicit form/save flow.
+
 All attendance writers use `lockAttendanceDay` and an integer
 `AttendanceDay.revision`. GET returns the revision; roster POST must send the
 loaded revision, checks it under the same lock, increments it, and rejects a

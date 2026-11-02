@@ -26,6 +26,7 @@ import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { useSchoolTimeZone } from "@/components/school-time-zone-provider"
 import { CameraScanner } from "@/components/scan/camera-scanner"
 import { ScanCards } from "@/components/scan/scan-cards"
+import { attendanceFeedback, ScanFeedbackPopup, type ScanFeedback } from "@/components/scan/scan-feedback-popup"
 import {
   SCAN_OUTCOMES,
   followUps,
@@ -69,6 +70,11 @@ const post = (body: unknown, method = "POST"): RequestInit => ({
 
 export function ScanWorkspace() {
   const { today, formatTime, timeZoneLabel } = useSchoolTimeZone()
+  const [feedback, setFeedback] = useState<ScanFeedback | null>(null)
+  const feedbackSequence = useRef(0)
+  const dismissFeedback = useCallback((id: number) => {
+    setFeedback((current) => (current?.id === id ? null : current))
+  }, [])
   const [cap, setCap] = useState<Capabilities | null>(null),
     [online, setOnline] = useState(true),
     [fatal, setFatal] = useState("")
@@ -239,6 +245,9 @@ export function ScanWorkspace() {
       try {
         const data = await jsonRequest<ScanResult>("/api/scan", post(body))
         setResult(data)
+        if (body.mode === "attendance") {
+          setFeedback({ ...attendanceFeedback(data), id: ++feedbackSequence.current })
+        }
         setPending(null)
         setOnline(true)
         setQuery("")
@@ -254,6 +263,14 @@ export function ScanWorkspace() {
         void loadHistory()
       } catch (e) {
         const error = e as Error & { status?: number }
+        if (body.mode === "attendance") {
+          setFeedback({
+            id: ++feedbackSequence.current,
+            success: false,
+            title: error.status && error.status < 500 ? "Scan gagal" : "Belum terkonfirmasi",
+            message: error.message || "Hubungkan kembali, lalu coba proses permintaan yang sama.",
+          })
+        }
         if (error.status && error.status < 500) setPending(null)
         else setOnline(false)
         setFormError(
@@ -899,6 +916,7 @@ export function ScanWorkspace() {
           <ScanCards schoolName={cap.schoolName} />
         </div>
       )}
+      <ScanFeedbackPopup feedback={feedback} onDismiss={dismissFeedback} />
     </PageContainer>
   )
 }
