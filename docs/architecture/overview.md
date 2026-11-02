@@ -22,6 +22,10 @@ Production: Internet → shared edge Caddy → app:3000 → shared internal DB n
 
 ## Major modules
 
+**Scan Siswa** (`/scan`) is a top-level navigation item immediately below
+**Dashboard**, alongside the **Absensi** group. It keeps its scan permission
+filter; moving its navigation position does not grant domain or class access.
+
 Attendance is the core shared dataset. Homeroom assignments determine the default GURU class scope used by dashboard, attendance, recaps, student profiles and attendance exports. Teacher data also feeds the directory, schedules and workbook supervision. Workbook, BOS and Sarpras use delegated boolean capabilities and the generic audit log. Branding/settings are single-row school configuration. Jadwal is the lesson timetable: one `/jadwal` page with tabs, revision-versioned entries that store period numbers (never clock times), a separately configured time structure, and aSc TimeTables import bound through persisted external-ID mappings.
 
 ## Failure and observability model

@@ -166,6 +166,13 @@ export const dashboardItem: NavItem = {
 export const mainNav: NavEntry[] = [
   dashboardItem,
   {
+    title: "Scan Siswa",
+    href: "/scan",
+    icon: ScanLine,
+    description: "Pindai kehadiran dan kunjungan UKS",
+    permissions: ["scan.attendance.use", "scan.uks.use", "scan.history.read", "scan.cards.manage"],
+  },
+  {
     title: "Kartu Menstruasi Saya",
     href: "/kartu-menstruasi",
     requiresOwnMenstruation: true,
@@ -174,8 +181,7 @@ export const mainNav: NavEntry[] = [
     permissions: ["euks.menstruation.read.own"],
   },
   {
-    // Tepat di bawah Dashboard: jadwal adalah rujukan harian paling sering
-    // dibuka, sehingga tidak boleh terkubur di bawah modul lain.
+    // Jadwal adalah rujukan harian, sehingga tetap menjadi menu utama.
     //
     // Satu menu untuk seluruh modul: "Jadwal Saya", "Jadwal Kelas", dan
     // seterusnya adalah TAB di dalam halaman ini, bukan item sidebar sendiri.
@@ -191,13 +197,6 @@ export const mainNav: NavEntry[] = [
     title: "Absensi",
     icon: ClipboardCheck,
     children: [
-      {
-        title: "Scan Siswa",
-        href: "/scan",
-        icon: ScanLine,
-        description: "Pindai kehadiran dan kunjungan UKS",
-        permissions: ["scan.attendance.use", "scan.uks.use", "scan.history.read", "scan.cards.manage"],
-      },
       {
         title: "Input Absensi",
         href: "/absensi/input",

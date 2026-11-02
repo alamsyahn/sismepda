@@ -4,7 +4,7 @@
 
 ### Scan Siswa
 
-`/scan` (menu **Absensi → Scan Siswa**) is the shared operational entry point for
+`/scan` (top-level **Scan Siswa**, directly below **Dashboard**, alongside **Absensi**) is the shared operational entry point for
 **Kehadiran** and **Kunjungan UKS**. The default is Kehadiran when the account can
 use it; a UKS-only operator opens directly in UKS. Camera access is requested
 only by **Aktifkan kamera**, prefers the rear camera, and requires HTTPS. The
