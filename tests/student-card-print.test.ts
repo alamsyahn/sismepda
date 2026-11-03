@@ -15,7 +15,8 @@ test("printable credentials resolve to the original hash without knowing or chan
     assert.equal(studentQrTokenHash(printed), hash)
     assert.equal(printableStudentQr(hash), printed)
     assert.equal(studentQrTokenHash(printed.replace(hash, "b".repeat(64))), null)
-    assert.equal(studentQrTokenHash(printed.slice(0, -2) + "AA"), null)
+    const forged = printed.slice(0, 69) + (printed[69] === "A" ? "B" : "A") + printed.slice(70)
+    assert.equal(studentQrTokenHash(forged), null)
     assert.equal(studentQrTokenHash("SP2:" + hash + ":bad"), null)
     assert.equal(studentQrTokenHash(hash), null)
     process.env.AUTH_SECRET = "different-secret"

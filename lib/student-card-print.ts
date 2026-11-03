@@ -67,7 +67,7 @@ export function studentCardsPrintHtml(cards: { student: ScanStudent; image: stri
   *{box-sizing:border-box}body{margin:0;font:14px Arial,sans-serif;color:#172746;background:#e8ebf0}
   .tools{padding:16px;position:sticky;top:0;background:white;border-bottom:1px solid #ccc}.tools p{margin:8px 0 0;line-height:1.5}.tools button{padding:10px 16px;cursor:pointer}
   .sheet{display:grid;grid-template-columns:repeat(${layout.columns},90mm);grid-auto-rows:55mm;gap:5mm;width:${layout.width - 16}mm;height:${layout.height - 16}mm;align-content:start;margin:16px auto;padding:0;background:white;outline:8mm solid white;break-after:page;page-break-after:always}
-  .sheet:last-child{break-after:auto;page-break-after:auto}.card{width:90mm;height:55mm;break-inside:avoid;outline:.15mm dashed #aaa;outline-offset:1mm}.card svg{display:block;width:90mm;height:55mm}
+  .sheet:last-child{break-after:auto;page-break-after:auto}.card{width:90mm;height:55mm;break-inside:avoid;outline:.15mm dashed #aaa;outline-offset:0}.card svg{display:block;width:90mm;height:55mm}
   @media print{body{background:white;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tools{display:none}.sheet{margin:0;outline:0}}
   </style></head><body><div class="tools"><button id="print" disabled>Menyiapkan gambar…</button><p>${cards.length} kartu · ${pages.length} halaman · ${escapeHtml(options.paper)} ${layout.width} × ${layout.height} mm · ${options.orientation === "portrait" ? "Portrait" : "Landscape"}<br>Kartu 9 × 5,5 cm, jarak potong 5 mm. Saat mencetak pilih kertas yang sama, skala 100% / ukuran sebenarnya, dan nonaktifkan header/footer.</p><p id="status" role="status"></p></div>${pages.join("")}
   <script>

@@ -89,7 +89,8 @@ test(
       assert.equal(await db.scanEvent.count(), 1)
       assert.equal(await db.attendance.count(), 1)
       assert.equal((await executeScan(db, scanner, make({ code: reprinted.code }), setting)).outcome, "REPEAT")
-      assert.equal((await executeScan(db, scanner, make({ code: reprinted.code.slice(0, -2) + "AA" }), setting)).outcome, "UNKNOWN")
+      const forgedPrint = reprinted.code.slice(0, 69) + (reprinted.code[69] === "A" ? "B" : "A") + reprinted.code.slice(70)
+      assert.equal((await executeScan(db, scanner, make({ code: forgedPrint }), setting)).outcome, "UNKNOWN")
       const physicalScans = await Promise.all([db, db2].map((client) => executeScan(client, scanner, make(), setting)))
       assert.deepEqual(
         physicalScans.map((s) => s.outcome),
