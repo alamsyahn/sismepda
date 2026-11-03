@@ -19,7 +19,8 @@ capture is installed. During UKS entry the scanner is paused, so a scanned code
 cannot replace a student or enter a complaint field. Name/NIS/NISN lookup is a
 separate, explicit manual source with the same server scope.
 
-`POST /api/scan` resolves an active opaque `SP1:` credential and, for attendance,
+`POST /api/scan` resolves an active `SP1:` credential or its signed `SP2:` reprint
+(see [student cards](students.md#kartu-qr-siswa)) and, for attendance,
 creates `Attendance` in the existing class/date `AttendanceDay`. Missing rows
 remain **Belum diisi** until a real attendance action occurs. A second scan gets
 a new `ScanEvent` but never a second attendance or a changed first-arrival time.

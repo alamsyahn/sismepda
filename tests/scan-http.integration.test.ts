@@ -164,14 +164,23 @@ test(
       await request("card grant required", operator.cookie, 403, "/api/scan/cards", {
         entries: [{ studentId: a.id, expectedCredentialId: null }],
         replace: false,
+        includeExisting: true,
       })
       const issued = await request("admin issue cards", admin.cookie, 200, "/api/scan/cards", {
-        entries: [a, b].map((s) => ({ studentId: s.id, expectedCredentialId: null })),
+        entries: [{ studentId: a.id, expectedCredentialId: null }],
         replace: false,
       })
-      assert.equal(issued.cards.length, 2)
-      const codeA = issued.cards.find((c: { student: { id: string } }) => c.student.id === a.id).code,
-        codeB = issued.cards.find((c: { student: { id: string } }) => c.student.id === b.id).code
+      assert.equal(issued.cards.length, 1)
+      const printBody = { entries: [a, b].map((s) => ({ studentId: s.id, expectedCredentialId: null })), includeExisting: true }
+      await request("print cross origin", admin.cookie, 403, "/api/scan/cards", printBody, "POST", "https://untrusted.example")
+      const printed = await request("mixed card print", admin.cookie, 200, "/api/scan/cards", printBody)
+      assert.equal(printed.cards.length, 2)
+      const existingPrint = printed.cards.find((c: { student: { id: string } }) => c.student.id === a.id)
+      assert.equal(existingPrint.credentialId, issued.cards[0].credentialId)
+      assert.ok(existingPrint.code.startsWith("SP2:"))
+      assert.equal(await db.studentQrCredential.count({ where: { studentId: a.id } }), 1)
+      const codeA = issued.cards[0].code,
+        codeB = printed.cards.find((c: { student: { id: string } }) => c.student.id === b.id).code
       assert.notEqual(
         (await db.studentQrCredential.findUniqueOrThrow({ where: { tokenHash: qrHash(codeA) } })).tokenHash,
         codeA,

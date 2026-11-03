@@ -1,4 +1,5 @@
-import { createHash, randomBytes } from "node:crypto"
+import { randomBytes } from "node:crypto"
+import { qrHash, printableStudentQr, studentQrTokenHash } from "@/lib/student-qr-code"
 import type { Prisma, PrismaClient } from "@/app/generated/prisma/client"
 import { ApiError } from "@/lib/api-errors"
 import { lockAttendanceDay } from "@/lib/attendance-lock"
@@ -15,7 +16,7 @@ import {
 import { normalizeIndonesianPhone } from "@/lib/phone-number"
 import type { z } from "zod"
 
-export const qrHash = (value: string) => createHash("sha256").update(value).digest("hex")
+export { qrHash } from "@/lib/student-qr-code"
 const fingerprint = (value: unknown) => qrHash(JSON.stringify(value))
 export type ScanActor = { id: string; name: string; where: { homeroomUserId?: string } }
 const studentSelect = {
@@ -112,12 +113,15 @@ export async function executeScan(
       })
       if (!student) throw new ApiError(404, "Siswa tidak dapat diakses")
     } else if (command.code && isStudentQr(command.code)) {
+      const tokenHash = studentQrTokenHash(command.code)
       // Credential lock serializes a scan with concurrent rotation/revocation.
-      await lock(tx, `qr-token:${qrHash(command.code)}`)
-      const credential = await tx.studentQrCredential.findUnique({
-        where: { tokenHash: qrHash(command.code) },
-        select: { studentId: true, revokedAt: true },
-      })
+      if (tokenHash) await lock(tx, `qr-token:${tokenHash}`)
+      const credential = tokenHash
+        ? await tx.studentQrCredential.findUnique({
+            where: { tokenHash },
+            select: { studentId: true, revokedAt: true },
+          })
+        : null
       if (credential && !credential.revokedAt) {
         student = await tx.student.findFirst({
           where: { id: credential.studentId, active: true, schoolClass: actor.where },
@@ -237,10 +241,12 @@ export async function issueScanCards(
   actorId: string,
   entries: { studentId: string; expectedCredentialId: string | null }[],
   replace: boolean,
+  includeExisting = false,
 ) {
   return db.$transaction(
     async (tx) => {
       const cards: { student: ScanStudent; code: string; credentialId: string }[] = []
+      const issuedIds: string[] = []
       for (const entry of [...entries].sort((a, b) => a.studentId.localeCompare(b.studentId))) {
         await lock(tx, `qr-student:${entry.studentId}`)
         const student = await tx.student.findFirst({
@@ -249,7 +255,16 @@ export async function issueScanCards(
         })
         if (!student) throw new ApiError(404, "Siswa tidak ditemukan atau tidak aktif")
         const current = await tx.studentQrCredential.findFirst({ where: { studentId: student.id, revokedAt: null } })
-        if (current && !replace) continue
+        if (current && !replace) {
+          if (includeExisting) {
+            cards.push({
+              student: projectScanStudent(student),
+              code: printableStudentQr(current.tokenHash),
+              credentialId: current.id,
+            })
+          }
+          continue
+        }
         if ((current?.id ?? null) !== entry.expectedCredentialId)
           throw new ApiError(409, "Kartu berubah pada perangkat lain. Muat ulang daftar siswa.")
         if (current) {
@@ -261,16 +276,17 @@ export async function issueScanCards(
           data: { studentId: student.id, tokenHash: qrHash(code), issuedById: actorId },
         })
         cards.push({ student: projectScanStudent(student), code, credentialId: credential.id })
+        issuedIds.push(credential.id)
       }
-      if (cards.length)
+      if (issuedIds.length)
         await recordAuditLog(
           {
             actorId,
             action: "STUDENT_QR_ISSUED",
             entity: "StudentQrCredential",
-            entityId: cards[0].credentialId,
-            summary: `${cards.length} kartu QR siswa diterbitkan${replace ? " / diganti" : ""}`,
-            after: { credentialIds: cards.map((c) => c.credentialId) },
+            entityId: issuedIds[0],
+            summary: `${issuedIds.length} kartu QR siswa diterbitkan${replace ? " / diganti" : ""}`,
+            after: { credentialIds: issuedIds },
           },
           tx,
         )

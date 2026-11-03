@@ -59,6 +59,23 @@ test(
       )[0]
       assert.ok(card.code.startsWith("SP1:"))
       assert.notEqual((await db.studentQrCredential.findFirstOrThrow()).tokenHash, card.code)
+      const newStudent = await db.student.create({ data: { name: "Mixed Print Student", nis: "0000124", classId: schoolClass.id } })
+      const originalCredential = await db.studentQrCredential.findUniqueOrThrow({ where: { id: card.credentialId } })
+      const auditBeforePrint = await db.auditLog.count({ where: { action: "STUDENT_QR_ISSUED" } })
+      const printed = await issueScanCards(db, actor.id, [
+        { studentId: student.id, expectedCredentialId: card.credentialId },
+        { studentId: newStudent.id, expectedCredentialId: null },
+      ], false, true)
+      assert.equal(printed.length, 2)
+      const reprinted = printed.find((c) => c.student.id === student.id)!
+      assert.equal(reprinted.credentialId, card.credentialId)
+      assert.ok(reprinted.code.startsWith("SP2:"))
+      assert.deepEqual(await db.studentQrCredential.findUniqueOrThrow({ where: { id: card.credentialId } }), originalCredential)
+      assert.equal(await db.auditLog.count({ where: { action: "STUDENT_QR_ISSUED" } }), auditBeforePrint + 1)
+      const auditAfterPrint = await db.auditLog.count()
+      await issueScanCards(db, actor.id, [{ studentId: student.id, expectedCredentialId: null }], false, true)
+      assert.equal(await db.auditLog.count(), auditAfterPrint)
+      assert.equal(await db.studentQrCredential.count({ where: { studentId: student.id } }), 1)
       const make = (extra = {}) => ({
         requestId: randomUUID(),
         mode: "attendance" as const,
@@ -71,12 +88,14 @@ test(
       assert.deepEqual(replayRace[0], replayRace[1])
       assert.equal(await db.scanEvent.count(), 1)
       assert.equal(await db.attendance.count(), 1)
+      assert.equal((await executeScan(db, scanner, make({ code: reprinted.code }), setting)).outcome, "REPEAT")
+      assert.equal((await executeScan(db, scanner, make({ code: reprinted.code.slice(0, -2) + "AA" }), setting)).outcome, "UNKNOWN")
       const physicalScans = await Promise.all([db, db2].map((client) => executeScan(client, scanner, make(), setting)))
       assert.deepEqual(
         physicalScans.map((s) => s.outcome),
         ["REPEAT", "REPEAT"],
       )
-      assert.equal(await db.scanEvent.count(), 3)
+      assert.equal(await db.scanEvent.count(), 5)
       assert.equal(await db.attendance.count(), 1)
       await assert.rejects(() => executeScan(db, scanner, { ...command, source: "CAMERA" }, setting), /permintaan/)
       await assert.rejects(
@@ -100,6 +119,7 @@ test(
         await issueScanCards(db, actor.id, [{ studentId: student.id, expectedCredentialId: card.credentialId }], true)
       )[0]
       assert.equal((await executeScan(db, scanner, make(), setting)).outcome, "UNKNOWN")
+      assert.equal((await executeScan(db, scanner, make({ code: reprinted.code }), setting)).outcome, "UNKNOWN")
       assert.equal(await db.studentQrCredential.count({ where: { studentId: student.id, revokedAt: null } }), 1)
       await assert.rejects(
         () => issueScanCards(db, actor.id, [{ studentId: student.id, expectedCredentialId: card.credentialId }], true),

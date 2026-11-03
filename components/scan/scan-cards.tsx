@@ -8,11 +8,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { ScanStudent } from "@/lib/scan"
+import { cardPageLayout, defaultCardPrintOptions, studentCardsPrintHtml, type CardPaper, type CardPrintOptions } from "@/lib/student-card-print"
 
 type Card = { student: ScanStudent; code: string; credentialId: string; image: string }
-const escapeHtml = (s: string) =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
-export function ScanCards({ schoolName }: { schoolName: string }) {
+export function ScanCards({ schoolName, schoolLogoUrl }: { schoolName: string; schoolLogoUrl: string }) {
+  const [printOptions, setPrintOptions] = useState<CardPrintOptions>(defaultCardPrintOptions)
   const [classes, setClasses] = useState<{ id: string; name: string }[]>([]),
     [classId, setClassId] = useState("")
   const [students, setStudents] = useState<ScanStudent[]>([]),
@@ -20,13 +20,6 @@ export function ScanCards({ schoolName }: { schoolName: string }) {
   const [cards, setCards] = useState<Card[]>([]),
     [busy, setBusy] = useState(false),
     [q, setQ] = useState("")
-  useEffect(() => {
-    const warn = (event: BeforeUnloadEvent) => {
-      if (cards.length) { event.preventDefault(); event.returnValue = "" }
-    }
-    window.addEventListener("beforeunload", warn)
-    return () => window.removeEventListener("beforeunload", warn)
-  }, [cards.length])
   useEffect(() => {
     const controller = new AbortController()
     fetch(`/api/scan/students?mode=cards&classId=${encodeURIComponent(classId)}`, {
@@ -45,7 +38,7 @@ export function ScanCards({ schoolName }: { schoolName: string }) {
       })
     return () => controller.abort()
   }, [classId])
-  async function issue(replace: boolean) {
+  async function issue(replace: boolean, printSelected = false) {
     const entries = students
       .filter((s) => selected.includes(s.id))
       .map((s) => ({ studentId: s.id, expectedCredentialId: s.credentialId ?? null }))
@@ -57,12 +50,20 @@ export function ScanCards({ schoolName }: { schoolName: string }) {
       )
     )
       return
+    let popup: Window | null = null
+    if (printSelected) {
+      try { cardPageLayout(printOptions) } catch (e) { toast.error((e as Error).message); return }
+      popup = window.open("", "_blank")
+      if (!popup) { toast.error("Izinkan pop-up untuk membuka kartu cetak."); return }
+      popup.opener = null
+      popup.document.body.textContent = "Menyiapkan kartu pelajar…"
+    }
     setBusy(true)
     try {
       const response = await fetch("/api/scan/cards", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entries, replace }),
+        body: JSON.stringify({ entries, replace, includeExisting: printSelected }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error)
@@ -80,29 +81,54 @@ export function ScanCards({ schoolName }: { schoolName: string }) {
           credentialId: issued.find((c) => c.student.id === s.id)?.credentialId ?? s.credentialId,
         })),
       )
+      if (popup) {
+        const ordered = entries.flatMap((entry) => issued.filter((c: Card) => c.student.id === entry.studentId))
+        await writePrintWindow(popup, ordered)
+      }
       toast.success(
-        issued.length
+        printSelected ? `${issued.length} kartu siap dicetak. QR yang sudah aktif tetap berlaku.` : issued.length
           ? `${issued.length} kartu diterbitkan. Segera cetak atau simpan PDF.`
-          : "Semua siswa terpilih sudah mempunyai QR aktif. Gunakan Ganti QR jika kartu perlu diterbitkan ulang.",
+          : "Semua siswa terpilih sudah mempunyai QR aktif. Gunakan Cetak kartu pelajar untuk mencetak ulang.",
       )
     } catch (e) {
+      if (popup && !popup.closed) popup.document.body.textContent = "Kartu gagal disiapkan. Tutup jendela ini dan coba lagi dari tab Kartu QR."
       toast.error(e instanceof Error ? e.message : "Kartu gagal diterbitkan. Muat ulang daftar sebelum mencoba lagi.")
     } finally {
       setBusy(false)
     }
   }
-  function print() {
+  async function writePrintWindow(popup: Window, entries: Card[]) {
+    // Embed the logo so saving/printing this document does not depend on an active login.
+    let logo = ""
+    if (schoolLogoUrl) {
+      const response = await fetch(schoolLogoUrl)
+      if (!response.ok) throw new Error("Logo sekolah gagal dimuat. Coba cetak kembali.")
+      const blob = await response.blob()
+      logo = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = () => reject(new Error("Logo sekolah gagal dibaca"))
+        reader.readAsDataURL(blob)
+      })
+    }
+    if (popup.closed) throw new Error("Jendela cetak ditutup. Kartu dapat dicetak kembali.")
+    popup.document.open()
+    popup.document.write(studentCardsPrintHtml(entries, schoolName, logo, printOptions))
+    popup.document.close()
+  }
+  async function print() {
     if (!cards.length) return
+    try { cardPageLayout(printOptions) } catch (e) { toast.error((e as Error).message); return }
     const popup = window.open("", "_blank")
     if (!popup) {
       toast.error("Izinkan pop-up untuk membuka kartu cetak.")
       return
     }
     popup.opener = null
-    popup.document.write(
-      `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Kartu QR Siswa</title><style>@page{size:A4;margin:12mm}body{font:12px system-ui;margin:0;color:#202030}.tools{padding:12px}main{display:grid;grid-template-columns:repeat(2,85mm);gap:8mm}.card{border:1px solid #ccc;border-radius:8px;padding:6mm;text-align:center;break-inside:avoid;box-sizing:border-box}h1{font-size:14px;margin:0 0 4px}h2{font-size:15px;margin:12px 0 4px}p{margin:4px 0}img{width:35mm;height:35mm}small{font-size:10px}@media print{.tools{display:none}}</style></head><body><div class="tools"><button onclick="window.print()">Cetak / Simpan PDF</button></div><main>${cards.map((c) => `<section class="card"><h1>${escapeHtml(schoolName)}</h1><small>KARTU SISWA · SISMEPDA</small><h2>${escapeHtml(c.student.name)}</h2><p>${escapeHtml(c.student.className)} · ${escapeHtml(c.student.nis ? `NIS ${c.student.nis}` : c.student.nisn ? `NISN ${c.student.nisn}` : "Identitas siswa")}</p><img src="${c.image}" alt="QR siswa"><p>Kehadiran & layanan UKS</p><small>Tunjukkan kartu kepada petugas. Simpan kartu ini dengan baik.</small></section>`).join("")}</main></body></html>`,
-    )
-    popup.document.close()
+    setBusy(true)
+    try { await writePrintWindow(popup, cards) }
+    catch (e) { popup.close(); toast.error(e instanceof Error ? e.message : "Cetak gagal disiapkan") }
+    finally { setBusy(false) }
   }
   const visible = students.filter((s) =>
     `${s.name} ${s.nis ?? ""} ${s.nisn ?? ""}`.toLowerCase().includes(q.toLowerCase()),
@@ -115,8 +141,8 @@ export function ScanCards({ schoolName }: { schoolName: string }) {
           Kartu QR siswa
         </h2>
         <p className="mt-2 text-muted-foreground">
-          Satu kartu untuk kehadiran dan UKS. QR hanya dapat dicetak pada sesi penerbitan ini; simpan hasil cetak/PDF
-          sebelum menutup halaman. Mengganti QR menonaktifkan kartu lama.
+          Pilih siswa lalu cetak kartu pelajar. QR yang belum ada otomatis diterbitkan; kartu yang sudah aktif tetap
+          berlaku dan bisa dicetak ulang. Mengganti QR menonaktifkan kartu lama.
         </p>
       </div>
       <div className="flex flex-wrap items-end gap-3">
@@ -182,8 +208,43 @@ export function ScanCards({ schoolName }: { schoolName: string }) {
           </div>
         </div>
       )}
+      <div className="space-y-3 rounded-xl border bg-card p-4">
+        <h3 className="font-semibold">Pengaturan cetak kartu pelajar</h3>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="grid gap-2">
+            <Label htmlFor="card-paper">Ukuran kertas</Label>
+            <select id="card-paper" className="h-10 rounded-md border bg-card px-3 text-sm" value={printOptions.paper} disabled={busy}
+              onChange={(e) => setPrintOptions((p) => ({ ...p, paper: e.target.value as CardPaper }))}>
+              <option value="A4">A4 (210 × 297 mm)</option>
+              <option value="A3">A3 (297 × 420 mm)</option>
+              <option value="F4">F4 (210 × 330 mm)</option>
+              <option value="Custom">Custom</option>
+            </select>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="card-orientation">Orientasi</Label>
+            <select id="card-orientation" className="h-10 rounded-md border bg-card px-3 text-sm" value={printOptions.orientation} disabled={busy}
+              onChange={(e) => setPrintOptions((p) => ({ ...p, orientation: e.target.value as CardPrintOptions["orientation"] }))}>
+              <option value="portrait">Portrait</option><option value="landscape">Landscape</option>
+            </select>
+          </div>
+          {printOptions.paper === "Custom" && <>
+            <div className="grid gap-2"><Label htmlFor="card-width">Lebar kertas (mm)</Label>
+              <Input id="card-width" className="w-36" type="number" min={75} max={1200} disabled={busy} value={printOptions.customWidth}
+                onChange={(e) => setPrintOptions((p) => ({ ...p, customWidth: Number(e.target.value) }))} /></div>
+            <div className="grid gap-2"><Label htmlFor="card-height">Tinggi kertas (mm)</Label>
+              <Input id="card-height" className="w-36" type="number" min={75} max={1200} disabled={busy} value={printOptions.customHeight}
+                onChange={(e) => setPrintOptions((p) => ({ ...p, customHeight: Number(e.target.value) }))} /></div>
+          </>}
+        </div>
+        <p className="text-sm text-muted-foreground">Ukuran kartu 9 × 5,5 cm · Jarak antarkartu 5 mm · Margin kertas 8 mm. Cetak dengan skala 100% / ukuran sebenarnya.</p>
+      </div>
       <div className="flex flex-wrap gap-2">
-        <Button disabled={busy || !selected.length} onClick={() => void issue(false)}>
+        <Button disabled={busy || !selected.length} onClick={() => void issue(false, true)}>
+          <Printer />
+          {busy ? "Memproses…" : `Cetak kartu pelajar${selected.length ? ` (${selected.length})` : ""}`}
+        </Button>
+        <Button variant="outline" disabled={busy || !selected.length} onClick={() => void issue(false)}>
           <IdCard />
           {busy ? "Memproses…" : "Terbitkan QR yang belum ada"}
         </Button>
@@ -192,7 +253,7 @@ export function ScanCards({ schoolName }: { schoolName: string }) {
           Ganti QR terpilih
         </Button>
         {cards.length > 0 && (
-          <Button variant="outline" onClick={print}>
+          <Button variant="outline" disabled={busy} onClick={() => void print()}>
             <Printer />
             Cetak / simpan {cards.length} kartu
           </Button>

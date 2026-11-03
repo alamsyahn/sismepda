@@ -42,6 +42,7 @@ type Capabilities = {
   uks: boolean
   cards: boolean
   schoolName: string
+  schoolLogoUrl: string
   historyAttendance: boolean
   historyUks: boolean
   notify: boolean
@@ -913,7 +914,7 @@ export function ScanWorkspace() {
       )}
       {cap.cards && (
         <div id="panel-cards" role="tabpanel" aria-labelledby="tab-cards" hidden={tab !== "cards"}>
-          <ScanCards schoolName={cap.schoolName} />
+          <ScanCards schoolName={cap.schoolName} schoolLogoUrl={cap.schoolLogoUrl} />
         </div>
       )}
       <ScanFeedbackPopup feedback={feedback} onDismiss={dismissFeedback} />

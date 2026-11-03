@@ -11,6 +11,7 @@ import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import { readHolidayFor } from "@/lib/server-holidays"
 import { todayInSchoolTimeZone } from "@/lib/school-date"
 import { notifyAttendanceCompletion } from "@/lib/server-whatsapp-worker-client"
+import { appLogoUrl } from "@/lib/site-branding"
 
 export const dynamic = "force-dynamic"
 const scanJson = (data: unknown) => NextResponse.json(data, { headers: { "Cache-Control": "no-store" } })
@@ -32,12 +33,13 @@ export async function GET() {
             select: { label: true },
           })
         : []
-    const school = await prisma.schoolSetting.findUnique({ where: { id: "default" }, select: { schoolName: true } })
+    const school = await prisma.schoolSetting.findUnique({ where: { id: "default" }, select: { schoolName: true, appLogoUpdatedAt: true } })
     return scanJson({
       attendance,
       uks,
       cards,
       schoolName: school?.schoolName ?? "SISMEPDA",
+      schoolLogoUrl: appLogoUrl(school?.appLogoUpdatedAt),
       historyAttendance,
       historyUks,
       notify: uks && grants.has("euks.visits.notify"),

@@ -23,10 +23,10 @@ Authenticated users can add violation points only for a student in their accessi
 
 `/scan` → **Kartu QR** issues printable cards per class with
 `scan.cards.manage` plus `students.master.read`. Select students and choose
-**Terbitkan QR yang belum ada**, or explicitly confirm **Ganti QR terpilih**.
-Only new tokens are returned; existing active cards are skipped unless replaced.
-Raw tokens are held only in that browser session and printable as cards/PDF;
-print/save them before closing the tab. Reloading cannot recover an old token.
+**Cetak kartu pelajar** to print all selected students, automatically issuing only
+missing credentials. Existing active credentials are retained, including cards
+issued before this feature. **Terbitkan QR yang belum ada** still skips existing
+cards; **Ganti QR terpilih** requires explicit confirmation and revokes old cards.
 
 The QR is `SP1:` plus 24 cryptographically random bytes in base64url, linked to
 `Student.id`, not NIS/NISN or a public profile URL. Only its SHA-256 hash is stored
@@ -38,9 +38,24 @@ prevents new scans. A static QR can be copied: scanning is an authenticated,
 supervised operator activity and displays name, class and identifier for checking;
 it is not student self-attendance or identity proof on its own.
 
-The printable sheet uses 35 mm QR fields with quiet zones, name, class, school,
-and NIS (or NISN where NIS is absent). Scanner/device/print testing remains
-necessary for each school's hardware. No student photo field or upload is added.
+For reprints, `SP2:<tokenHash>:<HMAC-SHA256>` signs the existing credential hash
+with `AUTH_SECRET` (fallback `NEXTAUTH_SECRET`) and a domain-specific prefix.
+No plaintext token storage or schema migration is needed. SP1 and SP2 resolve
+to the same database row, share the same scan/rotation lock, and are both
+invalidated by revocation. Signatures are checked in constant time before lookup;
+unsigned hashes are never accepted. Rotating the authentication secret invalidates
+SP2 prints made with the old key; SP1 originals are unaffected. Printing requires
+the same two permissions and origin check as issuing. Reprint-only requests do
+not create issuance audit entries; mixed requests audit only new credentials.
+
+Cards measure 90 × 55 mm and follow the navy/blue school design, using the app
+logo, school name, student name, NIS and class. QR fields include a four-module
+quiet zone. Print settings offer A4 (default), A3, F4 (210 × 330 mm), custom
+dimensions in mm, and portrait/landscape orientation. The preview paginates
+complete cards with 5 mm cutting gaps and 8 mm page margins (8 cards on A4
+portrait, 9 landscape). Print at 100% with browser headers/footers disabled and
+matching printer paper. The school logo is embedded before printing. Scanner/
+device/print testing remains necessary for each school's hardware.
 
 ## Akun pribadi siswa
 

@@ -86,7 +86,7 @@ export type ScanHistoryRow = {
 }
 
 export function isStudentQr(value: string): boolean {
-  return /^SP1:[A-Za-z0-9_-]{32}$/.test(value)
+  return /^SP1:[A-Za-z0-9_-]{32}$/.test(value) || /^SP2:[a-f0-9]{64}:[A-Za-z0-9_-]{43}$/.test(value)
 }
 export function scanWindowAllowed(minutes: number, open: string, close: string, autoLock: boolean): boolean {
   if (!autoLock) return true

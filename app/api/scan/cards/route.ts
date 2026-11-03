@@ -17,6 +17,7 @@ const payload = z
       .min(1)
       .max(200),
     replace: z.boolean().default(false),
+    includeExisting: z.boolean().default(false),
   })
   .strict()
 export async function POST(request: Request) {
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
     const body = payload.safeParse(await request.json())
     if (!body.success || new Set(body.data.entries.map((e) => e.studentId)).size !== body.data.entries.length)
       throw new ApiError(400, "Daftar kartu tidak valid")
-    const cards = await issueScanCards(prisma, context.user.id, body.data.entries, body.data.replace)
+    const cards = await issueScanCards(prisma, context.user.id, body.data.entries, body.data.replace, body.data.includeExisting)
     return NextResponse.json({ cards }, { headers: { "Cache-Control": "no-store" } })
   } catch (error) {
     if (error instanceof SyntaxError) return NextResponse.json({ error: "Data tidak valid" }, { status: 400 })
