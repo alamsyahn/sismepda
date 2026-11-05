@@ -1,4 +1,5 @@
 import type { ScanStudent } from "./scan"
+import bwipjs from "bwip-js/browser"
 
 export type CardPaper = "A4" | "A3" | "F4" | "Custom"
 export type CardPrintOptions = {
@@ -22,37 +23,52 @@ export function cardPageLayout(options: CardPrintOptions) {
   return { width, height, columns, rows, perPage: columns * rows }
 }
 
-/** SVG uses millimetre coordinates so the border and every QR retain their physical size. */
+/** Encode the identifier as text: leading zeroes are part of the NIPD, never padding. */
+export function studentNisBarcode(nis: string | null): string | null {
+  if (!nis || !/^\d+$/.test(nis)) return null
+  return bwipjs.toSVG({
+    bcid: "code128", text: nis, height: 7, scale: 2,
+    // Ten modules of white space on either side, included inside the SVG bounds.
+    paddingwidth: 10, paddingheight: 0, backgroundcolor: "FFFFFF",
+    includetext: false,
+  })
+}
+
+/** SVG uses millimetre coordinates so the border, QR and barcode retain their physical size. */
 export function studentCardSvg(student: ScanStudent, qrImage: string, schoolName: string, logoUrl: string) {
-  const text = (x: number, y: number, value: string, size: number, maxWidth: number, weight = 700) => {
+  const text = (x: number, y: number, value: string, size: number, maxWidth: number, weight = 700, anchor = "start") => {
     const fontSize = Math.min(size, maxWidth / Math.max(value.length * 0.58, 1))
-    return `<text x="${x}" y="${y}" font-size="${fontSize}" font-weight="${weight}">${escapeHtml(value)}</text>`
+    return `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${fontSize}" font-weight="${weight}">${escapeHtml(value)}</text>`
   }
+  const barcode = studentNisBarcode(student.nis)
   return `<svg xmlns="http://www.w3.org/2000/svg" width="90mm" height="55mm" viewBox="0 0 90 55" role="img" aria-label="Kartu pelajar ${escapeHtml(student.name)}">
   <rect width="90" height="55" fill="white"/>
   <path d="M0 0H90V1.3H0z M0 53.7H90V55H0z" fill="#142344"/>
   <rect x="2.6" y="4.2" width="84.8" height="46.5" rx="2" fill="white" stroke="#2c54b5" stroke-width=".35"/>
-  <path d="M4.6 4.4H70L54.5 21.4H2.8V6.4Q2.8 4.4 4.6 4.4" fill="#142344"/>
-  <path d="M66.5 2.6H74L67.3 12.6H59.8z M66 45.5H87.2V50Q87.2 52.4 84.8 52.4H59.7z" fill="#2c54b5"/>
-  <path d="M75 2.8H79.6L73 12.6H68.5z M66.5 45.5H71.5L64.6 52.4H59.6z" fill="#142344"/>
-  <path d="M63 45.5H64.5L57.5 52.4H56z" fill="#2c54b5"/>
+  <path d="M4.6 4.4H70L57 21.4H2.8V6.4Q2.8 4.4 4.6 4.4" fill="#142344"/>
+  <path d="M66.5 2.6H74L67.3 12.6H59.8z M71 52H87.2V55H68z" fill="#2c54b5"/>
+  <path d="M75 2.8H79.6L73 12.6H68.5z M66.5 52H70L67 55H63.5z" fill="#142344"/>
+  <path d="M63 52H64.5L61.5 55H60z" fill="#2c54b5"/>
   ${logoUrl ? `<image href="${escapeHtml(logoUrl)}" x="4.4" y="6.4" width="12" height="12" preserveAspectRatio="xMidYMid meet"/>` : ""}
   <g font-family="Arial, sans-serif" fill="white">
-  ${text(18.2, 10.3, "KARTU PELAJAR", 4.2, 39)}
-  <path d="M32 12.7H51" stroke="white" stroke-width=".2"/>
-  ${text(18.2, 18.2, schoolName.toUpperCase(), 4.1, 39)}
+  ${text(37.7, 10.3, "KARTU PELAJAR", 4.2, 39, 700, "middle")}
+  <path d="M25 12.7H50.4" stroke="white" stroke-width=".2" stroke-linecap="round"/>
+  ${text(37.7, 18, schoolName.toUpperCase(), 3.5, 39, 700, "middle")}
   </g>
   <g font-family="Arial, sans-serif" fill="#172746">
   ${text(5.8, 25, "Nama Lengkap", 2.1, 48)}
-  ${text(5.8, 29.4, student.name, 2.7, 48)}
-  ${text(5.8, 33, "NIS", 2.1, 48)}
+  ${text(5.8, 29.4, student.name, 3, 48)}
+  ${text(5.8, 33, "NIPD / NIS", 2.1, 48)}
   ${text(5.8, 37.4, student.nis ?? "—", 2.7, 48)}
   ${text(5.8, 41, "Kelas", 2.1, 48)}
   ${text(5.8, 45.4, student.className, 2.7, 48)}
   </g>
-  <path d="M6 30.5H54 M6 38.5H54 M6 46.5H54" stroke="#172746" stroke-width=".3"/>
-  <rect x="59.5" y="19" width="25" height="25" rx="1.8" fill="white" stroke="#2c54b5" stroke-width=".35"/>
-  <image href="${escapeHtml(qrImage)}" x="60" y="19.5" width="24" height="24"/>
+  <path d="M6 30.5H54 M6 38.5H54 M6 46.5H54" stroke="#8bb4ed" stroke-width=".2"/>
+  <rect x="59.5" y="15" width="25" height="25" rx="1.8" fill="white" stroke="#2c54b5" stroke-width=".35"/>
+  <image href="${escapeHtml(qrImage)}" x="60" y="15.5" width="24" height="24"/>
+  ${barcode ? `<g role="img" aria-label="Barcode NIPD / NIS ${escapeHtml(student.nis!)}">${barcode.replace("<svg ", '<svg x="58" y="41.5" width="28" height="6" preserveAspectRatio="none" ')}
+    <g font-family="Arial, sans-serif" fill="black">${text(72, 49.5, student.nis!, 2.2, 28, 600, "middle")}</g></g>`
+    : `<g font-family="Arial, sans-serif" fill="#172746">${text(72, 45, student.nis ? "Barcode NIPD tidak tersedia" : "NIPD / NIS belum diisi", 1.6, 28, 400, "middle")}</g>`}
   </svg>`
 }
 

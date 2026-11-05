@@ -238,6 +238,7 @@ export function ScanCards({ schoolName, schoolLogoUrl }: { schoolName: string; s
           </>}
         </div>
         <p className="text-sm text-muted-foreground">Ukuran kartu 9 × 5,5 cm · Jarak antarkartu 5 mm · Margin kertas 8 mm. Cetak dengan skala 100% / ukuran sebenarnya.</p>
+        <p className="text-sm text-muted-foreground">Kartu memuat QR untuk kehadiran dan UKS, serta barcode NIPD / NIS untuk layanan yang mendukungnya. NIPD / NIS mengikuti data siswa, termasuk angka nol di depan.</p>
       </div>
       <div className="flex flex-wrap gap-2">
         <Button disabled={busy || !selected.length} onClick={() => void issue(false, true)}>

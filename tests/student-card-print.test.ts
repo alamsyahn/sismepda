@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { cardPageLayout, defaultCardPrintOptions, studentCardsPrintHtml } from "../lib/student-card-print"
+import { cardPageLayout, defaultCardPrintOptions, studentCardsPrintHtml, studentCardSvg, studentNisBarcode } from "../lib/student-card-print"
 import { printableStudentQr, qrHash, studentQrTokenHash } from "../lib/student-qr-code"
 import type { ScanStudent } from "../lib/scan"
 
@@ -54,4 +54,30 @@ test("print pagination keeps each card intact and safely escapes student data", 
   assert.ok(html.includes("&lt;script&gt;"))
   assert.ok(html.includes("size:210mm 297mm"))
   assert.ok(html.includes("000123"))
+})
+
+test("NIPD barcodes preserve five digits and leading zeroes without changing QR content", () => {
+  const student: ScanStudent = { id: "student", name: "Contoh Siswa", nis: "00123", nisn: "1234567890", classId: "class", className: "VIII A", homeroomName: null, recipientReady: false }
+  const qr = "data:image/png;base64,UNCHANGED"
+  const svg = studentCardSvg(student, qr, "SMPN 2 BLITAR", "")
+  assert.ok(svg.includes(`href="${qr}"`))
+  assert.ok(svg.includes('aria-label="Barcode NIPD / NIS 00123"'))
+  assert.ok(svg.includes('>00123</text>'))
+  assert.ok(!svg.includes(student.nisn!))
+  assert.notEqual(studentNisBarcode("00123"), studentNisBarcode("123"))
+  assert.ok(studentNisBarcode("12345")?.includes("<path"))
+  // Legacy identifiers remain printable, with no automatic padding or truncation.
+  assert.ok(studentNisBarcode("000123")?.includes("<path"))
+  assert.ok(svg.includes('text-anchor="middle"'))
+})
+
+test("missing or invalid NIPD never creates a misleading barcode or falls back to NISN", () => {
+  const student: ScanStudent = { id: "student", name: "Contoh Siswa", nis: null, nisn: "1234567890", classId: "class", className: "VIII A", homeroomName: null, recipientReady: false }
+  for (const nis of [null, "", "12<script>", "12 34", "１２３４５"]) {
+    assert.equal(studentNisBarcode(nis), null)
+    const svg = studentCardSvg({ ...student, nis }, "data:image/png;base64,AA", "SMPN 2 BLITAR", "")
+    assert.ok(!svg.includes('aria-label="Barcode'))
+    assert.ok(!svg.includes(student.nisn!))
+    assert.ok(svg.includes(nis ? "Barcode NIPD tidak tersedia" : "NIPD / NIS belum diisi"))
+  }
 })

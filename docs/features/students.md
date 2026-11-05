@@ -49,8 +49,18 @@ the same two permissions and origin check as issuing. Reprint-only requests do
 not create issuance audit entries; mixed requests audit only new credentials.
 
 Cards measure 90 × 55 mm and follow the navy/blue school design, using the app
-logo, school name, student name, NIS and class. QR fields include a four-module
-quiet zone. Print settings offer A4 (default), A3, F4 (210 × 330 mm), custom
+logo, school name, student name, NIPD / NIS and class. The header title and school
+name share a centered separator; identity rules are thin light blue. A vector
+Code 128 barcode below the QR encodes the existing NIS string exactly, including
+five-digit identifiers and leading zeroes; the same digits appear below the bars.
+It is generated locally using `bwip-js` (Code 128 encoder), with a ten-module white quiet
+zone on both sides, without an external barcode service. Missing or non-numeric
+NIS displays an unavailable message instead of inventing a value or substituting
+NISN. The barcode is an identifier for compatible external services; `/scan`
+attendance/UKS continues to require the existing SP1/SP2 QR credential. Adding
+the barcode does not rotate credentials or change stored student data/schema.
+QR fields include a four-module quiet zone and retain their 24 mm image size.
+Print settings offer A4 (default), A3, F4 (210 × 330 mm), custom
 dimensions in mm, and portrait/landscape orientation. The preview paginates
 complete cards with 5 mm cutting gaps and 8 mm page margins (8 cards on A4
 portrait, 9 landscape). Print at 100% with browser headers/footers disabled and
