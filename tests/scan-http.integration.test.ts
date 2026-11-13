@@ -226,6 +226,29 @@ test(
       })
       assert.equal(saved.visitId, savedAgain.visitId)
       await request("UKS history requires read", operator.cookie, 403, "/api/scan/history?mode=uks")
+      const portalPath = "/api/e-uks/portal/scan"
+      const portalOrigin = "https://uks.smpn2blitar.sch.id"
+      const portalScan = { action: "scan", requestId: randomUUID(), code: codeA }
+      await request("portal anonymous", "", 401, portalPath)
+      await request("portal grant required", denied.cookie, 403, portalPath)
+      await request("portal options", operator.cookie, 200, portalPath)
+      await request("portal refuses other origin", operator.cookie, 403, portalPath, portalScan)
+      await request("portal refuses attendance mode", operator.cookie, 400, portalPath, { ...portalScan, mode: "attendance" }, "POST", portalOrigin)
+      const draft = await request("portal camera", operator.cookie, 200, portalPath, portalScan, "POST", portalOrigin)
+      assert.equal(draft.outcome, "DRAFT")
+      assert.deepEqual(Object.keys(draft.student).sort(), ["className", "name"])
+      const portalSave = { action: "save", visit: { ...visitBody, eventId: draft.eventId } }
+      await request("portal rejects another actor", admin.cookie, 404, portalPath, portalSave, "POST", portalOrigin)
+      const beforePortalSave = await db.euksVisit.count()
+      const portalSaved = await request("portal saves visit", operator.cookie, 200, portalPath, portalSave, "POST", portalOrigin)
+      const portalReplay = await request("portal retries save", operator.cookie, 200, portalPath, portalSave, "POST", portalOrigin)
+      assert.equal(portalSaved.outcome, "SAVED")
+      assert.deepEqual(portalReplay, portalSaved)
+      assert.equal(await db.euksVisit.count(), beforePortalSave + 1)
+      const cancelled = await request("portal starts another draft", operator.cookie, 200, portalPath, { ...portalScan, requestId: randomUUID() }, "POST", portalOrigin)
+      await request("portal cancels draft", operator.cookie, 200, portalPath, { action: "cancel", eventId: cancelled.eventId }, "POST", portalOrigin)
+      await request("portal refuses save after cancel", operator.cookie, 409, portalPath, { ...portalSave, visit: { ...portalSave.visit, eventId: cancelled.eventId } }, "POST", portalOrigin)
+      assert.equal(await db.euksVisit.count(), beforePortalSave + 1)
       const schoolSetting = await db.schoolSetting.findUnique({ where: { id: "default" }, select: { timeZone: true } }),
         date = todayInSchoolTimeZone(undefined, schoolSetting?.timeZone)
       await db.attendanceDay.upsert({
