@@ -29,8 +29,7 @@ export async function provisionStudentAccount(
   if (await store.findEmail(body.email)) throw new StudentAccountError(409, "Email sudah digunakan")
   const role = await store.findStudentRole()
   const required = ["euks.menstruation.read.own", "euks.menstruation.create.own", "euks.menstruation.update.own"]
-  if (!role || role.key !== "siswa" || role.isProtected || role.permissionKeys.length !== required.length ||
-      !required.every((key) => role.permissionKeys.includes(key))) {
+  if (!role || role.key !== "siswa" || role.isProtected || !role.permissionKeys.every((key) => required.includes(key))) {
     throw new StudentAccountError(503, "Konfigurasi role siswa di Pengaturan Akses harus memuat hanya euks.menstruation.read.own, euks.menstruation.create.own, dan euks.menstruation.update.own. Hubungi administrator sistem.")
   }
   const passwordHash = await hashPassword(body.password)

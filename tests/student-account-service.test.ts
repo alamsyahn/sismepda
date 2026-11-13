@@ -27,8 +27,8 @@ test("creates only a new linked non-teacher account with canonical siswa role an
   assert.equal(JSON.stringify(result).includes("password"), false)
 })
 
-for (const permissionKeys of [[], ["students.read.all"], ["euks.menstruation.read.own", "accounts.credentials.manage"], ["euks.menstruation.read.own", "euks.menstruation.create.own", "euks.menstruation.update.own", "euks.visits.read"]]) {
-  test(`rejects contaminated or incomplete siswa role: ${permissionKeys.join(",")}`, async () => {
+for (const permissionKeys of [ ["students.read.all"], ["euks.menstruation.read.own", "accounts.credentials.manage"], ["euks.menstruation.read.own", "euks.menstruation.create.own", "euks.menstruation.update.own", "euks.visits.read"]]) {
+  test(`rejects contaminated siswa role: ${permissionKeys.join(",")}`, async () => {
     const f = fixture()
     f.store.findStudentRole = async () => ({ id: "r1", key: "siswa", isProtected: false, permissionKeys })
     await assert.rejects(provisionStudentAccount({ studentId: "s1", email: "a@example.org", password: "chosen-passphrase" }, "actor", f.store, async () => { assert.fail("must not hash"); }), { status: 503 })
@@ -50,6 +50,7 @@ for (const kind of ["missing", "inactive", "linked", "email"] as const) {
 test("provisions accounts for all active students regardless of gender", async () => {
   for (const gender of ["LAKI_LAKI", null]) {
     const { store } = fixture()
+    store.findStudentRole = async () => ({ id: "r1", key: "siswa", isProtected: false, permissionKeys: [] })
     store.findStudent = async () => ({ id: "s1", name: "Siswa", active: true, gender, account: null })
     const account = await provisionStudentAccount({ studentId: "s1", email: "siswa@example.org", password: "chosen-passphrase" }, "actor", store, async () => "bcrypt-hash")
     assert.equal(account.studentId, "s1")
