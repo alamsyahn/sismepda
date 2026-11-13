@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { loginDestination } from "@/lib/euks-portal";
 import { signIn } from "next-auth/react";
 
 export default function LoginPage() {
@@ -55,6 +56,11 @@ export default function LoginPage() {
     if (result?.error) {
       setLoading(false);
       setAuthError("Email/NIP atau password salah. Silakan coba lagi.");
+      return;
+    }
+    const destination = loginDestination(new URLSearchParams(window.location.search).get("callbackUrl"), window.location.origin);
+    if (destination !== "/") {
+      window.location.assign(destination);
       return;
     }
     router.push("/");

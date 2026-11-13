@@ -69,7 +69,7 @@ const post = (body: unknown, method = "POST"): RequestInit => ({
   body: JSON.stringify(body),
 })
 
-export function ScanWorkspace() {
+export function ScanWorkspace({ initialMode = "attendance" }: { initialMode?: ScanMode }) {
   const { today, formatTime, timeZoneLabel } = useSchoolTimeZone()
   const [feedback, setFeedback] = useState<ScanFeedback | null>(null)
   const feedbackSequence = useRef(0)
@@ -80,7 +80,7 @@ export function ScanWorkspace() {
     [online, setOnline] = useState(true),
     [fatal, setFatal] = useState("")
   const [tab, setTab] = useState("scan"),
-    [mode, setMode] = useState<ScanMode>("attendance"),
+    [mode, setMode] = useState<ScanMode>(initialMode),
     [source, setSource] = useState<"CAMERA" | "USB">("USB")
   const [camera, setCamera] = useState(false),
     [cameraError, setCameraError] = useState(""),
@@ -129,6 +129,7 @@ export function ScanWorkspace() {
   useEffect(() => {
     void refreshCapabilities().then((data) => {
       if (data && !data.attendance && data.uks) setMode("uks")
+      if (data && !data.uks && data.attendance) setMode("attendance")
       if (data && !data.historyAttendance && data.historyUks) setHistoryMode("uks")
       if (data && !data.attendance && !data.uks) setTab(data.cards ? "cards" : "history")
     })

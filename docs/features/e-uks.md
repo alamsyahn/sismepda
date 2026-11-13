@@ -1166,3 +1166,23 @@ age outside the reference range.
 `/api/e-uks/hero-images` exposes `POST` (create), `PATCH` (edit caption, toggle `active`, or `move` one position) and `DELETE`, all ADMIN-only, each writing an `EUKS_HERO_IMAGE_*` `AuditLog` entry in the same transaction. `PUT /api/e-uks/hero-images/[imageId]/photo` uploads or replaces the image; `GET` serves it to any `euks.view` reader. See Home page composition.
 
 `/api/e-uks/hero-logos` mirrors that shape for the hero logo overlay: `POST`, `PATCH` (rename, toggle `active`, or `move` one position) and `DELETE`, ADMIN-only, each writing an `EUKS_HERO_LOGO_*` `AuditLog` entry in the same transaction. `PUT /api/e-uks/hero-logos/[logoId]/logo` uploads or replaces the file (JPG/PNG/SVG/WebP, size per the `euks.hero.logo` slot), `DELETE` clears it while keeping the row, and `GET` serves it to any `euks.view` reader. See Hero logos for the SVG validation rules.
+
+## Portal E-UKS
+
+The public portal at `uks.smpn2blitar.sch.id` reads the nutrition snapshot
+through `/api/e-uks/portal/nutrition`. The API requires
+`euks.measurements.read` and returns the five category counts for the school
+and each grade. The scanner link opens the existing Sismepda visit workspace in
+UKS mode, which applies the existing visit authorization and recording rules.
+
+The counseling portal uses the Sismepda session and stores messages in
+`CounselingMessage`. An active student account can read and write only the
+thread belonging to its linked active student. The `tim_konseling` role with
+`euks.counseling.manage` can read and reply to existing student threads.
+The role is created without members. School administrators assign it through
+Pengaturan Akses. The portal sends no message text to external services.
+
+The APIs allow credentialed browser access from the E-UKS origin only.
+Counseling writes verify that origin, limit messages to 500 characters, and
+use a per-author request ID to make retries idempotent. Responses are private
+and uncached. Messages are included in the normal Sismepda database backups.
