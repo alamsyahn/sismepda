@@ -36,13 +36,22 @@ for (const permissionKeys of [[], ["students.read.all"], ["euks.menstruation.rea
   })
 }
 
-for (const kind of ["missing", "inactive", "male", "linked", "email"] as const) {
+for (const kind of ["missing", "inactive", "linked", "email"] as const) {
   test(`rejects ${kind} target without a write or password hash`, async () => {
     const f = fixture()
-    f.store.findStudent = async () => kind === "missing" ? null : ({ id: "s1", name: "Siswi", active: kind !== "inactive", gender: kind === "male" ? "LAKI_LAKI" : "PEREMPUAN", account: kind === "linked" ? { id: "existing" } : null })
+    f.store.findStudent = async () => kind === "missing" ? null : ({ id: "s1", name: "Siswi", active: kind !== "inactive", gender: "PEREMPUAN", account: kind === "linked" ? { id: "existing" } : null })
     if (kind === "email") f.store.findEmail = async () => ({ id: "teacher-existing" })
     await assert.rejects(provisionStudentAccount({ studentId: "s1", email: "a@example.org", password: "chosen-passphrase" }, "actor", f.store, async () => { assert.fail("must not hash"); }), { status: kind === "linked" || kind === "email" ? 409 : 404 })
     assert.equal(f.created.length, 0)
     assert.equal(f.audits.length, 0)
   })
 }
+
+test("provisions accounts for all active students regardless of gender", async () => {
+  for (const gender of ["LAKI_LAKI", null]) {
+    const { store } = fixture()
+    store.findStudent = async () => ({ id: "s1", name: "Siswa", active: true, gender, account: null })
+    const account = await provisionStudentAccount({ studentId: "s1", email: "siswa@example.org", password: "chosen-passphrase" }, "actor", store, async () => "bcrypt-hash")
+    assert.equal(account.studentId, "s1")
+  }
+})

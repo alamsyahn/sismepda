@@ -15,7 +15,7 @@ export type StudentAccountRosterRow = {
 export async function readStudentAccountRoster(): Promise<StudentAccountRosterRow[]> {
   await requirePermission("students.accounts.manage")
   return prisma.student.findMany({
-    where: { active: true, gender: "PEREMPUAN" },
+    where: { active: true },
     orderBy: [{ schoolClass: { name: "asc" } }, { name: "asc" }, { id: "asc" }],
     select: { id: true, name: true, schoolClass: { select: { name: true } }, account: { select: { id: true, active: true } } },
   })

@@ -15,7 +15,7 @@ Login throttling is an in-memory, per-process map (`lib/login-rate-limit.ts`): 8
 
 ## Student identity
 
-Akun siswa menggunakan Auth.js email + kata sandi yang sama, dengan `User.studentId` unik nullable sebagai tautan ke siswa. `/pengaturan/akun-siswa` dan `/api/admin/student-accounts` memerlukan `students.accounts.manage`; hanya akun baru untuk siswi aktif yang dapat dibuat, tidak menautkan ulang akun guru/admin. Role `siswa` harus mempunyai tepat tiga permission menstruasi own. Endpoint kartu pribadi meresolusi tautan dari database setiap permintaan dan menolak akses antar siswa, gender kosong/non-perempuan, serta siswa tidak aktif. Izin menstruasi petugas terpisah dan tidak diberikan oleh izin pantauan umum. Tidak ada self-registration atau akses publik berdasarkan NIS/NISN.
+Akun siswa menggunakan Auth.js email + kata sandi yang sama, dengan `User.studentId` unik nullable sebagai tautan ke siswa. `/pengaturan/akun-siswa` dan `/api/admin/student-accounts` memerlukan `students.accounts.manage`; hanya akun baru untuk semua siswa aktif yang dapat dibuat, tidak menautkan ulang akun guru/admin. Role `siswa` harus mempunyai tepat tiga permission menstruasi own. Endpoint kartu pribadi meresolusi tautan dari database setiap permintaan dan menolak akses antar siswa, gender kosong/non-perempuan, serta siswa tidak aktif. Izin menstruasi petugas terpisah dan tidak diberikan oleh izin pantauan umum. Tidak ada self-registration atau akses publik berdasarkan NIS/NISN.
 
 ## Roles, permissions, and class scope
 

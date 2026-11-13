@@ -24,7 +24,7 @@ export async function provisionStudentAccount(
 ): Promise<StudentAccountResult> {
   const body = studentAccountCreateSchema.parse(input)
   const student = await store.findStudent(body.studentId)
-  if (!student || !student.active || student.gender !== "PEREMPUAN") throw new StudentAccountError(404, "Siswi aktif tidak ditemukan")
+  if (!student || !student.active) throw new StudentAccountError(404, "Siswa aktif tidak ditemukan")
   if (student.account) throw new StudentAccountError(409, "Siswa sudah memiliki akun")
   if (await store.findEmail(body.email)) throw new StudentAccountError(409, "Email sudah digunakan")
   const role = await store.findStudentRole()
