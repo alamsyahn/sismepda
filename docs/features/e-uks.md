@@ -1172,8 +1172,10 @@ age outside the reference range.
 The public portal at `uks.smpn2blitar.sch.id` reads the nutrition snapshot
 through `/api/e-uks/portal/nutrition`. The API requires
 `euks.measurements.read` and returns the five category counts for the school
-and each grade. The scanner link opens the existing Sismepda visit workspace in
-UKS mode, which applies the existing visit authorization and recording rules.
+and each grade. The portal camera uses `/api/e-uks/portal/scan` to create a UKS draft,
+save a visit, or cancel a draft. It requires both `scan.uks.use` and
+`euks.visits.create` and reuses the existing Sismepda scan transactions.
+The portal records visits without sending WhatsApp notifications.
 
 The counseling portal uses the Sismepda session and stores messages in
 `CounselingMessage`. An active student account can read and write only the

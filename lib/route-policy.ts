@@ -22,7 +22,7 @@ const PUBLIC_ROUTES: readonly { path: string; method?: string; reason: string }[
     path: "/login",
     reason: "halaman masuk itu sendiri",
   },
-  ...["nutrition", "counseling"].map(feature => ({
+  ...["nutrition", "counseling", "scan"].map(feature => ({
     path: `/api/e-uks/portal/${feature}`,
     reason: "Handler mengotorisasi sendiri agar klien E-UKS menerima status JSON dan preflight lintas origin.",
   })),
