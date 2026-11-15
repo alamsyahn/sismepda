@@ -12,6 +12,7 @@ import {
 } from "@/lib/server-upload-policy"
 import { resolveMedia } from "@/lib/server-media"
 import { storeMedia } from "@/lib/server-media-storage"
+import { photoFramingFromForm, saveEuksPhotoFraming } from "@/lib/server-euks-photo-framing"
 
 /**
  * Foto fasilitas UKS — pola identik dengan foto pengurus: bytes menumpang
@@ -70,6 +71,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ faci
     if (!facility) return NextResponse.json({ error: "Fasilitas tidak ditemukan" }, { status: 404 })
 
     const formData = await request.formData()
+    const photoFraming = photoFramingFromForm(formData)
     const photo = formData.get("photo")
     if (!(photo instanceof File) || photo.size === 0) {
       return NextResponse.json({ error: "Pilih file foto terlebih dahulu" }, { status: 400 })
@@ -94,6 +96,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ faci
           photoSize: stored.size,
           photoMimeType: stored.mimeType,
           photoUpdatedAt: new Date(),
+          photoFraming,
           // Byte legacy dikosongkan untuk baris yang sudah pindah.
           photoData: null,
         },
@@ -153,4 +156,8 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     const { error: message, status } = euksErrorResponse(error)
     return NextResponse.json({ error: message }, { status })
   }
+}
+
+export async function PATCH(request: Request, { params }: { params: Promise<{ facilityId: string }> }) {
+  return saveEuksPhotoFraming(request, "facility", (await params).facilityId)
 }

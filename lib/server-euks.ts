@@ -91,6 +91,7 @@ export async function readEuksSettings() {
         // Hanya penanda waktu foto yang diambil, bukan byte-nya: daftar tidak
         // boleh menarik seluruh gambar ke memori server.
         photoUpdatedAt: true,
+        photoFraming: true,
         user: { select: { name: true, active: true } },
       },
     }),
@@ -104,6 +105,7 @@ export async function readEuksSettings() {
         active: true,
         sortOrder: true,
         photoUpdatedAt: true,
+        photoFraming: true,
       },
     }),
     prisma.euksComplaintOption.findMany({
@@ -120,6 +122,7 @@ export async function readEuksSettings() {
         // Sama seperti pengurus dan fasilitas: hanya penanda waktunya, supaya
         // daftar tidak pernah menarik byte foto ke memori server.
         photoUpdatedAt: true,
+        photoFraming: true,
       },
     }),
     prisma.euksHeroLogo.findMany({

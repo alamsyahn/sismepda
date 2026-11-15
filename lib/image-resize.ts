@@ -10,8 +10,8 @@
  */
 
 export type ResizeOptions = {
-  /** Rasio target lebar/tinggi, mis. 9 / 16. Gambar dipotong cover ke rasio ini. */
-  aspect: number
+  /** Bila ditentukan, potong cover ke rasio ini. Tanpa rasio, seluruh gambar dipertahankan. */
+  aspect?: number
   /** Sisi terpanjang hasil, dalam piksel. */
   maxEdge: number
   /** Kualitas JPEG/WebP 0–1. */
@@ -61,8 +61,13 @@ export async function resizeImageFile(file: File, options: ResizeOptions): Promi
 
   try {
     const bitmap = await createImageBitmap(file)
-    const { sx, sy, sw, sh } = coverCrop(bitmap.width, bitmap.height, options.aspect)
-    const { width, height } = outputSize(options.aspect, options.maxEdge)
+    const sourceEdge = Math.max(bitmap.width, bitmap.height)
+    const sourceAspect = bitmap.width / bitmap.height
+    const aspect = options.aspect ?? sourceAspect
+    const { sx, sy, sw, sh } = options.aspect
+      ? coverCrop(bitmap.width, bitmap.height, aspect)
+      : { sx: 0, sy: 0, sw: bitmap.width, sh: bitmap.height }
+    const { width, height } = outputSize(aspect, Math.min(options.maxEdge, Math.max(sw, sh)))
 
     const canvas = document.createElement("canvas")
     canvas.width = width
@@ -75,13 +80,16 @@ export async function resizeImageFile(file: File, options: ResizeOptions): Promi
     context.drawImage(bitmap, sx, sy, sw, sh, 0, 0, width, height)
     bitmap.close()
 
+    const format = file.type === "image/jpeg" ? "image/jpeg" : "image/webp"
     const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", options.quality ?? 0.85),
+      canvas.toBlob(resolve, format, options.quality ?? 0.85),
     )
     if (!blob) return file
 
     const name = file.name.replace(/\.[^.]+$/, "") || "foto"
-    return new File([blob], `${name}.jpg`, { type: "image/jpeg", lastModified: Date.now() })
+    if (!options.aspect && blob.size > file.size && sourceEdge <= options.maxEdge) return file
+    const extension = blob.type === "image/webp" ? "webp" : blob.type === "image/jpeg" ? "jpg" : "png"
+    return new File([blob], `${name}.${extension}`, { type: blob.type, lastModified: Date.now() })
   } catch {
     return file
   }

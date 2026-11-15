@@ -80,6 +80,7 @@ export default async function EuksHomePage() {
     .map((image) => ({
       id: image.id,
       url: euksHeroImageUrl(image.id, image.photoUpdatedAt)!,
+      photoFraming: image.photoFraming,
       caption: image.caption,
     }))
 
@@ -203,6 +204,7 @@ export default async function EuksHomePage() {
                   name: officerDisplayName(officer),
                   role: officer.role,
                   photoUrl: euksOfficerPhotoUrl(officer.id, officer.photoUpdatedAt),
+                  photoFraming: officer.photoFraming,
                 }))}
               />
             ) : (
@@ -225,6 +227,7 @@ export default async function EuksHomePage() {
               quantity: facility.quantity,
               note: facility.note,
               photoUrl: euksFacilityPhotoUrl(facility.id, facility.photoUpdatedAt),
+              photoFraming: facility.photoFraming,
             }))}
           />
         ) : (

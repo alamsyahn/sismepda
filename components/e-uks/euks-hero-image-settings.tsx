@@ -29,7 +29,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu"
-import { EuksPhotoField, EuksPhotoFrame } from "@/components/e-uks/euks-photo-field"
+import { EuksPhotoField, EuksPhotoFrame, updatePhotoFraming } from "@/components/e-uks/euks-photo-field"
+import { DEFAULT_PHOTO_FRAMING, readPhotoFraming, type PhotoFraming } from "@/lib/euks-photo-framing"
 import { HERO_CAPTION_MAX, euksHeroImageUrl } from "@/lib/euks-settings"
 
 export type HeroImageRow = {
@@ -39,6 +40,7 @@ export type HeroImageRow = {
   sortOrder: number
   /** Null berarti entri sudah dibuat tetapi fotonya belum diunggah. */
   photoUpdatedAt: Date | string | null
+  photoFraming?: unknown
 }
 
 /**
@@ -52,11 +54,13 @@ export function EuksHeroImageSettings({ images }: { images: HeroImageRow[] }) {
   const router = useRouter()
   const [caption, setCaption] = useState("")
   const [photo, setPhoto] = useState<File | null>(null)
+  const [framing, setFraming] = useState(DEFAULT_PHOTO_FRAMING)
   const [busy, setBusy] = useState(false)
 
   const [editTarget, setEditTarget] = useState<HeroImageRow | null>(null)
   const [editCaption, setEditCaption] = useState("")
   const [editPhoto, setEditPhoto] = useState<File | null>(null)
+  const [editFraming, setEditFraming] = useState(DEFAULT_PHOTO_FRAMING)
   const [editPhotoCleared, setEditPhotoCleared] = useState(false)
 
   const [deleteTarget, setDeleteTarget] = useState<HeroImageRow | null>(null)
@@ -71,9 +75,10 @@ export function EuksHeroImageSettings({ images }: { images: HeroImageRow[] }) {
     return body
   }
 
-  const uploadPhoto = async (imageId: string, file: File) => {
+  const uploadPhoto = async (imageId: string, file: File, photoFraming: PhotoFraming) => {
     const data = new FormData()
     data.set("photo", file)
+    data.set("framing", JSON.stringify(photoFraming))
     const response = await fetch(`/api/e-uks/hero-images/${imageId}/photo`, {
       method: "PUT",
       body: data,
@@ -106,7 +111,7 @@ export function EuksHeroImageSettings({ images }: { images: HeroImageRow[] }) {
 
       if (body?.id) {
         try {
-          await uploadPhoto(body.id, photo)
+          await uploadPhoto(body.id, photo, framing)
         } catch (error) {
           // Entri sudah ada tapi fotonya gagal: buang entrinya kembali supaya
           // tidak meninggalkan slide kosong di carousel.
@@ -164,6 +169,7 @@ export function EuksHeroImageSettings({ images }: { images: HeroImageRow[] }) {
     setEditTarget(image)
     setEditCaption(image.caption ?? "")
     setEditPhoto(null)
+    setEditFraming(readPhotoFraming(image.photoFraming))
     setEditPhotoCleared(false)
   }
 
@@ -181,10 +187,13 @@ export function EuksHeroImageSettings({ images }: { images: HeroImageRow[] }) {
       )
 
       if (editPhotoCleared && !editPhoto) await removePhoto(editTarget.id)
-      if (editPhoto) await uploadPhoto(editTarget.id, editPhoto)
+      if (editPhoto) await uploadPhoto(editTarget.id, editPhoto, editFraming)
+      else if (!editPhotoCleared && editTarget.photoUpdatedAt) await updatePhotoFraming(
+        `/api/e-uks/hero-images/${editTarget.id}/photo`, editTarget.photoUpdatedAt, editFraming, editTarget.photoFraming,
+      )
 
       router.refresh()
-      toast.success(editPhoto ? "Foto berhasil diperbarui" : "Keterangan berhasil diperbarui")
+      toast.success("Perubahan foto hero disimpan")
       setEditTarget(null)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Gagal memperbarui foto hero")
@@ -228,11 +237,13 @@ export function EuksHeroImageSettings({ images }: { images: HeroImageRow[] }) {
       <CardContent className="space-y-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <EuksPhotoField
-  slotKey="euks.hero.image"
+              slotKey="euks.hero.image"
             shape="wide"
             currentUrl={null}
             file={photo}
             onFileChange={setPhoto}
+            framing={framing}
+            onFramingChange={setFraming}
             disabled={busy}
             label="Foto (16:9)"
             frameClassName="w-32"
@@ -268,6 +279,7 @@ export function EuksHeroImageSettings({ images }: { images: HeroImageRow[] }) {
                 <li key={image.id} className="flex items-center gap-3 px-3 py-2">
                   <EuksPhotoFrame
                     src={euksHeroImageUrl(image.id, image.photoUpdatedAt)}
+                    framing={image.photoFraming}
                     alt={image.caption ? `Foto hero ${image.caption}` : "Foto hero UKS"}
                     shape="wide"
                     className="w-20"
@@ -363,7 +375,7 @@ export function EuksHeroImageSettings({ images }: { images: HeroImageRow[] }) {
           if (!open && !busy) setEditTarget(null)
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit foto hero</DialogTitle>
             <DialogDescription>
@@ -373,11 +385,14 @@ export function EuksHeroImageSettings({ images }: { images: HeroImageRow[] }) {
 
           <div className="space-y-4">
             <EuksPhotoField
-  slotKey="euks.hero.image"
+              slotKey="euks.hero.image"
               shape="wide"
               currentUrl={editCurrentUrl}
               file={editPhoto}
               onFileChange={setEditPhoto}
+              framing={editFraming}
+              currentFraming={editTarget?.photoFraming}
+              onFramingChange={setEditFraming}
               onRemoveCurrent={editCurrentUrl ? () => setEditPhotoCleared(true) : undefined}
               disabled={busy}
               label="Foto (16:9)"

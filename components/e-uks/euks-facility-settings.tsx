@@ -20,7 +20,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu"
-import { EuksPhotoField, EuksPhotoFrame } from "@/components/e-uks/euks-photo-field"
+import { EuksPhotoField, EuksPhotoFrame, updatePhotoFraming } from "@/components/e-uks/euks-photo-field"
+import { DEFAULT_PHOTO_FRAMING, readPhotoFraming, type PhotoFraming } from "@/lib/euks-photo-framing"
 import {
   FACILITY_NAME_MAX,
   FACILITY_NOTE_MAX,
@@ -37,6 +38,7 @@ export type FacilityRow = {
   sortOrder: number
   /** Null berarti belum berfoto; baris lama sebelum fitur ini selalu null. */
   photoUpdatedAt: Date | string | null
+  photoFraming?: unknown
 }
 
 export function EuksFacilitySettings({ facilities }: { facilities: FacilityRow[] }) {
@@ -45,6 +47,7 @@ export function EuksFacilitySettings({ facilities }: { facilities: FacilityRow[]
   const [quantity, setQuantity] = useState("")
   const [note, setNote] = useState("")
   const [photo, setPhoto] = useState<File | null>(null)
+  const [framing, setFraming] = useState(DEFAULT_PHOTO_FRAMING)
   const [busy, setBusy] = useState(false)
 
   const [editTarget, setEditTarget] = useState<FacilityRow | null>(null)
@@ -52,6 +55,7 @@ export function EuksFacilitySettings({ facilities }: { facilities: FacilityRow[]
   const [editQuantity, setEditQuantity] = useState("")
   const [editNote, setEditNote] = useState("")
   const [editPhoto, setEditPhoto] = useState<File | null>(null)
+  const [editFraming, setEditFraming] = useState(DEFAULT_PHOTO_FRAMING)
   const [editPhotoCleared, setEditPhotoCleared] = useState(false)
 
   const [deleteTarget, setDeleteTarget] = useState<FacilityRow | null>(null)
@@ -66,9 +70,10 @@ export function EuksFacilitySettings({ facilities }: { facilities: FacilityRow[]
     return body
   }
 
-  const uploadPhoto = async (facilityId: string, file: File) => {
+  const uploadPhoto = async (facilityId: string, file: File, photoFraming: PhotoFraming) => {
     const data = new FormData()
     data.set("photo", file)
+    data.set("framing", JSON.stringify(photoFraming))
     const response = await fetch(`/api/e-uks/facilities/${facilityId}/photo`, {
       method: "PUT",
       body: data,
@@ -115,7 +120,7 @@ export function EuksFacilitySettings({ facilities }: { facilities: FacilityRow[]
       // fasilitas yang sudah tersimpan.
       if (photo && body?.id) {
         try {
-          await uploadPhoto(body.id, photo)
+          await uploadPhoto(body.id, photo, framing)
         } catch (error) {
           router.refresh()
           toast.error(
@@ -170,6 +175,7 @@ export function EuksFacilitySettings({ facilities }: { facilities: FacilityRow[]
     setEditQuantity(facility.quantity === null ? "" : String(facility.quantity))
     setEditNote(facility.note ?? "")
     setEditPhoto(null)
+    setEditFraming(readPhotoFraming(facility.photoFraming))
     setEditPhotoCleared(false)
   }
 
@@ -197,7 +203,10 @@ export function EuksFacilitySettings({ facilities }: { facilities: FacilityRow[]
       )
 
       if (editPhotoCleared && !editPhoto) await removePhoto(editTarget.id)
-      if (editPhoto) await uploadPhoto(editTarget.id, editPhoto)
+      if (editPhoto) await uploadPhoto(editTarget.id, editPhoto, editFraming)
+      else if (!editPhotoCleared && editTarget.photoUpdatedAt) await updatePhotoFraming(
+        `/api/e-uks/facilities/${editTarget.id}/photo`, editTarget.photoUpdatedAt, editFraming, editTarget.photoFraming,
+      )
 
       router.refresh()
       toast.success(editPhoto ? "Foto berhasil diperbarui" : "Fasilitas berhasil diperbarui")
@@ -241,11 +250,13 @@ export function EuksFacilitySettings({ facilities }: { facilities: FacilityRow[]
       <CardContent className="space-y-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <EuksPhotoField
-  slotKey="euks.facility.photo"
+              slotKey="euks.facility.photo"
             shape="landscape"
             currentUrl={null}
             file={photo}
             onFileChange={setPhoto}
+            framing={framing}
+            onFramingChange={setFraming}
             disabled={busy}
             frameClassName="w-20"
           />
@@ -298,6 +309,7 @@ export function EuksFacilitySettings({ facilities }: { facilities: FacilityRow[]
               <li key={facility.id} className="flex items-center gap-3 px-3 py-2">
                 <EuksPhotoFrame
                   src={euksFacilityPhotoUrl(facility.id, facility.photoUpdatedAt)}
+                  framing={facility.photoFraming}
                   alt={`Foto ${facility.name}`}
                   shape="landscape"
                   className="w-14"
@@ -354,7 +366,7 @@ export function EuksFacilitySettings({ facilities }: { facilities: FacilityRow[]
           if (!open && !busy) setEditTarget(null)
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit fasilitas UKS</DialogTitle>
             <DialogDescription>
@@ -364,11 +376,14 @@ export function EuksFacilitySettings({ facilities }: { facilities: FacilityRow[]
 
           <div className="space-y-4">
             <EuksPhotoField
-  slotKey="euks.facility.photo"
+              slotKey="euks.facility.photo"
               shape="landscape"
               currentUrl={editCurrentUrl}
               file={editPhoto}
               onFileChange={setEditPhoto}
+              framing={editFraming}
+              currentFraming={editTarget?.photoFraming}
+              onFramingChange={setEditFraming}
               onRemoveCurrent={editCurrentUrl ? () => setEditPhotoCleared(true) : undefined}
               disabled={busy}
               frameClassName="w-28"

@@ -337,6 +337,7 @@ model EuksHeroImage {
   photoData Bytes?
   photoMimeType String?
   photoUpdatedAt DateTime?
+  photoFraming Json?
   /// Kunci media kanonik; kolom bytes di atas DIPERTAHANKAN sebagai fallback.
   photoKey String?
   photoSize Int?
@@ -401,6 +402,7 @@ model EuksOfficer {
   photoData Bytes?
   photoMimeType String?
   photoUpdatedAt DateTime?
+  photoFraming Json?
   /// Kunci media kanonik; kolom bytes di atas DIPERTAHANKAN sebagai fallback.
   photoKey String?
   photoSize Int?
@@ -427,6 +429,7 @@ model EuksFacility {
   photoData Bytes?
   photoMimeType String?
   photoUpdatedAt DateTime?
+  photoFraming Json?
   /// Kunci media kanonik; kolom bytes di atas DIPERTAHANKAN sebagai fallback.
   photoKey String?
   photoSize Int?

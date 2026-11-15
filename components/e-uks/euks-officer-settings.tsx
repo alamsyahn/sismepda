@@ -37,7 +37,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { EuksOfficerCategory } from "@/app/generated/prisma/enums"
-import { EuksPhotoField, EuksPhotoFrame } from "@/components/e-uks/euks-photo-field"
+import { EuksPhotoField, EuksPhotoFrame, updatePhotoFraming } from "@/components/e-uks/euks-photo-field"
+import { DEFAULT_PHOTO_FRAMING, readPhotoFraming, type PhotoFraming } from "@/lib/euks-photo-framing"
 import { OFFICER_NAME_MAX, OFFICER_ROLE_MAX, euksOfficerPhotoUrl } from "@/lib/euks-settings"
 
 export type OfficerRow = {
@@ -50,6 +51,7 @@ export type OfficerRow = {
   userId: string | null
   /** Null berarti belum berfoto; baris lama sebelum fitur ini selalu null. */
   photoUpdatedAt: Date | string | null
+  photoFraming?: unknown
   user: { name: string; active: boolean } | null
 }
 
@@ -96,6 +98,7 @@ export function EuksOfficerSettings({
   const [name, setName] = useState("")
   const [role, setRole] = useState("")
   const [photo, setPhoto] = useState<File | null>(null)
+  const [framing, setFraming] = useState(DEFAULT_PHOTO_FRAMING)
   const [busy, setBusy] = useState(false)
 
   const [editTarget, setEditTarget] = useState<OfficerRow | null>(null)
@@ -104,6 +107,7 @@ export function EuksOfficerSettings({
   const [editName, setEditName] = useState("")
   const [editRole, setEditRole] = useState("")
   const [editPhoto, setEditPhoto] = useState<File | null>(null)
+  const [editFraming, setEditFraming] = useState(DEFAULT_PHOTO_FRAMING)
   const [editPhotoCleared, setEditPhotoCleared] = useState(false)
 
   const [deleteTarget, setDeleteTarget] = useState<OfficerRow | null>(null)
@@ -125,9 +129,10 @@ export function EuksOfficerSettings({
   }
 
   /** Unggah foto untuk satu pengurus; dipakai saat tambah maupun edit. */
-  const uploadPhoto = async (officerId: string, file: File) => {
+  const uploadPhoto = async (officerId: string, file: File, photoFraming: PhotoFraming) => {
     const data = new FormData()
     data.set("photo", file)
+    data.set("framing", JSON.stringify(photoFraming))
     const response = await fetch(`/api/e-uks/officers/${officerId}/photo`, {
       method: "PUT",
       body: data,
@@ -173,7 +178,7 @@ export function EuksOfficerSettings({
       // galat mengatakan persis itu.
       if (photo && created?.id) {
         try {
-          await uploadPhoto(created.id, photo)
+          await uploadPhoto(created.id, photo, framing)
         } catch (error) {
           router.refresh()
           toast.error(
@@ -240,6 +245,7 @@ export function EuksOfficerSettings({
     setEditName(officer.name)
     setEditRole(officer.role)
     setEditPhoto(null)
+    setEditFraming(readPhotoFraming(officer.photoFraming))
     setEditPhotoCleared(false)
   }
 
@@ -269,7 +275,10 @@ export function EuksOfficerSettings({
       )
 
       if (editPhotoCleared && !editPhoto) await removePhoto(editTarget.id)
-      if (editPhoto) await uploadPhoto(editTarget.id, editPhoto)
+      if (editPhoto) await uploadPhoto(editTarget.id, editPhoto, editFraming)
+      else if (!editPhotoCleared && editTarget.photoUpdatedAt) await updatePhotoFraming(
+        `/api/e-uks/officers/${editTarget.id}/photo`, editTarget.photoUpdatedAt, editFraming, editTarget.photoFraming,
+      )
 
       router.refresh()
       toast.success(editPhoto ? "Foto berhasil diperbarui" : "Pengurus berhasil diperbarui")
@@ -320,6 +329,8 @@ export function EuksOfficerSettings({
             currentUrl={null}
             file={photo}
             onFileChange={setPhoto}
+            framing={framing}
+            onFramingChange={setFraming}
             disabled={busy}
             frameClassName="w-16"
           />
@@ -393,6 +404,7 @@ export function EuksOfficerSettings({
               <li key={officer.id} className="flex items-center gap-3 px-3 py-2">
                 <EuksPhotoFrame
                   src={euksOfficerPhotoUrl(officer.id, officer.photoUpdatedAt)}
+                  framing={officer.photoFraming}
                   alt={`Foto ${displayName(officer)}`}
                   shape="portrait"
                   className="w-9"
@@ -470,7 +482,7 @@ export function EuksOfficerSettings({
           if (!open && !busy) setEditTarget(null)
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit pengurus UKS</DialogTitle>
             <DialogDescription>
@@ -486,6 +498,9 @@ export function EuksOfficerSettings({
               currentUrl={editCurrentUrl}
               file={editPhoto}
               onFileChange={setEditPhoto}
+              framing={editFraming}
+              currentFraming={editTarget?.photoFraming}
+              onFramingChange={setEditFraming}
               onRemoveCurrent={editCurrentUrl ? () => setEditPhotoCleared(true) : undefined}
               disabled={busy}
               frameClassName="w-20"

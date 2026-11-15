@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { photoFramingStyle } from "@/lib/euks-photo-framing"
 import { EuksHeroLogos, type EuksHeroLogoItem } from "@/components/e-uks/euks-hero-logos"
 
 /** Jeda antar slide. Lebih lambat dari default kebanyakan library agar kalem. */
@@ -25,6 +26,7 @@ export type EuksHeroSlide = {
   id: string
   url: string
   caption: string | null
+  photoFraming?: unknown
 }
 
 export type EuksHeroProps = {
@@ -166,6 +168,7 @@ export function EuksHero({
                   fetchPriority={slideIndex === 0 ? "high" : "low"}
                   decoding="async"
                   className="size-full object-cover"
+                  style={photoFramingStyle(slide.photoFraming)}
                 />
               </div>
             ))

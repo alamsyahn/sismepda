@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { photoFramingStyle } from "@/lib/euks-photo-framing"
 
 export type EuksFacilityCard = {
   id: string
@@ -17,6 +18,7 @@ export type EuksFacilityCard = {
   quantity: number | null
   note: string | null
   photoUrl: string | null
+  photoFraming?: unknown
 }
 
 /**
@@ -75,7 +77,8 @@ export function EuksFacilityGrid({ facilities }: { facilities: EuksFacilityCard[
                   alt={`Foto ${facility.name}`}
                   loading="lazy"
                   decoding="async"
-                  className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  className="size-full object-cover"
+                  style={photoFramingStyle(facility.photoFraming)}
                 />
               ) : (
                 <div className="bg-euks-accent-soft text-euks-accent flex size-full items-center justify-center">

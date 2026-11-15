@@ -2,12 +2,14 @@ import { UserRound } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { officerInitials, officerPlaceholderTone } from "@/lib/euks-settings"
+import { photoFramingStyle } from "@/lib/euks-photo-framing"
 
 export type EuksOfficerCard = {
   id: string
   name: string
   role: string
   photoUrl: string | null
+  photoFraming?: unknown
 }
 
 /**
@@ -42,7 +44,8 @@ export function EuksOfficerRail({ officers }: { officers: EuksOfficerCard[] }) {
                 alt={`Foto ${officer.name}`}
                 loading="lazy"
                 decoding="async"
-                className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                className="size-full object-cover"
+                style={photoFramingStyle(officer.photoFraming)}
               />
             ) : (
               <OfficerPlaceholder name={officer.name} />
