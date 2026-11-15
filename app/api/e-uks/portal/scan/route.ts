@@ -3,7 +3,7 @@ import { ApiError } from "@/lib/api-errors"
 import { prisma } from "@/lib/prisma"
 import { followUps, scanVisitInput, type ScanResult } from "@/lib/scan"
 import { scanWriteAccess } from "@/lib/server-scan-access"
-import { cancelScanVisit, executeScan, saveScanVisit } from "@/lib/server-scan"
+import { cancelScanVisit, executeScan, saveScanVisit, scanStudentMatch } from "@/lib/server-scan"
 import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import { portalOptions, portalResponse, verifyPortalWrite } from "@/lib/server-euks-portal"
 
@@ -12,6 +12,11 @@ const command = z.discriminatedUnion("action", [
     action: z.literal("scan"),
     requestId: z.uuid(),
     code: z.string().trim().min(1).max(180),
+  }),
+  z.strictObject({
+    action: z.literal("select"),
+    requestId: z.uuid(),
+    studentId: z.string().min(1).max(100),
   }),
   z.strictObject({
     action: z.literal("save"),
@@ -35,7 +40,19 @@ export const OPTIONS = portalOptions
 
 export function GET(request: Request) {
   return portalResponse(request, async () => {
-    const { context } = await scanWriteAccess("uks")
+    const { context, where } = await scanWriteAccess("uks")
+    const params = new URL(request.url).searchParams
+    if (params.has("q")) {
+      const q = (params.get("q") ?? "").trim().slice(0, 100)
+      if (q.length < 2) return { students: [] }
+      const students = await prisma.student.findMany({
+        where: { active: true, schoolClass: where, ...scanStudentMatch(q) },
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        take: 20,
+        select: { id: true, name: true, nis: true, schoolClass: { select: { name: true } } },
+      })
+      return { students: students.map(({ id, name, nis, schoolClass }) => ({ id, name, nis, className: schoolClass.name })) }
+    }
     const complaints = context.grants.has("euks.complaint_options.read")
       ? await prisma.euksComplaintOption.findMany({
           where: { active: true },
@@ -57,10 +74,12 @@ export function POST(request: Request) {
     const input = body.data
 
     switch (input.action) {
-      case "scan": {
-        const result = await executeScan(prisma, actor, {
-          requestId: input.requestId, code: input.code, mode: "uks", source: "CAMERA",
-        }, {
+      case "scan":
+      case "select": {
+        const scan = input.action === "scan"
+          ? { requestId: input.requestId, code: input.code, mode: "uks" as const, source: "CAMERA" as const }
+          : { requestId: input.requestId, studentId: input.studentId, mode: "uks" as const, source: "MANUAL" as const }
+        const result = await executeScan(prisma, actor, scan, {
           timeZone: await readSchoolTimeZone(),
           holiday: null, open: "", close: "", autoLock: false,
         })

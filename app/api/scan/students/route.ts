@@ -4,7 +4,7 @@ import { ApiError, authFailureResponse } from "@/lib/api-errors"
 import { requireAnyPermission, requirePermission } from "@/lib/rbac-access"
 import { SCAN_PAGE_PERMISSIONS } from "@/lib/scan"
 import { scanWriteAccess } from "@/lib/server-scan-access"
-import { projectScanStudent } from "@/lib/server-scan"
+import { projectScanStudent, scanStudentMatch } from "@/lib/server-scan"
 import { sortClasses } from "@/lib/class-order"
 
 export async function GET(request: Request) {
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
             active: true,
             classId,
             schoolClass: scope,
-            ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { nis: q }, { nisn: q }] } : {}),
+            ...(q ? scanStudentMatch(q) : {}),
           },
           take: mode === "cards" ? 200 : 20,
           orderBy: { name: "asc" },

@@ -19,6 +19,14 @@ import type { z } from "zod"
 export { qrHash } from "@/lib/student-qr-code"
 const fingerprint = (value: unknown) => qrHash(JSON.stringify(value))
 export type ScanActor = { id: string; name: string; where: { homeroomUserId?: string } }
+
+export function scanStudentMatch(query: string): Prisma.StudentWhereInput {
+  const name = query.replace(/[\\%_]/g, "\\$&")
+  return {
+    OR: [{ name: { contains: name, mode: "insensitive" } }, { nis: query }, { nisn: query }],
+  }
+}
+
 const studentSelect = {
   id: true,
   name: true,
