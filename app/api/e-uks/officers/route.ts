@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 
+import { EuksOfficerCategory } from "@/app/generated/prisma/enums"
 import { prisma } from "@/lib/prisma"
 import { recordAuditLog } from "@/lib/audit-log"
 import { euksErrorResponse, requireEuksPermission } from "@/lib/euks-access"
 import { OFFICER_NAME_MAX, OFFICER_ROLE_MAX, normalizeLabel } from "@/lib/euks-settings"
 
 const createPayload = z.object({
-  // Guru terkait bila ada akunnya; null untuk siswa atau pihak luar.
+  category: z.enum(EuksOfficerCategory).default("GURU"),
+  // Guru terkait bila ada akunnya.
   userId: z.string().min(1).nullable().optional(),
   name: z.string().trim().min(2).max(OFFICER_NAME_MAX),
   role: z.string().trim().min(2).max(OFFICER_ROLE_MAX),
@@ -15,6 +17,7 @@ const createPayload = z.object({
 
 const updatePayload = z.object({
   id: z.string().min(1),
+  category: z.enum(EuksOfficerCategory).optional(),
   // Tautan ke akun guru boleh diubah/dilepas; ini override milik modul UKS dan
   // tidak pernah menulis apa pun ke akun guru itu sendiri.
   userId: z.string().min(1).nullable().optional(),
@@ -31,6 +34,9 @@ export async function POST(request: Request) {
   try {
     const viewer = await requireEuksPermission("euks.officers.create")
     const body = createPayload.parse(await request.json())
+    if (body.category === "SISWA" && body.userId) {
+      return NextResponse.json({ error: "Pengurus siswa tidak dapat ditautkan ke akun guru" }, { status: 400 })
+    }
 
     // Nama disalin sebagai teks meski bertaut akun, supaya kartu tetap
     // terbaca bila akun guru dinonaktifkan atau dihapus.
@@ -53,11 +59,12 @@ export async function POST(request: Request) {
       const officer = await tx.euksOfficer.create({
         data: {
           userId: body.userId ?? null,
+          category: body.category,
           name,
           role: normalizeLabel(body.role),
           sortOrder: (last?.sortOrder ?? -1) + 1,
         },
-        select: { id: true, name: true, role: true, active: true, userId: true, sortOrder: true },
+        select: { id: true, name: true, role: true, category: true, active: true, userId: true, sortOrder: true },
       })
       await recordAuditLog(
         {
@@ -66,7 +73,7 @@ export async function POST(request: Request) {
           entity: "EuksOfficer",
           entityId: officer.id,
           summary: `Pengurus UKS "${officer.name}" (${officer.role}) ditambahkan`,
-          after: { name: officer.name, role: officer.role, userId: officer.userId },
+          after: { name: officer.name, role: officer.role, category: officer.category, userId: officer.userId },
         },
         tx,
       )
@@ -87,7 +94,7 @@ export async function PATCH(request: Request) {
 
     const existing = await prisma.euksOfficer.findUnique({
       where: { id: body.id },
-      select: { id: true, name: true, role: true, active: true, sortOrder: true, userId: true },
+      select: { id: true, name: true, role: true, category: true, active: true, sortOrder: true, userId: true },
     })
     if (!existing) return NextResponse.json({ error: "Pengurus tidak ditemukan" }, { status: 404 })
 
@@ -96,10 +103,10 @@ export async function PATCH(request: Request) {
       // sortOrder tetangga sebenarnya, bukan index array, supaya benar
       // walaupun nomor urut sempat renggang.
       const neighbour = await prisma.euksOfficer.findFirst({
-        where:
-          body.move === "up"
-            ? { sortOrder: { lt: existing.sortOrder } }
-            : { sortOrder: { gt: existing.sortOrder } },
+        where: {
+          category: existing.category,
+          sortOrder: body.move === "up" ? { lt: existing.sortOrder } : { gt: existing.sortOrder },
+        },
         orderBy: { sortOrder: body.move === "up" ? "desc" : "asc" },
         select: { id: true, sortOrder: true },
       })
@@ -118,7 +125,15 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ ...existing, sortOrder: neighbour.sortOrder })
     }
 
-    const data: { name?: string; role?: string; active?: boolean; userId?: string | null } = {}
+    const category = body.category ?? existing.category
+    const userId = body.userId === undefined ? existing.userId : body.userId
+    if (category === "SISWA" && userId) {
+      return NextResponse.json({ error: "Pengurus siswa tidak dapat ditautkan ke akun guru" }, { status: 400 })
+    }
+
+    const data: { name?: string; role?: string; active?: boolean; userId?: string | null; category?: EuksOfficerCategory } = {
+      category: body.category,
+    }
     if (body.userId !== undefined) {
       if (body.userId === null) {
         // Dilepas dari akun: entri menjadi manual, namanya harus ikut dikirim
@@ -143,7 +158,7 @@ export async function PATCH(request: Request) {
       const officer = await tx.euksOfficer.update({
         where: { id: body.id },
         data,
-        select: { id: true, name: true, role: true, active: true, userId: true, sortOrder: true },
+        select: { id: true, name: true, role: true, category: true, active: true, userId: true, sortOrder: true },
       })
       await recordAuditLog(
         {
@@ -152,8 +167,8 @@ export async function PATCH(request: Request) {
           entity: "EuksOfficer",
           entityId: officer.id,
           summary: `Pengurus UKS "${officer.name}" diperbarui`,
-          before: { name: existing.name, role: existing.role, active: existing.active },
-          after: { name: officer.name, role: officer.role, active: officer.active },
+          before: { name: existing.name, role: existing.role, category: existing.category, active: existing.active },
+          after: { name: officer.name, role: officer.role, category: officer.category, active: officer.active },
         },
         tx,
       )

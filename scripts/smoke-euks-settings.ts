@@ -123,7 +123,7 @@ async function main() {
     name: "Uji Pengurus Tanpa Foto",
     role: "Anggota Uji",
   })
-  check("1. tambah pengurus tanpa foto", plain.status === 201, `status ${plain.status}`)
+  check("1. tambah pengurus tanpa foto", plain.status === 201 && plain.data.category === "GURU", `status ${plain.status}`)
   const plainId = String(plain.data.id ?? "")
   if (plainId) createdOfficers.push(plainId)
 
@@ -169,6 +169,58 @@ async function main() {
     teacherAfter?.name === teacher.name &&
       String(teacherAfter?.photoUpdatedAt) === String(teacher.photoUpdatedAt),
   )
+
+  const invalidStudent = await admin.json("/api/e-uks/officers", "POST", {
+    category: "SISWA",
+    userId: teacher.id,
+    name: "Uji Tautan Siswa",
+    role: "Anggota Uji",
+  })
+  check("kategori siswa menolak tautan akun guru", invalidStudent.status === 400)
+
+  const student = await admin.json("/api/e-uks/officers", "POST", {
+    category: "SISWA",
+    name: "Uji Pengurus Siswa",
+    role: "Anggota Uji",
+  })
+  const studentId = String(student.data.id ?? "")
+  if (studentId) createdOfficers.push(studentId)
+  check("pengurus siswa dapat ditambahkan", student.status === 201 && student.data.category === "SISWA")
+
+  const studentPhotoPath = `/api/e-uks/officers/${studentId}/photo`
+  const studentUpload = await admin.upload(studentPhotoPath, PNG, "siswa.png", "image/png")
+  const studentReplace = await admin.upload(studentPhotoPath, JPEG, "siswa.jpg", "image/jpeg")
+  const studentPhoto = await admin.fetch(studentPhotoPath)
+  check(
+    "foto siswa dapat ditambah, diganti, dan ditampilkan",
+    studentUpload.status === 200 &&
+      studentReplace.status === 200 &&
+      studentPhoto.status === 200 &&
+      studentPhoto.headers.get("content-type") === "image/jpeg",
+  )
+
+  const home = await admin.fetch("/e-uks")
+  const html = await home.text()
+  const teacherSection = html.indexOf(">Guru Pembina UKS</h2>")
+  const studentSection = html.indexOf(">Pengurus UKS Siswa</h2>", teacherSection)
+  const facilitiesSection = html.indexOf(">Fasilitas UKS</h2>", studentSection)
+  check(
+    "halaman utama menampilkan guru lalu siswa, dengan foto siswa di bagian siswa",
+    home.status === 200 && teacherSection >= 0 && studentSection > teacherSection &&
+      facilitiesSection > studentSection &&
+      html.slice(studentSection, facilitiesSection).includes(`src="${studentPhotoPath}?`) &&
+      !html.slice(teacherSection, studentSection).includes(`src="${studentPhotoPath}?`),
+    `status ${home.status}, headings ${teacherSection}/${studentSection}/${facilitiesSection}, photo ${html.indexOf(studentPhotoPath)}`,
+  )
+
+  const categoryChange = await admin.json("/api/e-uks/officers", "PATCH", { id: studentId, category: "GURU" })
+  const photoAfterMove = await admin.fetch(studentPhotoPath)
+  check(
+    "perubahan kategori mempertahankan foto pengurus",
+    categoryChange.status === 200 && categoryChange.data.category === "GURU" &&
+      photoAfterMove.status === 200 && photoAfterMove.headers.get("content-type") === "image/jpeg",
+  )
+  await admin.json("/api/e-uks/officers", "PATCH", { id: studentId, category: "SISWA" })
 
   // 3. Edit nama/jabatan.
   const edited = await admin.json("/api/e-uks/officers", "PATCH", {
@@ -227,12 +279,14 @@ async function main() {
 
   // 7. Reorder.
   const firstBefore = await prisma.euksOfficer.findMany({
+    where: { category: "GURU" },
     orderBy: { sortOrder: "asc" },
     select: { id: true },
   })
   const lastId = firstBefore[firstBefore.length - 1]!.id
   const moved = await admin.json("/api/e-uks/officers", "PATCH", { id: lastId, move: "up" })
   const orderAfter = await prisma.euksOfficer.findMany({
+    where: { category: "GURU" },
     orderBy: { sortOrder: "asc" },
     select: { id: true },
   })

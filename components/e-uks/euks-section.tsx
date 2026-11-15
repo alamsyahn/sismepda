@@ -18,7 +18,7 @@ export function EuksSection({
   className,
   children,
 }: {
-  eyebrow: string
+  eyebrow?: string
   title: string
   description?: string
   action?: React.ReactNode
@@ -29,9 +29,11 @@ export function EuksSection({
     <section className={cn("space-y-5", className)}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">
-          <p className="text-euks-accent text-xs font-semibold tracking-[0.16em] uppercase">
-            {eyebrow}
-          </p>
+          {eyebrow ? (
+            <p className="text-euks-accent text-xs font-semibold tracking-[0.16em] uppercase">
+              {eyebrow}
+            </p>
+          ) : null}
           <h2 className="text-xl font-semibold sm:text-2xl">{title}</h2>
           {description ? (
             <p className="text-muted-foreground max-w-2xl text-sm text-pretty">{description}</p>

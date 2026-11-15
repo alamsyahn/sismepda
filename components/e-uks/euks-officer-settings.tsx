@@ -36,6 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import type { EuksOfficerCategory } from "@/app/generated/prisma/enums"
 import { EuksPhotoField, EuksPhotoFrame } from "@/components/e-uks/euks-photo-field"
 import { OFFICER_NAME_MAX, OFFICER_ROLE_MAX, euksOfficerPhotoUrl } from "@/lib/euks-settings"
 
@@ -43,6 +44,7 @@ export type OfficerRow = {
   id: string
   name: string
   role: string
+  category: EuksOfficerCategory
   active: boolean
   sortOrder: number
   userId: string | null
@@ -52,6 +54,34 @@ export type OfficerRow = {
 }
 
 const MANUAL = "__manual__"
+const categoryLabels = { GURU: "Guru", SISWA: "Siswa" } satisfies Record<EuksOfficerCategory, string>
+
+function OfficerCategoryField({
+  id,
+  value,
+  onChange,
+  disabled,
+}: {
+  id: string
+  value: EuksOfficerCategory
+  onChange: (value: EuksOfficerCategory) => void
+  disabled: boolean
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>Kategori</Label>
+      <Select items={categoryLabels} value={value} onValueChange={(next) => next && onChange(next)} disabled={disabled}>
+        <SelectTrigger id={id} className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="GURU">Guru</SelectItem>
+          <SelectItem value="SISWA">Siswa</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
 
 export function EuksOfficerSettings({
   officers,
@@ -61,6 +91,7 @@ export function EuksOfficerSettings({
   teachers: { id: string; name: string }[]
 }) {
   const router = useRouter()
+  const [category, setCategory] = useState<EuksOfficerCategory>("GURU")
   const [selection, setSelection] = useState<string>(MANUAL)
   const [name, setName] = useState("")
   const [role, setRole] = useState("")
@@ -68,6 +99,7 @@ export function EuksOfficerSettings({
   const [busy, setBusy] = useState(false)
 
   const [editTarget, setEditTarget] = useState<OfficerRow | null>(null)
+  const [editCategory, setEditCategory] = useState<EuksOfficerCategory>("GURU")
   const [editSelection, setEditSelection] = useState<string>(MANUAL)
   const [editName, setEditName] = useState("")
   const [editRole, setEditRole] = useState("")
@@ -76,8 +108,9 @@ export function EuksOfficerSettings({
 
   const [deleteTarget, setDeleteTarget] = useState<OfficerRow | null>(null)
 
-  const isManual = selection === MANUAL
-  const isEditManual = editSelection === MANUAL
+  const isManual = category === "SISWA" || selection === MANUAL
+  const isEditManual = editCategory === "SISWA" || editSelection === MANUAL
+  const orderedOfficers = officers.toSorted((first, second) => first.category.localeCompare(second.category))
 
   const send = async (init: RequestInit, failure: string) => {
     const response = await fetch("/api/e-uks/officers", {
@@ -124,6 +157,7 @@ export function EuksOfficerSettings({
         {
           method: "POST",
           body: JSON.stringify({
+            category,
             userId: isManual ? null : selection,
             // Untuk guru, nama diambil server dari akunnya; kirim placeholder
             // yang memenuhi validasi panjang minimum.
@@ -201,6 +235,7 @@ export function EuksOfficerSettings({
 
   const openEdit = (officer: OfficerRow) => {
     setEditTarget(officer)
+    setEditCategory(officer.category)
     setEditSelection(officer.userId ?? MANUAL)
     setEditName(officer.name)
     setEditRole(officer.role)
@@ -220,6 +255,7 @@ export function EuksOfficerSettings({
           method: "PATCH",
           body: JSON.stringify({
             id: editTarget.id,
+            category: editCategory,
             // Mengubah tautan hanya menulis kolom milik EuksOfficer; akun guru
             // sendiri tidak pernah ikut berubah.
             userId: isEditManual ? null : editSelection,
@@ -273,13 +309,13 @@ export function EuksOfficerSettings({
       <CardHeader>
         <CardTitle>Pengurus UKS</CardTitle>
         <CardDescription>
-          Pilih guru yang sudah punya akun, atau ketik manual untuk siswa dan pihak luar.
+          Pilih kategori pengurus. Guru dapat ditautkan ke akun, sementara nama siswa diisi manual.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <EuksPhotoField
-  slotKey="euks.officer.photo"
+            slotKey="euks.officer.photo"
             shape="portrait"
             currentUrl={null}
             file={photo}
@@ -288,33 +324,33 @@ export function EuksOfficerSettings({
             frameClassName="w-16"
           />
 
-          <div
-            className={`grid flex-1 items-end gap-3 ${
-              isManual ? "sm:grid-cols-[1fr_1fr_1fr_auto]" : "sm:grid-cols-[1fr_1fr_auto]"
-            }`}
-          >
-            <div className="space-y-1.5">
-              <Label htmlFor="euks-officer-person">Orang</Label>
-              <Select value={selection} onValueChange={(value) => setSelection(String(value))}>
-                <SelectTrigger id="euks-officer-person" className="w-full">
-                  <SelectValue>
-                    {(value: string) =>
-                      value === MANUAL
-                        ? "Ketik manual (siswa / pihak luar)"
-                        : (teachers.find((t) => t.id === value)?.name ?? "Ketik manual (siswa / pihak luar)")
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={MANUAL}>Ketik manual (siswa / pihak luar)</SelectItem>
-                  {teachers.map((teacher) => (
-                    <SelectItem key={teacher.id} value={teacher.id}>
-                      {teacher.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="grid flex-1 items-end gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1.3fr_1fr_1fr_auto]">
+            <OfficerCategoryField id="euks-officer-category" value={category} onChange={setCategory} disabled={busy} />
+
+            {category === "GURU" ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="euks-officer-person">Orang</Label>
+                <Select value={selection} onValueChange={(value) => setSelection(String(value))}>
+                  <SelectTrigger id="euks-officer-person" className="w-full">
+                    <SelectValue>
+                      {(value: string) =>
+                        value === MANUAL
+                          ? "Ketik nama guru"
+                          : (teachers.find((t) => t.id === value)?.name ?? "Ketik nama guru")
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={MANUAL}>Ketik nama guru</SelectItem>
+                    {teachers.map((teacher) => (
+                      <SelectItem key={teacher.id} value={teacher.id}>
+                        {teacher.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
 
             {isManual ? (
               <div className="space-y-1.5">
@@ -353,7 +389,7 @@ export function EuksOfficerSettings({
           </p>
         ) : (
           <ul className="divide-border divide-y rounded-md border">
-            {officers.map((officer, index) => (
+            {orderedOfficers.map((officer, index) => (
               <li key={officer.id} className="flex items-center gap-3 px-3 py-2">
                 <EuksPhotoFrame
                   src={euksOfficerPhotoUrl(officer.id, officer.photoUpdatedAt)}
@@ -376,14 +412,16 @@ export function EuksOfficerSettings({
                       </Badge>
                     ) : null}
                   </p>
-                  <p className="text-muted-foreground truncate text-xs">{officer.role}</p>
+                  <p className="text-muted-foreground truncate text-xs">
+                    {categoryLabels[officer.category]} · {officer.role}
+                  </p>
                 </div>
 
                 <Button
                   variant="ghost"
                   size="icon"
                   aria-label="Naikkan urutan"
-                  disabled={busy || index === 0}
+                  disabled={busy || orderedOfficers[index - 1]?.category !== officer.category}
                   onClick={() => move(officer, "up")}
                 >
                   <ChevronUp className="size-4" />
@@ -392,7 +430,7 @@ export function EuksOfficerSettings({
                   variant="ghost"
                   size="icon"
                   aria-label="Turunkan urutan"
-                  disabled={busy || index === officers.length - 1}
+                  disabled={busy || orderedOfficers[index + 1]?.category !== officer.category}
                   onClick={() => move(officer, "down")}
                 >
                   <ChevronDown className="size-4" />
@@ -443,7 +481,7 @@ export function EuksOfficerSettings({
 
           <div className="space-y-4">
             <EuksPhotoField
-  slotKey="euks.officer.photo"
+              slotKey="euks.officer.photo"
               shape="portrait"
               currentUrl={editCurrentUrl}
               file={editPhoto}
@@ -453,28 +491,32 @@ export function EuksOfficerSettings({
               frameClassName="w-20"
             />
 
-            <div className="space-y-1.5">
-              <Label htmlFor="euks-officer-edit-person">Orang</Label>
-              <Select value={editSelection} onValueChange={(value) => setEditSelection(String(value))}>
-                <SelectTrigger id="euks-officer-edit-person" className="w-full">
-                  <SelectValue>
-                    {(value: string) =>
-                      value === MANUAL
-                        ? "Ketik manual (siswa / pihak luar)"
-                        : (teachers.find((t) => t.id === value)?.name ?? "Ketik manual (siswa / pihak luar)")
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={MANUAL}>Ketik manual (siswa / pihak luar)</SelectItem>
-                  {teachers.map((teacher) => (
-                    <SelectItem key={teacher.id} value={teacher.id}>
-                      {teacher.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <OfficerCategoryField id="euks-officer-edit-category" value={editCategory} onChange={setEditCategory} disabled={busy} />
+
+            {editCategory === "GURU" ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="euks-officer-edit-person">Orang</Label>
+                <Select value={editSelection} onValueChange={(value) => setEditSelection(String(value))}>
+                  <SelectTrigger id="euks-officer-edit-person" className="w-full">
+                    <SelectValue>
+                      {(value: string) =>
+                        value === MANUAL
+                          ? "Ketik nama guru"
+                          : (teachers.find((t) => t.id === value)?.name ?? "Ketik nama guru")
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={MANUAL}>Ketik nama guru</SelectItem>
+                    {teachers.map((teacher) => (
+                      <SelectItem key={teacher.id} value={teacher.id}>
+                        {teacher.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
 
             {isEditManual ? (
               <div className="space-y-1.5">

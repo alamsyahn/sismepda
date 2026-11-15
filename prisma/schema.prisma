@@ -378,6 +378,11 @@ model EuksHeroLogo {
 /// Pengurus UKS. Boleh menunjuk User (guru) atau diisi manual untuk siswa
 /// dan pihak luar yang tidak punya akun — karena itu userId nullable dan
 /// name selalu tersimpan sebagai teks.
+enum EuksOfficerCategory {
+  GURU
+  SISWA
+}
+
 model EuksOfficer {
   id String @id @default(cuid())
   /// Guru terkait, bila pengurus ini punya akun. SetNull agar menghapus akun
@@ -386,6 +391,7 @@ model EuksOfficer {
   /// Nama tampil. Untuk pengurus bertaut guru, disalin saat disimpan supaya
   /// kartu tetap terbaca bila akunnya dinonaktifkan.
   name String
+  category EuksOfficerCategory @default(GURU)
   /// Jabatan dalam struktur UKS, mis. "Pembina", "Ketua".
   role String
   /// Foto potret 9:16, disimpan sebagai bytes mengikuti pola User.photoData.

@@ -173,39 +173,44 @@ export default async function EuksHomePage() {
         manageHref={canManage ? "/e-uks/pengaturan" : null}
       />
 
-      <EuksSection
-        eyebrow="Tim"
-        title="Pengurus UKS"
-        description="Guru dan siswa yang bertugas menjaga layanan kesehatan sekolah."
-        action={
-          canManage ? (
-            <Button
-              variant="outline"
-              size="sm"
-              nativeButton={false}
-              render={<Link href="/e-uks/pengaturan" />}
-            >
-              Kelola
-            </Button>
-          ) : null
-        }
-      >
-        {activeOfficers.length > 0 ? (
-          <EuksOfficerRail
-            officers={activeOfficers.map((officer) => ({
-              id: officer.id,
-              name: officerDisplayName(officer),
-              role: officer.role,
-              photoUrl: euksOfficerPhotoUrl(officer.id, officer.photoUpdatedAt),
-            }))}
-          />
-        ) : (
-          <EuksSectionEmpty
-            message="Belum ada pengurus UKS yang ditampilkan."
-            canManage={canManage}
-          />
-        )}
-      </EuksSection>
+      {([
+        { category: "GURU", title: "Guru Pembina UKS", empty: "Belum ada guru pembina UKS yang ditampilkan." },
+        { category: "SISWA", title: "Pengurus UKS Siswa", empty: "Belum ada pengurus UKS siswa yang ditampilkan." },
+      ] as const).map(({ category, title, empty }) => {
+        const officers = activeOfficers.filter((officer) => officer.category === category)
+
+        return (
+          <EuksSection
+            key={category}
+            title={title}
+            action={
+              category === "GURU" && canManage ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  nativeButton={false}
+                  render={<Link href="/e-uks/pengaturan" />}
+                >
+                  Kelola Pengurus
+                </Button>
+              ) : null
+            }
+          >
+            {officers.length > 0 ? (
+              <EuksOfficerRail
+                officers={officers.map((officer) => ({
+                  id: officer.id,
+                  name: officerDisplayName(officer),
+                  role: officer.role,
+                  photoUrl: euksOfficerPhotoUrl(officer.id, officer.photoUpdatedAt),
+                }))}
+              />
+            ) : (
+              <EuksSectionEmpty message={empty} canManage={canManage} />
+            )}
+          </EuksSection>
+        )
+      })}
 
       <EuksSection
         eyebrow="Sarana"

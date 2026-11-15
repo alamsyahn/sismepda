@@ -86,6 +86,7 @@ export async function readEuksSettings() {
         role: true,
         active: true,
         sortOrder: true,
+        category: true,
         userId: true,
         // Hanya penanda waktu foto yang diambil, bukan byte-nya: daftar tidak
         // boleh menarik seluruh gambar ke memori server.
