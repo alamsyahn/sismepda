@@ -237,6 +237,11 @@ test(
       const draft = await request("portal camera", operator.cookie, 200, portalPath, portalScan, "POST", portalOrigin)
       assert.equal(draft.outcome, "DRAFT")
       assert.deepEqual(Object.keys(draft.student).sort(), ["className", "name"])
+      assert.equal(draft.profile, null)
+      const profileDraft = await request("portal scan with monitoring grant", admin.cookie, 200, portalPath, {
+        ...portalScan, requestId: randomUUID(),
+      }, "POST", portalOrigin)
+      assert.deepEqual(profileDraft.profile, { studentId: a.id, classId: ownClass.id })
       const portalSave = { action: "save", visit: { ...visitBody, eventId: draft.eventId } }
       await request("portal rejects another actor", admin.cookie, 404, portalPath, portalSave, "POST", portalOrigin)
       const beforePortalSave = await db.euksVisit.count()

@@ -64,7 +64,10 @@ export function POST(request: Request) {
           timeZone: await readSchoolTimeZone(),
           holiday: null, open: "", close: "", autoLock: false,
         })
-        return portalResult(result)
+        const profile = result.outcome === "DRAFT" && result.student && context.grants.has("euks.monitoring.read")
+          ? { studentId: result.student.id, classId: result.student.classId }
+          : null
+        return { ...portalResult(result), profile }
       }
       case "save": {
         const visit = scanVisitInput.safeParse({
