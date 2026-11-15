@@ -39,14 +39,14 @@ export function StudentAccountManager({ students }: { students: StudentAccountRo
 
   return <div className="space-y-6">
     <Card><CardHeader><CardTitle>Buat akun pribadi siswa</CardTitle></CardHeader><CardContent>
-      <p className="mb-4 text-sm text-muted-foreground">Hanya siswa aktif tanpa akun. Login memakai email dan sandi yang Anda tetapkan, bukan NIS/NISN. Akun yang sudah ada tidak dapat ditautkan atau diambil alih di sini.</p>
+      <p className="mb-4 text-sm text-muted-foreground">Hanya siswa aktif tanpa akun. Siswa bisa masuk dengan NIS. Email login dapat dikosongkan. Akun yang sudah ada tidak dapat ditautkan atau diambil alih di sini.</p>
       <form onSubmit={submit} className="space-y-4">
-        <div className="space-y-2"><Label htmlFor="student-account-student">Siswi</Label>
+        <div className="space-y-2"><Label htmlFor="student-account-student">Siswa</Label>
           <select id="student-account-student" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={studentId} onChange={(event) => setStudentId(event.target.value)} disabled={busy || available.length === 0} required>
             <option value="">Pilih siswa</option>{available.map((student) => <option key={student.id} value={student.id}>{student.name} — {student.schoolClass.name}</option>)}
           </select>
         </div>
-        <div className="space-y-2"><Label htmlFor="student-account-email">Email login</Label><Input id="student-account-email" type="email" autoComplete="off" maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} disabled={busy} required /></div>
+        <div className="space-y-2"><Label htmlFor="student-account-email">Email login (opsional)</Label><Input id="student-account-email" type="email" autoComplete="off" maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} disabled={busy} /></div>
         <div className="space-y-2"><Label htmlFor="student-account-password">Sandi awal</Label><Input id="student-account-password" type="password" autoComplete="new-password" minLength={8} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} disabled={busy} required /><p className="text-xs text-muted-foreground">8–128 karakter; gunakan sandi unik, bukan nomor identitas atau tanggal lahir.</p></div>
         <Button type="submit" disabled={busy || available.length === 0}>{busy ? "Membuat…" : "Buat akun"}</Button>
         <p role="status" aria-live="polite" className="text-sm">{message}</p>

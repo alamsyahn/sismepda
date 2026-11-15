@@ -36,7 +36,7 @@ export default function LoginPage() {
   const emailRef = useRef<HTMLInputElement>(null);
 
   const emailError =
-    touched && !email.trim() ? "Email atau NIP wajib diisi" : undefined;
+    touched && !email.trim() ? "Email, NIP, atau NIS wajib diisi" : undefined;
   const passwordError =
     touched && !password ? "Password wajib diisi" : undefined;
 
@@ -104,13 +104,13 @@ export default function LoginPage() {
               ) : null}
 
               <div className="space-y-1.5">
-                <Label htmlFor="email">Email atau NIP</Label>
+                <Label htmlFor="email">Email, NIP, atau NIS</Label>
                 <Input
                   id="email"
                   ref={emailRef}
                   type="text"
                   autoComplete="username"
-                  placeholder="Masukkan email atau NIP"
+                  placeholder="Masukkan email, NIP, atau NIS"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   onBlur={() => setTouched(true)}

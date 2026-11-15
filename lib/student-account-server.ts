@@ -28,8 +28,12 @@ export async function createStudentAccount(input: unknown) {
       // Role edits use this lock too: do not assign a role that changes during validation.
       await lockSystemAdminPopulation(tx)
       return provisionStudentAccount(input, actor.id, {
-        findStudent: (id) => tx.student.findUnique({ where: { id }, select: { id: true, name: true, active: true, gender: true, account: { select: { id: true } } } }),
+        findStudent: (id) => tx.student.findUnique({ where: { id }, select: { id: true, name: true, active: true, gender: true, nis: true, account: { select: { id: true } } } }),
         findEmail: (email) => tx.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } }, select: { id: true } }),
+        findLegacyLogin: (identifier) => tx.user.findFirst({
+          where: { OR: [{ nip: identifier }, { email: { equals: identifier, mode: "insensitive" } }] },
+          select: { id: true },
+        }),
         async findStudentRole() {
           const role = await tx.role.findUnique({ where: { key: "siswa" }, select: { id: true, key: true, isProtected: true, permissions: { select: { permission: { select: { key: true } } } } } })
           return role ? { id: role.id, key: role.key, isProtected: role.isProtected, permissionKeys: role.permissions.map((row) => row.permission.key) } : null

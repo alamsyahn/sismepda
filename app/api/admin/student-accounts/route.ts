@@ -8,7 +8,7 @@ import { createStudentAccount, readStudentAccountRoster } from "@/lib/student-ac
 
 function failure(error: unknown) {
   if (error instanceof StudentAccountError) return NextResponse.json({ error: error.message }, { status: error.status })
-  if (error instanceof z.ZodError || error instanceof SyntaxError) return NextResponse.json({ error: "Permintaan tidak valid. Isi siswa, email valid, dan sandi 8–128 karakter." }, { status: 400 })
+  if (error instanceof z.ZodError || error instanceof SyntaxError) return NextResponse.json({ error: "Pilih siswa, masukkan sandi 8–128 karakter, dan gunakan email yang valid jika diisi." }, { status: 400 })
   return authFailureResponse(error, "Akun siswa gagal diproses")
 }
 

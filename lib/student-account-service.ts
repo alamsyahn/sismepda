@@ -5,13 +5,14 @@ export class StudentAccountError extends Error {
 }
 
 export type StudentAccountResult = { id: string; name: string; email: string | null; active: boolean; studentId: string | null }
-export type StudentAccountStudent = { id: string; name: string; active: boolean; gender: string | null; account: { id: string } | null }
+export type StudentAccountStudent = { id: string; name: string; active: boolean; gender: string | null; nis?: string | null; account: { id: string } | null }
 export type StudentAccountRole = { id: string; key: string; isProtected: boolean; permissionKeys: string[] }
 export type StudentAccountNew = StudentAccountCreate & { passwordHash: string; name: string; roleId: string; active: true; isTeacher: false; workbookSupervised: false; nip: null }
 export type StudentAccountAudit = { actorId: string; userId: string; studentId: string; roleId: string; roleKey: string }
 export interface StudentAccountStore {
   findStudent(id: string): Promise<StudentAccountStudent | null>
   findEmail(email: string): Promise<{ id: string } | null>
+  findLegacyLogin(identifier: string): Promise<{ id: string } | null>
   findStudentRole(): Promise<StudentAccountRole | null>
   createAccount(input: Omit<StudentAccountNew, "password">): Promise<StudentAccountResult>
   audit(input: StudentAccountAudit): Promise<void>
@@ -26,7 +27,13 @@ export async function provisionStudentAccount(
   const student = await store.findStudent(body.studentId)
   if (!student || !student.active) throw new StudentAccountError(404, "Siswa aktif tidak ditemukan")
   if (student.account) throw new StudentAccountError(409, "Siswa sudah memiliki akun")
-  if (await store.findEmail(body.email)) throw new StudentAccountError(409, "Email sudah digunakan")
+  if (body.email) {
+    if (await store.findEmail(body.email)) throw new StudentAccountError(409, "Email sudah digunakan")
+  } else {
+    const nis = student.nis
+    if (!nis || nis.trim() !== nis) throw new StudentAccountError(400, "Isi NIS siswa di data induk atau gunakan email login.")
+    if (await store.findLegacyLogin(nis)) throw new StudentAccountError(409, "NIS bentrok dengan identitas login akun lain. Gunakan email login.")
+  }
   const role = await store.findStudentRole()
   const required = ["euks.menstruation.read.own", "euks.menstruation.create.own", "euks.menstruation.update.own"]
   if (!role || role.key !== "siswa" || role.isProtected || !role.permissionKeys.every((key) => required.includes(key))) {

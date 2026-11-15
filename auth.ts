@@ -18,12 +18,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const rawIdentifier = parsed.data.identifier.trim()
         const identifier = rawIdentifier.toLowerCase()
         if (!consumeLoginAttempt(request, identifier)) return null
-        const user = await prisma.user.findFirst({
-          where: {
-            active: true,
-            OR: [{ email: { equals: identifier, mode: "insensitive" } }, { nip: rawIdentifier }],
-          },
-          select: {
+        const select = {
             id: true,
             name: true,
             email: true,
@@ -42,8 +37,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             canEditSarpras: true,
             canViewEuks: true,
             canEditEuks: true,
-          },
-        })
+        } as const
+        const user = await prisma.user.findFirst({
+          where: { active: true, OR: [{ email: { equals: identifier, mode: "insensitive" } }, { nip: rawIdentifier }] },
+          select,
+        }) ?? (rawIdentifier ? await prisma.user.findFirst({
+          where: { active: true, isTeacher: false, linkedStudent: { active: true, nis: rawIdentifier } },
+          select,
+        }) : null)
         if (!user || !(await compare(parsed.data.password, user.passwordHash))) return null
         clearLoginFailures(request, identifier)
         return {

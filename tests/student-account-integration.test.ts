@@ -8,7 +8,7 @@ import { databaseSchema } from "../lib/database-config"
 import { provisionStudentAccount, StudentAccountError, type StudentAccountStore } from "../lib/student-account-service"
 
 // Real PostgreSQL persistence, injected temporary role template; never edit siswa.
-test("local provisioning transaction persists an own-only account and refuses empty template", { skip: process.env.SISMEPDA_DB_ROLE !== "local" }, async () => {
+test("local provisioning transaction persists an own-only NIS account and refuses extra grants", { skip: process.env.SISMEPDA_DB_ROLE !== "local" }, async () => {
   const url = process.env.DATABASE_URL!
   const parsed = new URL(url)
   assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname))
@@ -29,15 +29,16 @@ test("local provisioning transaction persists an own-only account and refuses em
     roleId = (await db.role.create({ data: { key: `temp_account_${suffix}`, name: "TEMP account own-only template", isProtected: false, permissions: { create: permissions.map(p => ({ permissionId: p.id })) } } })).id
     // Random validation-only input is not a real account password. No login,
     // vault, bcrypt or password output; the fixture's hash cannot authenticate.
-    const input = { studentId: student.id, email: `student-${suffix}@example.invalid`, password: randomUUID() }
+    const input = { studentId: student.id, password: randomUUID() }
     let hashCalls = 0
-    const provision = (empty: boolean) => db.$transaction(async tx => {
+    const provision = (invalid: boolean) => db.$transaction(async tx => {
       const store: StudentAccountStore = {
-        findStudent: id => tx.student.findUnique({ where: { id }, select: { id: true, name: true, active: true, gender: true, account: { select: { id: true } } } }),
+        findStudent: id => tx.student.findUnique({ where: { id }, select: { id: true, name: true, active: true, gender: true, nis: true, account: { select: { id: true } } } }),
         findEmail: email => tx.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } }, select: { id: true } }),
+        findLegacyLogin: identifier => tx.user.findFirst({ where: { nip: identifier }, select: { id: true } }),
         async findStudentRole() {
           const role = await tx.role.findUniqueOrThrow({ where: { id: roleId }, include: { permissions: { include: { permission: true } } } })
-          return { id: role.id, key: "siswa", isProtected: role.isProtected, permissionKeys: empty ? [] : role.permissions.map(p => p.permission.key) }
+          return { id: role.id, key: "siswa", isProtected: role.isProtected, permissionKeys: invalid ? ["euks.visits.read"] : role.permissions.map(p => p.permission.key) }
         },
         createAccount: ({ roleId, ...data }) => tx.user.create({ data: { ...data, rbacRoles: { create: { roleId } } }, select: { id: true, name: true, email: true, active: true, studentId: true } }),
         async audit(a) { await tx.auditLog.create({ data: { actorId: a.actorId, action: "RBAC_ACCOUNT_CREATED", entity: "UserAuthority", entityId: a.userId, summary: "Temporary local provisioning acceptance", targetUserId: a.userId } }) },
@@ -47,12 +48,13 @@ test("local provisioning transaction persists an own-only account and refuses em
     await assert.rejects(() => provision(true), (error: unknown) => error instanceof StudentAccountError && error.status === 503)
     assert.equal(hashCalls, 0); assert.equal(await db.user.count({ where: { studentId: student.id } }), 0)
     const account = await provision(false)
+    assert.equal(account.email, null)
     const saved = await db.user.findUniqueOrThrow({ where: { id: account.id }, include: { rbacRoles: { include: { role: { include: { permissions: { include: { permission: true } } } } } } } })
     assert.equal(saved.studentId, student.id); assert.equal(saved.isTeacher, false); assert.equal(saved.workbookSupervised, false); assert.equal(saved.nip, null); assert.equal(saved.active, true)
     assert.deepEqual(saved.rbacRoles.flatMap(r => r.role.permissions.map(p => p.permission.key)).sort(), [...keys].sort())
     await assert.rejects(() => provision(false), (error: unknown) => error instanceof StudentAccountError && error.status === 409)
     assert.equal(hashCalls, 1); assert.equal(await db.auditLog.count({ where: { actorId } }), 1)
-    console.log(JSON.stringify({ provisioning: { persisted: true, emptyTemplateStatus: 503, duplicateStatus: 409, exactOwnGrants: true }, before }))
+    console.log(JSON.stringify({ provisioning: { persisted: true, extraGrantStatus: 503, duplicateStatus: 409, exactOwnGrants: true }, before }))
   } finally {
     if (actorId) await db.auditLog.deleteMany({ where: { actorId } })
     if (classId) {

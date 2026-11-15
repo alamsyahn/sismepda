@@ -9,6 +9,7 @@ function fixture() {
   const store: StudentAccountStore = {
     async findStudent() { events.push("student"); return { id: "s1", name: "Siswi", active: true, gender: "PEREMPUAN", account: null } },
     async findEmail() { events.push("email"); return null },
+    async findLegacyLogin() { events.push("legacy-login"); return null },
     async findStudentRole() { events.push("role"); return { id: "r1", key: "siswa", isProtected: false, permissionKeys: ["euks.menstruation.read.own", "euks.menstruation.create.own", "euks.menstruation.update.own"] } },
     async createAccount(input) { events.push("create"); created.push(input); return { id: "u1", name: input.name, email: input.email, active: true, studentId: input.studentId } },
     async audit(input) { events.push("audit"); audits.push(input) },
@@ -25,6 +26,21 @@ test("creates only a new linked non-teacher account with canonical siswa role an
   assert.equal(JSON.stringify(f.audits).includes("bcrypt-hash"), false)
   assert.equal(JSON.stringify(f.audits).includes("chosen-passphrase"), false)
   assert.equal(JSON.stringify(result).includes("password"), false)
+})
+
+test("uses the linked NIS when email is empty and rejects a login collision", async () => {
+  const f = fixture()
+  f.store.findStudent = async () => ({ id: "s1", name: "Siswa Uji", active: true, gender: null, nis: "001234", account: null })
+  const input = { studentId: "s1", password: "chosen-passphrase" }
+  f.store.findLegacyLogin = async (nis) => {
+    assert.equal(nis, "001234")
+    return { id: "existing-teacher" }
+  }
+  await assert.rejects(provisionStudentAccount(input, "actor", f.store, async () => assert.fail("must not hash")), { status: 409 })
+  f.store.findLegacyLogin = async () => null
+  const account = await provisionStudentAccount(input, "actor", f.store, async () => "test-hash")
+  assert.equal(account.email, null)
+  assert.equal(f.created[0].nip, null)
 })
 
 for (const permissionKeys of [ ["students.read.all"], ["euks.menstruation.read.own", "accounts.credentials.manage"], ["euks.menstruation.read.own", "euks.menstruation.create.own", "euks.menstruation.update.own", "euks.visits.read"]]) {
