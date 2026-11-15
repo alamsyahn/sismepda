@@ -26,7 +26,9 @@ test("database adapter serializes creation and audits inside same transaction wi
   assert.match(sourceText, /mode: "insensitive"/)
   assert.match(sourceText, /rbacRoles:[\s\S]*create/)
   assert.doesNotMatch(sourceText, /user\.(update|upsert)/)
-  assert.doesNotMatch(sourceText, /nis:|nisn:|healthMeasurements:|birthDate:/)
+  const roster = sourceText.split("export async function createStudentAccount")[0]
+  assert.doesNotMatch(roster, /nis:|nisn:|healthMeasurements:|birthDate:/)
+  assert.doesNotMatch(sourceText, /nisn:|healthMeasurements:|birthDate:/)
 })
 test("dedicated page has a server permission gate and UI uses password controls without returning stored secrets", () => {
   assert.match(source("app/pengaturan/akun-siswa/page.tsx"), /requirePagePermission\("students\.accounts\.manage"\)/)

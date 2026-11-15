@@ -12,7 +12,12 @@ for (const extra of ["userId", "nip", "nis", "nisn", "role", "roleIds", "permiss
     assert.equal(studentAccountCreateSchema.safeParse({ ...valid, [extra]: "forged" }).success, false)
   })
 }
-for (const changes of [{ email: "" }, { email: "   " }, { email: "not-email" }, { password: "short" }, { password: "a".repeat(129) }, { studentId: "" }]) {
+test("accepts a missing or empty email for NIS login", () => {
+  for (const email of [undefined, ""]) {
+    assert.equal(studentAccountCreateSchema.parse({ ...valid, email }).email, null)
+  }
+})
+for (const changes of [{ email: "   " }, { email: "not-email" }, { password: "short" }, { password: "a".repeat(129) }, { studentId: "" }]) {
   test(`rejects invalid credential/link payload ${JSON.stringify(Object.keys(changes))}`, () => {
     assert.equal(studentAccountCreateSchema.safeParse({ ...valid, ...changes }).success, false)
   })
