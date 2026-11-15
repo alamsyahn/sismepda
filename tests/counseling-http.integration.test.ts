@@ -90,15 +90,51 @@ test("Curhat is account-private and replies require current counselor membership
     const reply = { requestId: randomUUID(), body: "Balasan uji", threadId: teacher.id }
     await call(counselor.cookie, 200, "", reply)
     assert.deepEqual((await call(teacher.cookie, 200)).messages.map((row: { fromSender: boolean }) => row.fromSender), [true, false])
+
+    const anonymous = { requestId: randomUUID(), body: "Pesan anonim uji", anonymous: true }
+    await call("", 401, "?mode=anonymous")
+    await call(teacher.cookie, 200, "", anonymous)
+    await call(teacher.cookie, 200, "", anonymous)
+    const privateInbox = await call(counselor.cookie, 200, "?mode=reply")
+    const { id: aliasId } = await db.anonymousCounselingThread.findUniqueOrThrow({ where: { ownerId: teacher.id } })
+    const privateThread = privateInbox.threads.find((row: { id: string }) => row.id === "anon:" + aliasId)
+    assert.match(privateThread.id, /^anon:[0-9a-f-]+$/)
+    assert.match(privateThread.name, /^Anonim · [0-9A-F]{8}$/)
+    assert.equal(privateThread.className, null)
+    assert.deepEqual(Object.keys(privateThread).sort(), ["anonymous", "className", "id", "name"])
+    assert.ok(!JSON.stringify(privateThread).includes(teacher.id))
+    const privateQuery = "?mode=reply&threadId=" + privateThread.id
+    const privateMessages = await call(counselor.cookie, 200, privateQuery)
+    assert.equal(privateMessages.messages.length, 1)
+    assert.deepEqual(Object.keys(privateMessages.messages[0]).sort(), ["body", "fromSender", "id"])
+    assert.equal(privateMessages.messages[0].body, anonymous.body)
+    assert.equal((await call(teacher.cookie, 200)).messages.length, 2)
+    assert.deepEqual((await call(reader.cookie, 200, "?mode=anonymous")).messages, [])
+    await call(reader.cookie, 403, privateQuery)
+    await call(reader.cookie, 403, "", { ...reply, threadId: privateThread.id })
+    await call(counselor.cookie, 404, privateQuery + "&before=" + own.messages[0].id)
+    await call(counselor.cookie, 200, "", { ...reply, requestId: randomUUID(), threadId: privateThread.id })
+    assert.deepEqual(await call(teacher.cookie, 200, "?mode=unread"), { named: true, anonymous: true })
+    const personalAnonymous = await call(teacher.cookie, 200, "?mode=anonymous")
+    assert.deepEqual(personalAnonymous.messages.map((row: { fromSender: boolean }) => row.fromSender), [true, false])
+    const mark = { action: "read", anonymous: true, through: personalAnonymous.messages[1].id }
+    await call(reader.cookie, 404, "", mark)
+    await call(teacher.cookie, 404, "", { ...mark, anonymous: false })
+    await call(teacher.cookie, 200, "", mark)
+    assert.deepEqual(await call(teacher.cookie, 200, "?mode=unread"), { named: true, anonymous: false })
+
     await db.userRole.delete({ where: { userId_roleId: { userId: counselor.id, roleId: role.id } } })
     await call(counselor.cookie, 403, thread)
     await call(counselor.cookie, 403, "", { ...reply, requestId: randomUUID() })
+    await call(counselor.cookie, 403, privateQuery)
     await call(counselor.cookie, 200)
   } finally {
     if (server.pid) {
       if (process.platform === "win32") spawnSync("taskkill", ["/PID", String(server.pid), "/T", "/F"], { stdio: "ignore" })
       else server.kill("SIGTERM")
     }
+    await db.anonymousCounselingMessage.deleteMany({ where: { authorId: { in: users } } })
+    await db.anonymousCounselingThread.deleteMany({ where: { ownerId: { in: users } } })
     await db.counselingMessage.deleteMany({ where: { authorId: { in: users } } })
     await db.user.deleteMany({ where: { id: { in: users } } })
     await db.$disconnect()

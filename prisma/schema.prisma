@@ -48,6 +48,8 @@ enum WorkbookItemStatus {
 model User {
   counselingMessages CounselingMessage[]
   counselingThreadMessages CounselingMessage[] @relation("CounselingThreadOwner")
+  anonymousCounselingThread AnonymousCounselingThread?
+  anonymousCounselingMessages AnonymousCounselingMessage[]
   ksCoaches KsCoach[]
   fitnessResults FitnessResult[] @relation("FitnessRecorder")
   studentId String? @unique
@@ -1755,10 +1757,34 @@ model CounselingMessage {
   authorId    String
   requestId   String
   fromSender  Boolean
+  readByParticipant Boolean @default(true)
   body        String
   createdAt   DateTime @default(now())
   participant User      @relation("CounselingThreadOwner", fields: [participantId], references: [id], onDelete: Restrict)
   author      User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@unique([authorId, requestId])
+  @@index([participantId, createdAt, id])
+}
+
+model AnonymousCounselingThread {
+  id String @id @default(uuid()) @db.Uuid
+  ownerId String @unique
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  messages AnonymousCounselingMessage[]
+}
+
+model AnonymousCounselingMessage {
+  id String @id @default(cuid())
+  participantId String @db.Uuid
+  authorId String
+  requestId String
+  fromSender Boolean
+  readByParticipant Boolean @default(true)
+  body String
+  createdAt DateTime @default(now())
+  participant AnonymousCounselingThread @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  author User @relation(fields: [authorId], references: [id], onDelete: Restrict)
 
   @@unique([authorId, requestId])
   @@index([participantId, createdAt, id])
