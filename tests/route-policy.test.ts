@@ -13,6 +13,13 @@ test("logo publik hanya untuk GET", () => {
   assert.equal(isPublicRoute("/app-logo", "DELETE"), false)
 })
 
+test("GET profil portal meneruskan pemeriksaan izin ke handler", () => {
+  const profile = "/api/e-uks/portal/profile"
+  assert.equal(isPublicRoute(profile, "GET"), true)
+  assert.equal(isPublicRoute(profile, "POST"), false)
+  assert.equal(isPublicRoute(profile + "/officers", "GET"), false)
+})
+
 test("permukaan tak dikenal fail closed sebagai terautentikasi", () => {
   for (const path of ["/", "/e-uks", "/fitur-baru", "/api/apa-pun", "/siswa/123"]) {
     assert.equal(routePolicy(path), "authenticated", `${path} tidak boleh publik`)

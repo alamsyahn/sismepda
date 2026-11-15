@@ -27,6 +27,11 @@ const PUBLIC_ROUTES: readonly { path: string; method?: string; reason: string }[
     reason: "Handler mengotorisasi sendiri agar klien E-UKS menerima status JSON dan preflight lintas origin.",
   })),
   {
+    path: "/api/e-uks/portal/profile",
+    method: "GET",
+    reason: "Handler memeriksa euks.content.read dan mengirim status JSON lintas origin.",
+  },
+  {
     path: "/app-logo",
     method: "GET",
     reason:
