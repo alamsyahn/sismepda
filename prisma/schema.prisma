@@ -47,6 +47,7 @@ enum WorkbookItemStatus {
 
 model User {
   counselingMessages CounselingMessage[]
+  counselingThreadMessages CounselingMessage[] @relation("CounselingThreadOwner")
   ksCoaches KsCoach[]
   fitnessResults FitnessResult[] @relation("FitnessRecorder")
   studentId String? @unique
@@ -182,7 +183,6 @@ model SchoolClass {
 }
 
 model Student {
-  counselingMessages CounselingMessage[]
   scanCredentials StudentQrCredential[]
   scanEvents ScanEvent[]
   ksMembers KsMember[]
@@ -1751,15 +1751,15 @@ model KsEvidence {
 
 model CounselingMessage {
   id          String   @id @default(cuid())
-  studentId   String
+  participantId String
   authorId    String
   requestId   String
-  fromStudent Boolean
+  fromSender  Boolean
   body        String
   createdAt   DateTime @default(now())
-  student     Student  @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  participant User      @relation("CounselingThreadOwner", fields: [participantId], references: [id], onDelete: Restrict)
   author      User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
 
   @@unique([authorId, requestId])
-  @@index([studentId, createdAt, id])
+  @@index([participantId, createdAt, id])
 }
