@@ -71,7 +71,7 @@ export function ScanCards({ schoolName, schoolLogoUrl }: { schoolName: string; s
       const issued = await Promise.all(
         data.cards.map(async (card: Omit<Card, "image">) => ({
           ...card,
-          image: await toDataURL(card.code, { width: 360, margin: 4, errorCorrectionLevel: "M" }),
+          image: await toDataURL(card.code, { scale: 12, margin: 4, errorCorrectionLevel: "M" }),
         })),
       )
       setCards((prev) => [...prev.filter((c) => !issued.some((i) => i.student.id === c.student.id)), ...issued])

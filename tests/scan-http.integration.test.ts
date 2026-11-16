@@ -177,13 +177,14 @@ test(
       assert.equal(printed.cards.length, 2)
       const existingPrint = printed.cards.find((c: { student: { id: string } }) => c.student.id === a.id)
       assert.equal(existingPrint.credentialId, issued.cards[0].credentialId)
-      assert.ok(existingPrint.code.startsWith("SP2:"))
+      assert.match(existingPrint.code, /^SP3:[A-Z0-9]{25}$/)
+      assert.equal(existingPrint.code, issued.cards[0].code)
       assert.equal(await db.studentQrCredential.count({ where: { studentId: a.id } }), 1)
       const codeA = issued.cards[0].code,
         codeB = printed.cards.find((c: { student: { id: string } }) => c.student.id === b.id).code
-      assert.notEqual(
-        (await db.studentQrCredential.findUniqueOrThrow({ where: { tokenHash: qrHash(codeA) } })).tokenHash,
-        codeA,
+      assert.equal(
+        (await db.studentQrCredential.findUniqueOrThrow({ where: { id: issued.cards[0].credentialId } })).shortTokenHash,
+        qrHash(codeA),
       )
       const command = { requestId: randomUUID(), mode: "attendance", source: "USB", code: codeA }
       await request("cross origin", operator.cookie, 403, "/api/scan", command, "POST", "https://untrusted.example")

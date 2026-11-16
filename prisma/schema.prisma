@@ -476,6 +476,7 @@ model StudentQrCredential {
   id String @id @default(cuid())
   studentId String
   tokenHash String @unique
+  shortTokenHash String? @unique
   issuedAt DateTime @default(now())
   revokedAt DateTime?
   issuedById String

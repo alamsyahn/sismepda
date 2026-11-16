@@ -28,25 +28,26 @@ missing credentials. Existing active credentials are retained, including cards
 issued before this feature. **Terbitkan QR yang belum ada** still skips existing
 cards; **Ganti QR terpilih** requires explicit confirmation and revokes old cards.
 
-The QR is `SP1:` plus 24 cryptographically random bytes in base64url, linked to
-`Student.id`, not NIS/NISN or a public profile URL. Only its SHA-256 hash is stored
-in `StudentQrCredential`. A partial unique index permits one active credential per
-student. Rotation is serialized, checks the expected current credential, and
-revokes the prior token. It writes an audit event without token material. Moving
+New cards and reprints use `SP3:` plus a 25-character uppercase alphanumeric
+token derived from a credential-specific value with a 128-bit HMAC output.
+The QR contains no student identifier. Its SHA-256 hash is stored in
+`StudentQrCredential.shortTokenHash`. A partial unique index permits one active
+credential per student. Rotation is serialized, checks the expected current
+credential, and revokes all QR formats linked to that row. It writes an audit
+event without token material. Moving
 class or correcting a number does not require reissuing the QR. Deactivation
 prevents new scans. A static QR can be copied: scanning is an authenticated,
 supervised operator activity and displays name, class and identifier for checking;
 it is not student self-attendance or identity proof on its own.
 
-For reprints, `SP2:<tokenHash>:<HMAC-SHA256>` signs the existing credential hash
-with `AUTH_SECRET` (fallback `NEXTAUTH_SECRET`) and a domain-specific prefix.
-No plaintext token storage or schema migration is needed. SP1 and SP2 resolve
-to the same database row, share the same scan/rotation lock, and are both
-invalidated by revocation. Signatures are checked in constant time before lookup;
-unsigned hashes are never accepted. Rotating the authentication secret invalidates
-SP2 prints made with the old key; SP1 originals are unaffected. Printing requires
-the same two permissions and origin check as issuing. Reprint-only requests do
-not create issuance audit entries; mixed requests audit only new credentials.
+Legacy `SP1:` originals and signed `SP2:` cards still scan against the same row.
+The first compact reprint adds the short hash to that row. Reprinting requires
+the same `AUTH_SECRET` (fallback `NEXTAUTH_SECRET`) that generated the short code.
+If the secret changes, registered `SP3:` prints still scan, but reprinting an
+existing short code requires the original key or explicit card replacement.
+Legacy `SP2:` signatures require the original signing key. Printing requires the
+same two permissions and origin check as issuing. Reprint-only requests do not
+create issuance audit entries; mixed requests audit only new credentials.
 
 Cards measure 90 × 55 mm and follow the navy/blue school design, using the app
 logo, school name, student name, NIPD / NIS and class. The header title and school
@@ -57,9 +58,8 @@ It is generated locally using `bwip-js` (Code 128 encoder), with a ten-module wh
 zone on both sides, without an external barcode service. Missing or non-numeric
 NIS displays an unavailable message instead of inventing a value or substituting
 NISN. The barcode is an identifier for compatible external services; `/scan`
-attendance/UKS continues to require the existing SP1/SP2 QR credential. Adding
-the barcode does not rotate credentials or change stored student data/schema.
-QR fields include a four-module quiet zone and retain their 24 mm image size.
+attendance/UKS requires a QR credential. The compact QR uses version 2 with
+error correction M and a four-module quiet zone within a 20 mm square.
 Print settings offer A4 (default), A3, F4 (210 × 330 mm), custom
 dimensions in mm, and portrait/landscape orientation. The preview paginates
 complete cards with 5 mm cutting gaps and 8 mm page margins (8 cards on A4

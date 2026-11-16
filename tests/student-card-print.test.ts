@@ -1,19 +1,27 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import { createHmac } from "node:crypto"
+import { create as createQr } from "qrcode"
 import { cardPageLayout, defaultCardPrintOptions, studentCardsPrintHtml, studentCardSvg, studentNisBarcode } from "../lib/student-card-print"
-import { printableStudentQr, qrHash, studentQrTokenHash } from "../lib/student-qr-code"
+import { qrHash, shortStudentQr, studentQrTokenHash } from "../lib/student-qr-code"
 import type { ScanStudent } from "../lib/scan"
 
-test("printable credentials resolve to the original hash without knowing or changing the old QR", () => {
+test("compact prints fit in version 2 and signed legacy cards remain verifiable", () => {
   const previous = process.env.AUTH_SECRET
   process.env.AUTH_SECRET = "isolated-card-print-test-secret"
   try {
     const original = "SP1:" + "a".repeat(32)
     const hash = qrHash(original)
-    const printed = printableStudentQr(hash)
+    const signed = createHmac("sha256", process.env.AUTH_SECRET).update(`sismepda:student-card:v2:${hash}`).digest("base64url")
+    const printed = `SP2:${hash}:${signed}`
+    const compact = shortStudentQr(hash)
+    assert.match(compact, /^SP3:[0-9A-Z]{25}$/)
+    assert.equal(createQr(compact, { errorCorrectionLevel: "M" }).modules.size, 25)
+    assert.equal(shortStudentQr(hash), compact)
+    assert.notEqual(shortStudentQr("b".repeat(64)), compact)
+    assert.equal(studentQrTokenHash(compact), qrHash(compact))
     assert.equal(studentQrTokenHash(original), hash)
     assert.equal(studentQrTokenHash(printed), hash)
-    assert.equal(printableStudentQr(hash), printed)
     assert.equal(studentQrTokenHash(printed.replace(hash, "b".repeat(64))), null)
     const forged = printed.slice(0, 69) + (printed[69] === "A" ? "B" : "A") + printed.slice(70)
     assert.equal(studentQrTokenHash(forged), null)
@@ -21,6 +29,7 @@ test("printable credentials resolve to the original hash without knowing or chan
     assert.equal(studentQrTokenHash(hash), null)
     process.env.AUTH_SECRET = "different-secret"
     assert.equal(studentQrTokenHash(printed), null)
+    assert.equal(studentQrTokenHash(compact), qrHash(compact))
   } finally {
     if (previous === undefined) delete process.env.AUTH_SECRET
     else process.env.AUTH_SECRET = previous
@@ -61,6 +70,7 @@ test("NIPD barcodes preserve five digits and leading zeroes without changing QR 
   const qr = "data:image/png;base64,UNCHANGED"
   const svg = studentCardSvg(student, qr, "SMPN 2 BLITAR", "")
   assert.ok(svg.includes(`href="${qr}"`))
+  assert.ok(svg.includes('width="20" height="20"'))
   assert.ok(svg.includes('aria-label="Barcode NIPD / NIS 00123"'))
   assert.ok(svg.includes('>00123</text>'))
   assert.ok(!svg.includes(student.nisn!))

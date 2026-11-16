@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto"
-import { qrHash, printableStudentQr, studentQrTokenHash } from "@/lib/student-qr-code"
+import { qrHash, shortStudentQr, studentQrTokenHash } from "@/lib/student-qr-code"
 import type { Prisma, PrismaClient } from "@/app/generated/prisma/client"
 import { ApiError } from "@/lib/api-errors"
 import { lockAttendanceDay } from "@/lib/attendance-lock"
@@ -126,7 +126,7 @@ export async function executeScan(
       if (tokenHash) await lock(tx, `qr-token:${tokenHash}`)
       const credential = tokenHash
         ? await tx.studentQrCredential.findUnique({
-            where: { tokenHash },
+            where: command.code.startsWith("SP3:") ? { shortTokenHash: tokenHash } : { tokenHash },
             select: { studentId: true, revokedAt: true },
           })
         : null
@@ -265,9 +265,16 @@ export async function issueScanCards(
         const current = await tx.studentQrCredential.findFirst({ where: { studentId: student.id, revokedAt: null } })
         if (current && !replace) {
           if (includeExisting) {
+            const code = shortStudentQr(current.tokenHash)
+            const shortTokenHash = qrHash(code)
+            if (!current.shortTokenHash) {
+              await tx.studentQrCredential.update({ where: { id: current.id }, data: { shortTokenHash } })
+            } else if (current.shortTokenHash !== shortTokenHash) {
+              throw new ApiError(409, "Kunci cetak kartu berubah. Hubungi administrator sebelum mencetak ulang.")
+            }
             cards.push({
               student: projectScanStudent(student),
-              code: printableStudentQr(current.tokenHash),
+              code,
               credentialId: current.id,
             })
           }
@@ -277,11 +284,13 @@ export async function issueScanCards(
           throw new ApiError(409, "Kartu berubah pada perangkat lain. Muat ulang daftar siswa.")
         if (current) {
           await lock(tx, `qr-token:${current.tokenHash}`)
+          if (current.shortTokenHash) await lock(tx, `qr-token:${current.shortTokenHash}`)
           await tx.studentQrCredential.update({ where: { id: current.id }, data: { revokedAt: new Date() } })
         }
-        const code = `SP1:${randomBytes(24).toString("base64url")}`
+        const tokenHash = randomBytes(32).toString("hex")
+        const code = shortStudentQr(tokenHash)
         const credential = await tx.studentQrCredential.create({
-          data: { studentId: student.id, tokenHash: qrHash(code), issuedById: actorId },
+          data: { studentId: student.id, tokenHash, shortTokenHash: qrHash(code), issuedById: actorId },
         })
         cards.push({ student: projectScanStudent(student), code, credentialId: credential.id })
         issuedIds.push(credential.id)

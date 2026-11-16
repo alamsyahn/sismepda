@@ -1,12 +1,12 @@
 import "dotenv/config"
 import test from "node:test"
 import assert from "node:assert/strict"
-import { randomUUID } from "node:crypto"
+import { createHmac, randomUUID } from "node:crypto"
 import { spawnSync } from "node:child_process"
 import { PrismaClient } from "../app/generated/prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { databaseSchema } from "../lib/database-config"
-import { executeScan, issueScanCards, saveScanVisit, cancelScanVisit } from "../lib/server-scan"
+import { executeScan, issueScanCards, saveScanVisit, cancelScanVisit, qrHash } from "../lib/server-scan"
 import { lockAttendanceDay } from "../lib/attendance-lock"
 import { toPrismaDate, requireSchoolDate } from "../lib/school-date"
 
@@ -54,13 +54,17 @@ test(
         autoLock: true,
         now: new Date("2026-11-02T00:00:00Z"),
       }
-      const card = (
-        await issueScanCards(db, actor.id, [{ studentId: student.id, expectedCredentialId: null }], false)
-      )[0]
-      assert.ok(card.code.startsWith("SP1:"))
-      assert.notEqual((await db.studentQrCredential.findFirstOrThrow()).tokenHash, card.code)
+      const legacyCode = `SP1:${"a".repeat(32)}`
+      const legacyTokenHash = qrHash(legacyCode)
+      const originalCredential = await db.studentQrCredential.create({
+        data: { studentId: student.id, issuedById: actor.id, tokenHash: legacyTokenHash },
+      })
+      const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET
+      assert.ok(secret)
+      const signed = createHmac("sha256", secret).update(`sismepda:student-card:v2:${legacyTokenHash}`).digest("base64url")
+      const legacyReprint = `SP2:${legacyTokenHash}:${signed}`
+      const card = { code: legacyCode, credentialId: originalCredential.id }
       const newStudent = await db.student.create({ data: { name: "Mixed Print Student", nis: "0000124", classId: schoolClass.id } })
-      const originalCredential = await db.studentQrCredential.findUniqueOrThrow({ where: { id: card.credentialId } })
       const auditBeforePrint = await db.auditLog.count({ where: { action: "STUDENT_QR_ISSUED" } })
       const printed = await issueScanCards(db, actor.id, [
         { studentId: student.id, expectedCredentialId: card.credentialId },
@@ -69,11 +73,16 @@ test(
       assert.equal(printed.length, 2)
       const reprinted = printed.find((c) => c.student.id === student.id)!
       assert.equal(reprinted.credentialId, card.credentialId)
-      assert.ok(reprinted.code.startsWith("SP2:"))
-      assert.deepEqual(await db.studentQrCredential.findUniqueOrThrow({ where: { id: card.credentialId } }), originalCredential)
+      assert.match(reprinted.code, /^SP3:[A-Z0-9]{25}$/)
+      assert.match(printed.find((c) => c.student.id === newStudent.id)!.code, /^SP3:[A-Z0-9]{25}$/)
+      assert.deepEqual(await db.studentQrCredential.findUniqueOrThrow({ where: { id: card.credentialId } }), {
+        ...originalCredential,
+        shortTokenHash: qrHash(reprinted.code),
+      })
       assert.equal(await db.auditLog.count({ where: { action: "STUDENT_QR_ISSUED" } }), auditBeforePrint + 1)
       const auditAfterPrint = await db.auditLog.count()
-      await issueScanCards(db, actor.id, [{ studentId: student.id, expectedCredentialId: null }], false, true)
+      const [reprintAgain] = await issueScanCards(db, actor.id, [{ studentId: student.id, expectedCredentialId: null }], false, true)
+      assert.equal(reprintAgain.code, reprinted.code)
       assert.equal(await db.auditLog.count(), auditAfterPrint)
       assert.equal(await db.studentQrCredential.count({ where: { studentId: student.id } }), 1)
       const make = (extra = {}) => ({
@@ -89,7 +98,7 @@ test(
       assert.equal(await db.scanEvent.count(), 1)
       assert.equal(await db.attendance.count(), 1)
       assert.equal((await executeScan(db, scanner, make({ code: reprinted.code }), setting)).outcome, "REPEAT")
-      const forgedPrint = reprinted.code.slice(0, 69) + (reprinted.code[69] === "A" ? "B" : "A") + reprinted.code.slice(70)
+      const forgedPrint = `SP3:${reprinted.code[4] === "A" ? "B" : "A"}${reprinted.code.slice(5)}`
       assert.equal((await executeScan(db, scanner, make({ code: forgedPrint }), setting)).outcome, "UNKNOWN")
       const physicalScans = await Promise.all([db, db2].map((client) => executeScan(client, scanner, make(), setting)))
       assert.deepEqual(
@@ -98,6 +107,7 @@ test(
       )
       assert.equal(await db.scanEvent.count(), 5)
       assert.equal(await db.attendance.count(), 1)
+      assert.equal((await executeScan(db, scanner, make({ code: legacyReprint }), setting)).outcome, "REPEAT")
       await assert.rejects(() => executeScan(db, scanner, { ...command, source: "CAMERA" }, setting), /permintaan/)
       await assert.rejects(
         () => executeScan(db, { ...scanner, where: { homeroomUserId: "other" } }, make(), setting),
@@ -120,6 +130,7 @@ test(
         await issueScanCards(db, actor.id, [{ studentId: student.id, expectedCredentialId: card.credentialId }], true)
       )[0]
       assert.equal((await executeScan(db, scanner, make(), setting)).outcome, "UNKNOWN")
+      assert.equal((await executeScan(db, scanner, make({ code: legacyReprint }), setting)).outcome, "UNKNOWN")
       assert.equal((await executeScan(db, scanner, make({ code: reprinted.code }), setting)).outcome, "UNKNOWN")
       assert.equal(await db.studentQrCredential.count({ where: { studentId: student.id, revokedAt: null } }), 1)
       await assert.rejects(
