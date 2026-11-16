@@ -180,10 +180,11 @@ test("template: setiap role bawaan hanya memakai key registry", () => {
   assert.equal(new Set(ROLE_TEMPLATES.map((t) => t.key)).size, ROLE_TEMPLATES.length)
 })
 
-test("template: Guru tidak otomatis BOS/Sarpras/E-UKS/supervisi/WhatsApp", () => {
+test("template: Guru hanya mendapat akses E-UKS untuk dokumen yang dibagikan", () => {
   const guruT = getRoleTemplate("guru")!
+  assert.deepEqual(guruT.permissionKeys.filter(key => key.startsWith("euks.")), ["euks.shared_documents.read"])
   for (const key of guruT.permissionKeys) {
-    assert.ok(!/^(bos|sarpras|euks|workbook\.supervision|reports\.whatsapp)\./.test(key), key)
+    assert.ok(!/^(bos|sarpras|workbook\.supervision|reports\.whatsapp)\./.test(key), key)
   }
 })
 
@@ -203,7 +204,8 @@ test("template: Pengawas & Kepala Sekolah tanpa write/export/health; Kepala Seko
 test("template: Pengurus UKS/BOS/Sarpras tidak mendapat delete/config destruktif", () => {
   const uks = getRoleTemplate("pengurus_uks")!.permissionKeys
   assert.ok(uks.includes("euks.visits.create") && uks.includes("euks.complaint_options.read"))
-  assert.ok(!uks.some((k) => k.endsWith(".manage")), "profil/pengurus/fasilitas/opsi keluhan bukan bawaan")
+  assert.ok(uks.includes("euks.documents.read"))
+  assert.deepEqual(uks.filter(key => key.endsWith(".manage")), ["euks.documents.manage"])
   const bos = getRoleTemplate("pengurus_bos")!.permissionKeys
   // bos.entries.create menutup POST /api/bos/categories di HEAD (hak bos.create yang sama).
   assert.deepEqual([...bos].sort(), ["bos.categories.create", "bos.entries.create", "bos.entries.update", "bos.read"])

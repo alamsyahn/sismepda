@@ -526,6 +526,9 @@ export const PERMISSIONS: readonly PermissionDefinition[] = [
   def({ key: "sarpras.photos.delete", resource: "sarpras.photos", action: "delete", module: "sarpras", label: "Hapus foto Sarpras", dependsOn: ["sarpras.read", "sarpras.photos.read"] }),
 
   // --- euks ---------------------------------------------------------------
+  def({ key: "euks.documents.read", resource: "euks.documents", action: "read", module: "euks", label: "Lihat semua dokumen UKS", sensitive: true }),
+  def({ key: "euks.shared_documents.read", resource: "euks.shared_documents", action: "read", module: "euks", label: "Lihat dokumen UKS yang dibagikan" }),
+  def({ key: "euks.documents.manage", resource: "euks.documents", action: "manage", module: "euks", label: "Kelola dokumen UKS", dependsOn: ["euks.documents.read"], sensitive: true }),
   def({ key: "euks.content.read", resource: "euks.content", action: "read", module: "euks", label: "Lihat konten profil E-UKS" }),
   def({ key: "euks.overview.read", resource: "euks.overview", action: "read", module: "euks", label: "Lihat ringkasan kesehatan E-UKS" }),
   def({ key: "euks.visits.read", resource: "euks.visits", action: "read", module: "euks", label: "Lihat kunjungan UKS" }),

@@ -1,3 +1,4 @@
+import { EUKS_DOCUMENT_READ_PERMISSIONS } from "@/lib/euks-documents"
 import { SCHEDULE_PAGE_PERMISSIONS } from "@/lib/schedule-authorization"
 import {
   LayoutDashboard,
@@ -311,6 +312,13 @@ export const mainNav: NavEntry[] = [
         description: "Profil, pengurus, fasilitas, dan tren kesehatan UKS",
         permissions: ["euks.content.read", "euks.overview.read"],
         match: "exact",
+      },
+      {
+        title: "Dokumen UKS",
+        href: "/e-uks/dokumen",
+        icon: FileDown,
+        description: "Arsip SK, program kerja, anggaran, dan laporan UKS",
+        permissions: EUKS_DOCUMENT_READ_PERMISSIONS,
       },
       {
         title: "Pantauan Kesehatan Kelas",

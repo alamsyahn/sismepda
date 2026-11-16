@@ -50,7 +50,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     key: "guru",
     name: "Guru",
     description:
-      "Mengelola absensi, profil, dan pelanggaran siswa pada kelas binaannya. Tidak otomatis memperoleh BOS, Sarpras, E-UKS, supervisi, maupun laporan WhatsApp sekolah.",
+      "Mengelola absensi, profil, dan pelanggaran siswa pada kelas binaannya. Dapat membaca dokumen UKS yang dibagikan. Pengelolaan modul khusus memerlukan izin tambahan.",
     isSystem: true,
     isProtected: false,
     permissionKeys: [
@@ -63,6 +63,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "students.violations.read.assigned_classes",
       "students.violations.create.assigned_classes",
       "teachers.directory.read",
+      "euks.shared_documents.read",
       "workbook.links.read.own",
       "workbook.links.update.own",
       // Jadwal: hanya kemampuan MELIHAT. Jadwal guru lain, pengelolaan,
@@ -111,6 +112,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     isProtected: false,
     permissionKeys: [
       "euks.content.read",
+      "euks.documents.read",
+      "euks.documents.manage",
       "euks.overview.read",
       "euks.visits.read",
       "euks.visits.create",

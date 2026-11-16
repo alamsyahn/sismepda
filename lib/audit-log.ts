@@ -15,6 +15,7 @@ export type AuditEntity =
   | "SarprasItemType"
   | "SarprasItem"
   | "EuksVisit"
+  | "EuksDocument"
   | "StudentHealthMeasurement"
   | "Attendance"
   | "EuksProfile"
@@ -49,6 +50,9 @@ export type AuditEntity =
   | RbacAuditEntity
 
 export type AuditAction =
+  | "EUKS_DOCUMENT_CREATED"
+  | "EUKS_DOCUMENT_UPDATED"
+  | "EUKS_DOCUMENT_DELETED"
   | "STUDENT_QR_ISSUED"
   | "WORKBOOK_LINK_UPDATED"
   | "WORKBOOK_ITEM_STATUS_CHANGED"
