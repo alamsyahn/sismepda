@@ -5,11 +5,12 @@ import { randomUUID } from "node:crypto"
 import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { createServer } from "node:net"
 import { encode } from "next-auth/jwt"
+import ExcelJS from "exceljs"
 import { PrismaClient } from "../app/generated/prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { databaseSchema } from "../lib/database-config"
 import { qrHash } from "../lib/server-scan"
-import { todayInSchoolTimeZone, toPrismaDate } from "../lib/school-date"
+import { addSchoolDays, requireSchoolDate, todayInSchoolTimeZone, toPrismaDate } from "../lib/school-date"
 
 test(
   "local HTTP scan: DB RBAC, class isolation, CSRF, replay, UKS notification permission, stale roster and live revocation",
@@ -135,6 +136,7 @@ test(
         "scan.attendance.use",
         "attendance.write.assigned_classes",
         "attendance.read.assigned_classes",
+        "attendance.export.assigned_classes",
         "scan.history.read",
         "scan.uks.use",
         "euks.visits.create",
@@ -223,6 +225,31 @@ test(
       assert.match(reportHtml, /Rekap Ibadah/)
       assert.match(reportHtml, /Ikut dan lupa scan/)
       assert.doesNotMatch(reportHtml, /TEMP Scan Raka/)
+      assert.match(reportHtml, /Ekspor Excel/)
+      const exportTo = requireSchoolDate(worship.schoolDate)
+      const exportFrom = addSchoolDays(exportTo, -179)
+      const exportPath = (classId: string, from = exportFrom, to = exportTo) =>
+        `/api/rekap-ibadah/export?${new URLSearchParams({ classId, from, to })}`
+      await request("worship export requires export grant", worshipScanner.cookie, 403, exportPath(ownClass.id))
+      await request("worship export respects class scope", operator.cookie, 404, exportPath(otherClass.id))
+      await request("worship export rejects future dates", operator.cookie, 400,
+        exportPath(ownClass.id, exportFrom, addSchoolDays(exportTo, 1)))
+      const downloaded = await fetch(origin + exportPath(ownClass.id), {
+        headers: { Cookie: operator.cookie },
+        signal: AbortSignal.timeout(45000),
+      })
+      assert.equal(downloaded.status, 200)
+      assert.match(downloaded.headers.get("content-disposition") ?? "", /attachment; filename="rekap-ibadah-.*\.xlsx"/)
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(await downloaded.arrayBuffer())
+      const summary = workbook.getWorksheet("Ringkasan")!
+      const daily = workbook.getWorksheet("Rincian Harian")!
+      assert.equal(summary.getCell("B5").value, a.name)
+      assert.equal(summary.getCell("C5").value, 1)
+      assert.equal(summary.rowCount, 5)
+      assert.equal(daily.getCell("D5").value, "Hadir")
+      assert.equal(daily.getCell("E5").value, "Ikut")
+      assert.equal(daily.getCell("G5").value, "Manual")
       await request("mismatched replay", operator.cookie, 409, "/api/scan", { ...command, source: "CAMERA" })
       const search = await request(
         "scoped search",

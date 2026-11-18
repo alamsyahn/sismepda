@@ -3,6 +3,8 @@ import { ScanLine } from "lucide-react"
 import { PageContainer, PageHeading } from "@/components/layout/page-container"
 import { Button } from "@/components/ui/button"
 import { WorshipReport } from "@/components/ibadah/worship-report"
+import { WorshipExport } from "@/components/ibadah/worship-export"
+import { semesterStartValue } from "@/lib/attendance-trend"
 import { sortClasses } from "@/lib/class-order"
 import { requirePageAnyPermission } from "@/lib/page-guards"
 import { prisma } from "@/lib/prisma"
@@ -20,10 +22,11 @@ export default async function RekapIbadahPage({
   searchParams: Promise<{ date?: string; classId?: string }>
 }) {
   await requirePageAnyPermission(WORSHIP_REPORT_PERMISSIONS)
-  const [params, scope, writeScope, timeZone, { grants }] = await Promise.all([
+  const [params, scope, writeScope, exportScope, timeZone, { grants }] = await Promise.all([
     searchParams,
     requireClassScopeFor("attendance", "read"),
     getClassScopeFor("attendance", "write"),
+    getClassScopeFor("attendance", "export"),
     readSchoolTimeZone(),
     getAuthorizationContext(),
   ])
@@ -37,14 +40,31 @@ export default async function RekapIbadahPage({
   const selected = classes.find((schoolClass) => schoolClass.id === params.classId) ?? classes[0]
   const rows = selected ? await readWorshipRows(prisma, selected.id, date) : []
   const canScan = SCAN_PAGE_PERMISSIONS.some((permission) => grants.has(permission))
+  const exportClasses = exportScope
+    ? classes.filter((schoolClass) => classInScope(exportScope, schoolClass)).map(({ id, name }) => ({ id, name }))
+    : []
+  const semesterSetting = exportClasses.length ? await prisma.schoolSetting.findUnique({
+    where: { id: "default" },
+    select: { academicYear: true, semester: true },
+  }) : null
+  const semesterStart = semesterSetting ? parseSchoolDate(semesterStartValue(semesterSetting)) : null
 
   return (
     <PageContainer>
       <PageHeading title="Rekap Ibadah" description="Kehadiran salat Zuhur dan absensi sekolah per kelas."
-        action={canScan && (
-          <Button variant="outline" render={<Link href="/scan?mode=worship" />}>
-            <ScanLine /> Scan Ibadah Zuhur
-          </Button>
+        action={(canScan || exportClasses.length > 0) && (
+          <div className="flex flex-wrap gap-2">
+            {exportClasses.length > 0 && (
+              <WorshipExport key={`${selected?.id}:${date}`} classes={exportClasses}
+                classId={selected?.id} date={date} today={today}
+                semesterStart={semesterStart && semesterStart <= today ? semesterStart : null} />
+            )}
+            {canScan && (
+              <Button variant="outline" render={<Link href="/scan?mode=worship" />}>
+                <ScanLine /> Scan Ibadah Zuhur
+              </Button>
+            )}
+          </div>
         )}
       />
       {selected ? (

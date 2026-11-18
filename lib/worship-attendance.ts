@@ -1,6 +1,7 @@
 import { z } from "zod"
 
 export const WORSHIP_REPORT_PERMISSIONS = ["attendance.read.assigned_classes", "attendance.read.all"] as const
+export const WORSHIP_EXPORT_MAX_DAYS = 366
 
 export const worshipStatus = z.enum(["IKUT", "DISPENSASI", "BELUM"])
 export const WORSHIP_STATUS_LABELS: Record<z.infer<typeof worshipStatus>, string> = {
