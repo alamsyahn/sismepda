@@ -5,13 +5,15 @@ import { scanReadAccess } from "@/lib/server-scan-access"
 import { parseSchoolDate, toPrismaDate, todayInSchoolTimeZone } from "@/lib/school-date"
 import { readSchoolTimeZone } from "@/lib/server-school-time-zone"
 import { requirePermission } from "@/lib/rbac-access"
-import { scanMode } from "@/lib/scan"
+import { z } from "zod"
+
+const historyMode = z.enum(["attendance", "uks"])
 
 export async function GET(request: Request) {
   try {
     await requirePermission("scan.history.read")
     const params = new URL(request.url).searchParams
-    const mode = scanMode.safeParse(params.get("mode"))
+    const mode = historyMode.safeParse(params.get("mode"))
     if (!mode.success) throw new ApiError(400, "Tujuan scan tidak valid")
     const { context, where } = await scanReadAccess(mode.data)
     const date = params.has("date")

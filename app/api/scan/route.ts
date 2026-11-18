@@ -12,6 +12,7 @@ import { readHolidayFor } from "@/lib/server-holidays"
 import { todayInSchoolTimeZone } from "@/lib/school-date"
 import { notifyAttendanceCompletion } from "@/lib/server-whatsapp-worker-client"
 import { appLogoUrl } from "@/lib/site-branding"
+import { WORSHIP_REPORT_PERMISSIONS } from "@/lib/worship-attendance"
 
 export const dynamic = "force-dynamic"
 const scanJson = (data: unknown) => NextResponse.json(data, { headers: { "Cache-Control": "no-store" } })
@@ -42,6 +43,7 @@ export async function GET() {
       schoolLogoUrl: appLogoUrl(school?.appLogoUpdatedAt),
       historyAttendance,
       historyUks,
+      worshipReport: WORSHIP_REPORT_PERMISSIONS.some((permission) => grants.has(permission)),
       notify: uks && grants.has("euks.visits.notify"),
       complaints: complaints.map((c) => c.label),
     })
@@ -52,12 +54,18 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     assertScanOrigin(request)
-    await requireAnyPermission(["scan.attendance.use", "scan.uks.use"])
+    await requireAnyPermission(SCAN_PAGE_PERMISSIONS)
     const parsed = scanInput.safeParse(await request.json())
     if (!parsed.success) throw new ApiError(400, "Data scan tidak valid")
     const { context, where } = await scanWriteAccess(parsed.data.mode)
     const timeZone = await readSchoolTimeZone(),
       now = new Date()
+    if (parsed.data.mode === "worship") {
+      const result = await executeScan(prisma, { ...context.user, where }, parsed.data, {
+        timeZone, now, holiday: null, open: "", close: "", autoLock: false,
+      })
+      return scanJson(result)
+    }
     const setting = await prisma.schoolSetting.findUnique({
       where: { id: "default" },
       select: { attendanceOpenTime: true, attendanceCloseTime: true, autoLock: true },

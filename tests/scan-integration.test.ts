@@ -9,6 +9,7 @@ import { databaseSchema } from "../lib/database-config"
 import { executeScan, issueScanCards, saveScanVisit, cancelScanVisit, qrHash } from "../lib/server-scan"
 import { lockAttendanceDay } from "../lib/attendance-lock"
 import { toPrismaDate, requireSchoolDate } from "../lib/school-date"
+import { editWorshipAttendance, readWorshipRows } from "../lib/server-worship-attendance"
 
 test(
   "isolated local scan: forward migrations, concurrent scans/replay, revoked cards, conflicts, UKS idempotency and cleanup",
@@ -173,8 +174,51 @@ test(
       )
       assert.deepEqual(race.map((r) => r.outcome).sort(), ["PRESENT", "REPEAT"])
       assert.equal(await db.attendance.count({ where: { studentId: secondStudent.id } }), 1)
+
+      const worshipDate = requireSchoolDate("2026-11-02")
+      const worshipTime = new Date("2026-11-02T05:05:00Z")
+      const worshipSetting = { ...setting, now: worshipTime }
+      const worshipScan = { ...make(), mode: "worship" as const, code: replacement.code }
+      const worshipRace = await Promise.all([db, db2].map((client) =>
+        executeScan(client, scanner, { ...worshipScan, requestId: randomUUID() }, worshipSetting),
+      ))
+      assert.deepEqual(worshipRace.map((result) => result.outcome).sort(), ["WORSHIP_PRESENT", "WORSHIP_REPEAT"])
+      assert.equal(worshipRace[1].firstSeenAt, worshipTime.toISOString())
+      assert.equal(await db.worshipAttendance.count(), 1)
+      const originalWorship = await executeScan(db, scanner, worshipScan, worshipSetting)
+      assert.equal(originalWorship.outcome, "WORSHIP_REPEAT")
+      const [schoolLeave] = (await readWorshipRows(db, schoolClass.id, worshipDate))
+        .filter((row) => row.id === student.id)
+      assert.equal(schoolLeave.schoolStatus, "IZIN")
+      assert.equal(schoolLeave.worship?.status, "IKUT")
+      assert.equal((await readWorshipRows(db, schoolClass.id, worshipDate)).length, 3)
+
+      const scope = { scope: "assigned_classes" as const, where: scanner.where, userId: actor.id }
+      const day = toPrismaDate(worshipDate)
+      const edit = {
+        classId: schoolClass.id, studentId: student.id, date: worshipDate,
+        status: "BELUM" as const, revision: 1, reason: "Kartu terpindai keliru",
+      }
+      await assert.rejects(
+        () => editWorshipAttendance(db, { ...scope, where: { homeroomUserId: "other" } }, actor, edit, day),
+        /Kelas tidak dapat diakses/,
+      )
+      await editWorshipAttendance(db, scope, actor, edit, day)
+      assert.deepEqual(await executeScan(db, scanner, worshipScan, worshipSetting), originalWorship)
+      await assert.rejects(() => editWorshipAttendance(db, scope, actor, edit, day), /sudah berubah/)
+      const manual = { ...edit, studentId: newStudent.id, revision: 0, status: "IKUT" as const, reason: "Ikut dan lupa scan" }
+      await editWorshipAttendance(db, scope, actor, manual, day)
+      const rows = await readWorshipRows(db, schoolClass.id, worshipDate)
+      assert.equal(rows.find((row) => row.id === student.id)?.worship?.status, "BELUM")
+      const manuallyMarked = rows.find((row) => row.id === newStudent.id)
+      assert.equal(manuallyMarked?.schoolStatus, null)
+      assert.equal(manuallyMarked?.worship?.status, "IKUT")
+      assert.equal(manuallyMarked?.worship?.manualByName, actor.name)
+      assert.equal(manuallyMarked?.worship?.firstScannedAt, null)
+      assert.equal(await db.attendance.count(), 2)
+      assert.equal(await db.auditLog.count({ where: { action: "WORSHIP_ATTENDANCE_CORRECTED", actorId: actor.id } }), 2)
       console.log(
-        "Scan integration: all forward migrations + concurrency/replay/scope/revocation/UKS checks passed in isolated schema",
+        "Scan integration: forward migrations, concurrency, replay, scope, card revocation, UKS and worship passed",
       )
     } finally {
       await db.$disconnect()

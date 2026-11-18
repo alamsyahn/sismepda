@@ -18,6 +18,7 @@ export type AuditEntity =
   | "EuksDocument"
   | "StudentHealthMeasurement"
   | "Attendance"
+  | "WorshipAttendance"
   | "EuksProfile"
   | "EuksOfficer"
   | "EuksFacility"
@@ -50,6 +51,7 @@ export type AuditEntity =
   | RbacAuditEntity
 
 export type AuditAction =
+  | "WORSHIP_ATTENDANCE_CORRECTED"
   | "EUKS_DOCUMENT_CREATED"
   | "EUKS_DOCUMENT_UPDATED"
   | "EUKS_DOCUMENT_DELETED"

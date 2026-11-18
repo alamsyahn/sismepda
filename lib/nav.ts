@@ -1,5 +1,6 @@
 import { EUKS_DOCUMENT_READ_PERMISSIONS } from "@/lib/euks-documents"
 import { SCHEDULE_PAGE_PERMISSIONS } from "@/lib/schedule-authorization"
+import { WORSHIP_REPORT_PERMISSIONS } from "@/lib/worship-attendance"
 import {
   LayoutDashboard,
   GraduationCap,
@@ -170,7 +171,7 @@ export const mainNav: NavEntry[] = [
     title: "Scan Siswa",
     href: "/scan",
     icon: ScanLine,
-    description: "Pindai kehadiran dan kunjungan UKS",
+    description: "Pindai kehadiran, ibadah Zuhur, dan kunjungan UKS",
     permissions: ["scan.attendance.use", "scan.uks.use", "scan.history.read", "scan.cards.manage"],
   },
   {
@@ -227,6 +228,13 @@ export const mainNav: NavEntry[] = [
         permissions: ["attendance.reports.read.assigned_classes", "attendance.reports.read.all"],
       },
     ],
+  },
+  {
+    title: "Rekap Ibadah",
+    href: "/rekap-ibadah",
+    icon: ClipboardList,
+    description: "Catat dan lihat keikutsertaan salat Zuhur per kelas",
+    permissions: WORSHIP_REPORT_PERMISSIONS,
   },
   {
     type: "group",

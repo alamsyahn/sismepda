@@ -185,6 +185,7 @@ model SchoolClass {
 }
 
 model Student {
+  worshipAttendances WorshipAttendance[]
   scanCredentials StudentQrCredential[]
   scanEvents ScanEvent[]
   ksMembers KsMember[]
@@ -498,6 +499,7 @@ model ScanEvent {
   source String
   outcome String
   scannedAt DateTime @default(now())
+  worshipFirstSeenAt DateTime?
   schoolDate DateTime @db.Date
   visitId String?
   saveFingerprint String?
@@ -505,6 +507,28 @@ model ScanEvent {
   visit EuksVisit? @relation(fields: [visitId], references: [id], onDelete: SetNull)
   @@index([schoolDate, mode, scannedAt])
   @@index([studentId, mode, schoolDate])
+}
+
+enum WorshipAttendanceStatus {
+  IKUT
+  DISPENSASI
+  BELUM
+}
+
+model WorshipAttendance {
+  studentId String
+  date DateTime @db.Date
+  classId String
+  status WorshipAttendanceStatus
+  firstScannedAt DateTime?
+  manualReason String?
+  manualByName String?
+  updatedAt DateTime @updatedAt
+  revision Int @default(1)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@id([studentId, date])
+  @@index([classId, date])
 }
 
 model Attendance {

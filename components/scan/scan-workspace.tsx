@@ -45,6 +45,7 @@ type Capabilities = {
   schoolLogoUrl: string
   historyAttendance: boolean
   historyUks: boolean
+  worshipReport: boolean
   notify: boolean
   complaints: string[]
 }
@@ -128,10 +129,13 @@ export function ScanWorkspace({ initialMode = "attendance" }: { initialMode?: Sc
   }, [])
   useEffect(() => {
     void refreshCapabilities().then((data) => {
-      if (data && !data.attendance && data.uks) setMode("uks")
-      if (data && !data.uks && data.attendance) setMode("attendance")
+      if (data && initialMode !== "worship") {
+        if (initialMode === "uks" && data.uks) setMode("uks")
+        else if (data.attendance) setMode("attendance")
+        else if (data.uks) setMode("uks")
+        else setMode("worship")
+      }
       if (data && !data.historyAttendance && data.historyUks) setHistoryMode("uks")
-      if (data && !data.attendance && !data.uks) setTab(data.cards ? "cards" : "history")
     })
     if (window.matchMedia("(pointer:coarse)").matches) setSource("CAMERA")
     else {
@@ -155,7 +159,7 @@ export function ScanWorkspace({ initialMode = "attendance" }: { initialMode?: Sc
       window.removeEventListener("offline", offline)
       window.removeEventListener("online", connected)
     }
-  }, [refreshCapabilities])
+  }, [initialMode, refreshCapabilities])
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {
       if (draft || pending || savePending) {
@@ -247,7 +251,7 @@ export function ScanWorkspace({ initialMode = "attendance" }: { initialMode?: Sc
       try {
         const data = await jsonRequest<ScanResult>("/api/scan", post(body))
         setResult(data)
-        if (body.mode === "attendance") {
+        if (body.mode !== "uks") {
           setFeedback({ ...attendanceFeedback(data), id: ++feedbackSequence.current })
         }
         setPending(null)
@@ -261,11 +265,11 @@ export function ScanWorkspace({ initialMode = "attendance" }: { initialMode?: Sc
           setDetail("")
           pendingBody.current = null
         }
-        if (data.outcome === "PRESENT") navigator.vibrate?.(70)
+        if (data.outcome === "PRESENT" || data.outcome === "WORSHIP_PRESENT") navigator.vibrate?.(70)
         void loadHistory()
       } catch (e) {
         const error = e as Error & { status?: number }
-        if (body.mode === "attendance") {
+        if (body.mode !== "uks") {
           setFeedback({
             id: ++feedbackSequence.current,
             success: false,
@@ -375,8 +379,7 @@ export function ScanWorkspace({ initialMode = "attendance" }: { initialMode?: Sc
         )}
       </PageContainer>
     )
-  const allowedScan = cap.attendance || cap.uks
-  const success = result && ["PRESENT", "REPEAT", "SAVED"].includes(result.outcome)
+  const success = result && ["PRESENT", "REPEAT", "WORSHIP_PRESENT", "WORSHIP_REPEAT", "SAVED"].includes(result.outcome)
   const canReadHistory = cap.historyAttendance || cap.historyUks
   return (
     <PageContainer>
@@ -394,7 +397,7 @@ export function ScanWorkspace({ initialMode = "attendance" }: { initialMode?: Sc
       />
       <div role="tablist" aria-label="Halaman scan" className="flex flex-wrap gap-1 border-b pb-3">
         {[
-          { key: "scan", text: "Pemindai", show: allowedScan, icon: ScanLine },
+          { key: "scan", text: "Pemindai", show: true, icon: ScanLine },
           { key: "history", text: "Riwayat Scan", show: canReadHistory, icon: History },
           { key: "cards", text: "Kartu QR", show: cap.cards, icon: IdCard },
         ]
@@ -425,7 +428,7 @@ export function ScanWorkspace({ initialMode = "attendance" }: { initialMode?: Sc
           </Button>
         </div>
       )}
-      {tab === "scan" && allowedScan && (
+      {tab === "scan" && (
         <div id="panel-scan" role="tabpanel" aria-labelledby="tab-scan" className="space-y-5">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="grid w-full max-w-xs gap-2">
@@ -444,6 +447,7 @@ export function ScanWorkspace({ initialMode = "attendance" }: { initialMode?: Sc
                 }}
               >
                 {cap.attendance && <option value="attendance">Kehadiran</option>}
+                <option value="worship">Ibadah Zuhur</option>
                 {cap.uks && <option value="uks">Kunjungan UKS</option>}
               </select>
             </div>
@@ -454,9 +458,11 @@ export function ScanWorkspace({ initialMode = "attendance" }: { initialMode?: Sc
               <div className="p-5">
                 <h2 className="font-semibold">Pindai kartu siswa</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {mode === "attendance"
-                    ? "Kehadiran langsung tersimpan setelah QR terbaca."
-                    : "Pindai siswa, lengkapi kunjungan, lalu simpan."}
+                  {mode === "uks"
+                    ? "Pindai siswa, lengkapi kunjungan, lalu simpan."
+                    : mode === "worship"
+                      ? "Keikutsertaan Zuhur langsung tersimpan setelah QR terbaca."
+                      : "Kehadiran langsung tersimpan setelah QR terbaca."}
                 </p>
               </div>
               <div className={draft ? "hidden px-5 pb-5 lg:block" : "px-5 pb-5"}>
@@ -546,7 +552,7 @@ export function ScanWorkspace({ initialMode = "attendance" }: { initialMode?: Sc
                     </Button>
                   </div>
                 )}
-                <details className="mt-5 border-t pt-4">
+                {mode !== "worship" && <details className="mt-5 border-t pt-4">
                   <summary className="text-sm text-primary">Kartu tidak terbaca? Cari siswa</summary>
                   <div className="mt-3 space-y-3">
                     <Label htmlFor="scan-search">Nama, NIS, atau NISN</Label>
@@ -580,7 +586,12 @@ export function ScanWorkspace({ initialMode = "attendance" }: { initialMode?: Sc
                     </div>
                     {query.length >= 2 && searchError && <p className="text-xs text-muted-foreground">{searchError}</p>}
                   </div>
-                </details>
+                </details>}
+                {mode === "worship" && cap.worshipReport && (
+                  <Link className="mt-5 inline-block text-sm text-primary underline" href="/rekap-ibadah">
+                    Buka Rekap Ibadah
+                  </Link>
+                )}
               </div>
               <div className="flex gap-2 border-t px-5 py-4 text-xs text-muted-foreground">
                 <ShieldCheck className="size-4 shrink-0" />
@@ -620,6 +631,10 @@ export function ScanWorkspace({ initialMode = "attendance" }: { initialMode?: Sc
                       </h3>
                       <p className="mt-2 text-xs">
                         {result.outcome === "PRESENT" && "Hadir sudah tercatat di absensi SISMEPDA."}
+                        {result.outcome.startsWith("WORSHIP_") &&
+                          (result.firstSeenAt
+                            ? `Scan pertama pukul ${formatTime(new Date(result.firstSeenAt))} ${timeZoneLabel}.`
+                            : "Keikutsertaan sudah dicatat secara manual.")}
                         {result.outcome === "REPEAT" &&
                           (result.firstSeenAt
                             ? `Kehadiran pertama pukul ${formatTime(new Date(result.firstSeenAt))} ${timeZoneLabel} tetap berlaku.`
@@ -627,7 +642,9 @@ export function ScanWorkspace({ initialMode = "attendance" }: { initialMode?: Sc
                         {result.outcome === "CONFLICT" &&
                           `Status saat ini ${result.existingStatus}. Tidak diubah otomatis; koreksi melalui Input Absensi.`}
                         {result.outcome === "UNKNOWN" &&
-                          "Gunakan kartu SISMEPDA yang aktif atau cari siswa secara manual."}
+                          (mode === "worship"
+                            ? "Gunakan kartu SISMEPDA yang aktif."
+                            : "Gunakan kartu SISMEPDA yang aktif atau cari siswa secara manual.")}
                         {result.outcome === "HOLIDAY" &&
                           "Hari ini ditandai libur. Scan dicatat tanpa membuat kehadiran."}
                         {result.outcome === "OUTSIDE_WINDOW" &&

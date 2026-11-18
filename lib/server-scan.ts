@@ -4,6 +4,7 @@ import type { Prisma, PrismaClient } from "@/app/generated/prisma/client"
 import { ApiError } from "@/lib/api-errors"
 import { lockAttendanceDay } from "@/lib/attendance-lock"
 import { recordAuditLog } from "@/lib/audit-log"
+import { recordWorshipScan } from "@/lib/server-worship-attendance"
 import { fromPrismaDate, schoolMinutesOfDay, toPrismaDate, todayInSchoolTimeZone } from "@/lib/school-date"
 import {
   isStudentQr,
@@ -76,7 +77,7 @@ async function view(tx: Prisma.TransactionClient, id: string): Promise<ScanResul
     scannedAt: event.scannedAt.toISOString(),
     schoolDate: fromPrismaDate(event.schoolDate),
     student: event.student ? projectScanStudent(event.student) : null,
-    firstSeenAt: first?.scannedAt.toISOString() ?? null,
+    firstSeenAt: (event.worshipFirstSeenAt ?? first?.scannedAt)?.toISOString() ?? null,
     visitId: event.visitId,
     notifyStatus: event.visit?.notifyStatus ?? null,
     notifyError: event.visit?.notifyError ?? null,
@@ -139,6 +140,12 @@ export async function executeScan(
       }
     }
     let outcome = !student ? "UNKNOWN" : command.mode === "uks" ? "DRAFT" : "PRESENT"
+    let worshipFirstSeenAt: Date | null = null
+    if (student && command.mode === "worship") {
+      const worship = await recordWorshipScan(tx, student, toPrismaDate(schoolDate), now)
+      outcome = worship.outcome
+      worshipFirstSeenAt = worship.firstSeenAt
+    }
     if (student && command.mode === "attendance") {
       if (options.holiday) outcome = "HOLIDAY"
       else if (
@@ -179,6 +186,7 @@ export async function executeScan(
         source: command.source,
         outcome,
         scannedAt: now,
+        worshipFirstSeenAt,
         schoolDate: toPrismaDate(schoolDate),
       },
     })

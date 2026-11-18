@@ -6,7 +6,7 @@ export const SCAN_PAGE_PERMISSIONS = [
   "scan.history.read",
   "scan.cards.manage",
 ] as const
-export const scanMode = z.enum(["attendance", "uks"])
+export const scanMode = z.enum(["attendance", "uks", "worship"])
 export type ScanMode = z.infer<typeof scanMode>
 export const scanInput = z
   .object({
@@ -21,6 +21,7 @@ export const scanInput = z
     (x) => (x.source === "MANUAL" ? Boolean(x.studentId) && !x.code : Boolean(x.code) && !x.studentId),
     "Sumber dan identitas scan tidak cocok",
   )
+  .refine((x) => x.mode !== "worship" || x.source !== "MANUAL", "Gunakan Rekap Ibadah untuk input manual")
 export const followUps = [
   "Kembali ke kelas",
   "Istirahat di UKS",
@@ -42,6 +43,8 @@ export const scanVisitInput = z
 export const SCAN_OUTCOMES: Record<string, string> = {
   PRESENT: "Kehadiran tersimpan",
   REPEAT: "Sudah hadir hari ini",
+  WORSHIP_PRESENT: "Ibadah Zuhur tercatat",
+  WORSHIP_REPEAT: "Ibadah Zuhur sudah tercatat",
   CONFLICT: "Perlu ditinjau petugas",
   UNKNOWN: "QR tidak dikenali / kartu tidak aktif",
   HOLIDAY: "Hari libur",

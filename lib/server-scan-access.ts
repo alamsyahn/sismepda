@@ -1,14 +1,18 @@
-import { requirePermission } from "@/lib/rbac-access"
+import { requireAnyPermission, requirePermission } from "@/lib/rbac-access"
 import { requireClassScopeFor } from "@/lib/rbac-class-access"
 import { verifySameOrigin } from "@/lib/same-origin"
 import { ApiError } from "@/lib/api-errors"
-import type { ScanMode } from "@/lib/scan"
+import { SCAN_PAGE_PERMISSIONS, type ScanMode } from "@/lib/scan"
 
 export function assertScanOrigin(request: Request) {
   const result = verifySameOrigin(request)
   if (!result.ok) throw new ApiError(result.status, result.error)
 }
 export async function scanWriteAccess(mode: ScanMode) {
+  if (mode === "worship") {
+    const context = await requireAnyPermission(SCAN_PAGE_PERMISSIONS)
+    return { context, where: {} }
+  }
   const context = await requirePermission(mode === "attendance" ? "scan.attendance.use" : "scan.uks.use")
   if (mode === "uks") {
     await requirePermission("euks.visits.create")

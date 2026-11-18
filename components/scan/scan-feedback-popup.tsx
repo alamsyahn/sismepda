@@ -15,7 +15,7 @@ export type ScanFeedback = {
 }
 
 export function attendanceFeedback(result: ScanResult): Omit<ScanFeedback, "id"> {
-  const success = result.outcome === "PRESENT" || result.outcome === "REPEAT"
+  const success = ["PRESENT", "REPEAT", "WORSHIP_PRESENT", "WORSHIP_REPEAT"].includes(result.outcome)
   return {
     success,
     title: result.outcome === "PRESENT" ? "Hadir tercatat" : (SCAN_OUTCOMES[result.outcome] ?? "Scan gagal"),

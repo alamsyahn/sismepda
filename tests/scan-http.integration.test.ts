@@ -36,6 +36,7 @@ test(
       events: await db.scanEvent.count(),
       credentials: await db.studentQrCredential.count(),
       attendance: await db.attendance.count(),
+      worship: await db.worshipAttendance.count(),
       visits: await db.euksVisit.count(),
       audit: await db.auditLog.count(),
       roles: await db.role.count(),
@@ -139,6 +140,7 @@ test(
         "euks.visits.create",
       ]
       const operator = await makeUser("operator", keys),
+        worshipScanner = await makeUser("worship", ["scan.history.read"]),
         denied = await makeUser("denied", []),
         admin = await makeUser("admin", [], true)
       const ownClass = await db.schoolClass.create({
@@ -196,6 +198,31 @@ test(
       const first = await request("scan", operator.cookie, 200, "/api/scan", command)
       const replay = await request("scan replay", operator.cookie, 200, "/api/scan", command)
       assert.equal(first.id, replay.id)
+      const worshipScan = { requestId: randomUUID(), mode: "worship", source: "USB", code: codeB }
+      await request("worship scan denied without scanner access", denied.cookie, 403, "/api/scan", worshipScan)
+      const worship = await request("worship scan with scanner access", worshipScanner.cookie, 200, "/api/scan", worshipScan)
+      assert.equal(worship.outcome, "WORSHIP_PRESENT")
+      assert.equal(worship.student.id, b.id)
+      assert.equal(await db.attendance.count({ where: { studentId: b.id } }), 0)
+      const worshipEdit = {
+        classId: ownClass.id, date: worship.schoolDate, studentId: a.id,
+        revision: 0, status: "IKUT", reason: "Ikut dan lupa scan",
+      }
+      await request("worship manual needs class write access", worshipScanner.cookie, 403, "/api/rekap-ibadah", worshipEdit)
+      await request("worship manual rejects foreign origin", operator.cookie, 403, "/api/rekap-ibadah",
+        worshipEdit, "POST", "https://untrusted.example")
+      await request("worship manual rejects other class", operator.cookie, 404, "/api/rekap-ibadah",
+        { ...worshipEdit, classId: otherClass.id, studentId: b.id, revision: 1 })
+      await request("worship manual records attendance", operator.cookie, 200, "/api/rekap-ibadah", worshipEdit)
+      const report = await fetch(`${origin}/rekap-ibadah?classId=${ownClass.id}&date=${worship.schoolDate}`, {
+        headers: { Cookie: operator.cookie },
+        signal: AbortSignal.timeout(45000),
+      })
+      assert.equal(report.status, 200)
+      const reportHtml = await report.text()
+      assert.match(reportHtml, /Rekap Ibadah/)
+      assert.match(reportHtml, /Ikut dan lupa scan/)
+      assert.doesNotMatch(reportHtml, /TEMP Scan Raka/)
       await request("mismatched replay", operator.cookie, 409, "/api/scan", { ...command, source: "CAMERA" })
       const search = await request(
         "scoped search",
