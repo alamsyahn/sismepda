@@ -65,7 +65,8 @@ export function studentCardSvg(student: ScanStudent, qrImage: string, schoolName
   </g>
   <path d="M6 30.5H54 M6 38.5H54 M6 46.5H54" stroke="#8bb4ed" stroke-width=".2"/>
   <rect x="59.5" y="15" width="25" height="25" rx="1.8" fill="white" stroke="#2c54b5" stroke-width=".35"/>
-  <image href="${escapeHtml(qrImage)}" x="62" y="17.5" width="20" height="20"/>
+  <!-- The QR image already includes a four-module quiet zone; retain it while filling the frame. -->
+  <image href="${escapeHtml(qrImage)}" x="60" y="15.5" width="24" height="24" preserveAspectRatio="xMidYMid meet"/>
   ${barcode ? `<g role="img" aria-label="Barcode NIPD / NIS ${escapeHtml(student.nis!)}">${barcode.replace("<svg ", '<svg x="58" y="41.5" width="28" height="6" preserveAspectRatio="none" ')}
     <g font-family="Arial, sans-serif" fill="black">${text(72, 49.5, student.nis!, 2.2, 28, 600, "middle")}</g></g>`
     : `<g font-family="Arial, sans-serif" fill="#172746">${text(72, 45, student.nis ? "Barcode NIPD tidak tersedia" : "NIPD / NIS belum diisi", 1.6, 28, 400, "middle")}</g>`}

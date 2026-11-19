@@ -70,7 +70,7 @@ test("NIPD barcodes preserve five digits and leading zeroes without changing QR 
   const qr = "data:image/png;base64,UNCHANGED"
   const svg = studentCardSvg(student, qr, "SMPN 2 BLITAR", "")
   assert.ok(svg.includes(`href="${qr}"`))
-  assert.ok(svg.includes('width="20" height="20"'))
+  assert.ok(svg.includes('x="60" y="15.5" width="24" height="24" preserveAspectRatio="xMidYMid meet"'))
   assert.ok(svg.includes('aria-label="Barcode NIPD / NIS 00123"'))
   assert.ok(svg.includes('>00123</text>'))
   assert.ok(!svg.includes(student.nisn!))
